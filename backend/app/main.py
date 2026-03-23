@@ -6,10 +6,13 @@ from sqlalchemy.exc import OperationalError
 
 from app.config import settings
 from app.infrastructure.db.base import Base
+from app.infrastructure.db.models.table_relation_model import TableRelationModel  # noqa: F401
+from app.infrastructure.db.models.table_structure_model import TableStructureModel  # noqa: F401
 from app.infrastructure.db.models.user_model import UserModel  # noqa: F401
 from app.infrastructure.db.models.workspace_model import WorkspaceModel  # noqa: F401
 from app.infrastructure.db.session import engine
 from app.interfaces.api.v1.routes.auth import router as auth_router
+from app.interfaces.api.v1.routes.table_structure import router as table_structure_router
 from app.interfaces.api.v1.routes.workspace import router as workspace_router
 
 
@@ -43,3 +46,4 @@ def health() -> dict[str, str]:
 
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(workspace_router, prefix="/api/v1")
+app.include_router(table_structure_router, prefix="/api/v1")
