@@ -63,12 +63,16 @@ const selectedFormId = ref<number | null>(null)
 const formLoading = ref(false)
 const formError = ref('')
 const formFieldDragIndex = ref<number | null>(null)
+const selectedFormFieldIndex = ref<number | null>(null)
+const addFieldTableId = ref('')
+const addFieldColumnKey = ref('')
 
 // Data Viewer state
 const tableDataRecords = ref<any[]>([])
 const dataLoading = ref(false)
 const dataError = ref('')
 const dataPagination = ref({ skip: 0, limit: 50, total: 0 })
+const selectedDataTableId = ref<number | null>(null)
 
 const selectedWorkspace = computed(() => {
   if (selectedWorkspaceId.value === null) return null
@@ -78,6 +82,11 @@ const selectedWorkspace = computed(() => {
 const activeTable = computed(() => {
   if (activeTableId.value === null) return null
   return tableStructures.value.find((table) => table.id === activeTableId.value) ?? null
+})
+
+const selectedDataTable = computed(() => {
+  if (selectedDataTableId.value === null) return null
+  return tableStructures.value.find((table) => table.id === selectedDataTableId.value) ?? null
 })
 
 const selectedColumnParent = computed(() => {
@@ -93,6 +102,35 @@ const selectedColumn = computed(() => {
 })
 
 const allTableOptions = computed(() => tableStructures.value.map((table) => ({ id: table.id, name: table.name })))
+
+const allWorkspaceColumns = computed(() =>
+  tableStructures.value.flatMap((table) =>
+    table.columns.map((column) => ({
+      tableId: table.id,
+      tableName: table.name,
+      column
+    }))
+  )
+)
+
+const selectedFormField = computed(() => {
+  if (!selectedForm.value || selectedFormFieldIndex.value === null) return null
+  return selectedForm.value.fields[selectedFormFieldIndex.value] ?? null
+})
+
+const addFieldCandidates = computed(() => {
+  const tableId = Number(addFieldTableId.value)
+  if (!tableId || !selectedForm.value) return []
+
+  const existing = new Set(
+    selectedForm.value.fields.map((field) => `${field.table_id ?? activeTable.value?.id ?? 0}:${field.column_key}`)
+  )
+
+  const table = tableStructures.value.find((item) => item.id === tableId)
+  if (!table) return []
+
+  return table.columns.filter((column) => !existing.has(`${tableId}:${column.key}`))
+})
 
 const relationSourceColumns = computed(() => {
   const sourceId = Number(relationSourceTableId.value)
@@ -416,6 +454,7 @@ const loadForms = async () => {
   if (!authStore.token || !selectedWorkspace.value || !activeTable.value) {
     formConfigurations.value = []
     selectedFormId.value = null
+    selectedFormFieldIndex.value = null
     return
   }
 
@@ -451,7 +490,10 @@ const loadForms = async () => {
 
     formConfigurations.value = [singleForm]
     selectedFormId.value = singleForm.id
-    syncMissingFieldsFromActiveTable()
+    syncMissingFieldsFromWorkspace()
+    if (singleForm.fields.length > 0) {
+      selectedFormFieldIndex.value = 0
+    }
   } catch (error) {
     formError.value = 'Не удалось загрузить формы'
     console.error(error)
@@ -477,6 +519,12 @@ const getWidgetTypeLabel = (type: string): string => {
     radio: 'Радио'
   }
   return labels[type] || type
+}
+
+const getFieldTableName = (field: FormField): string => {
+  const fallback = activeTable.value?.name ?? 'Таблица по умолчанию'
+  if (!field.table_id) return fallback
+  return tableStructures.value.find((table) => table.id === field.table_id)?.name ?? fallback
 }
 
 const getFieldInputType = (widgetType: string): string => {
@@ -530,16 +578,88 @@ const dropFieldAt = (targetIndex: number) => {
   const [moved] = fields.splice(sourceIndex, 1)
   fields.splice(targetIndex, 0, moved)
   selectedForm.value.fields = fields
+
+  if (selectedFormFieldIndex.value === sourceIndex) {
+    selectedFormFieldIndex.value = targetIndex
+  } else if (selectedFormFieldIndex.value !== null) {
+    const selectedIndex = selectedFormFieldIndex.value
+    if (sourceIndex < selectedIndex && targetIndex >= selectedIndex) {
+      selectedFormFieldIndex.value = selectedIndex - 1
+    } else if (sourceIndex > selectedIndex && targetIndex <= selectedIndex) {
+      selectedFormFieldIndex.value = selectedIndex + 1
+    }
+  }
 }
 
-const syncMissingFieldsFromActiveTable = () => {
-  if (!selectedForm.value || !activeTable.value) return
+const selectFormField = (index: number) => {
+  selectedFormFieldIndex.value = index
+}
 
-  const existingKeys = new Set(selectedForm.value.fields.map((field) => field.column_key))
-  const missingFields: FormField[] = activeTable.value.columns
-    .filter((column) => !existingKeys.has(column.key))
-    .map((column) => ({
-      table_id: activeTable.value?.id,
+const removeFormField = (index: number) => {
+  if (!selectedForm.value || index < 0 || index >= selectedForm.value.fields.length) return
+
+  const fields = [...selectedForm.value.fields]
+  fields.splice(index, 1)
+  selectedForm.value.fields = fields
+
+  if (fields.length === 0) {
+    selectedFormFieldIndex.value = null
+    return
+  }
+
+  if (selectedFormFieldIndex.value === null) return
+
+  if (selectedFormFieldIndex.value === index) {
+    selectedFormFieldIndex.value = Math.min(index, fields.length - 1)
+  } else if (selectedFormFieldIndex.value > index) {
+    selectedFormFieldIndex.value -= 1
+  }
+}
+
+const removeSelectedFormField = () => {
+  if (selectedFormFieldIndex.value === null) return
+  removeFormField(selectedFormFieldIndex.value)
+}
+
+const syncMissingFieldsFromWorkspace = () => {
+  if (!selectedForm.value) return
+
+  const existing = new Set(
+    selectedForm.value.fields.map((field) => `${field.table_id ?? activeTable.value?.id ?? 0}:${field.column_key}`)
+  )
+
+  const missingFields: FormField[] = allWorkspaceColumns.value
+    .filter((item) => !existing.has(`${item.tableId}:${item.column.key}`))
+    .map((item) => ({
+      table_id: item.tableId,
+      column_key: item.column.key,
+      column_name: item.column.name,
+      field_label: item.column.name,
+      widget_type: mapWidgetTypeFromColumn(item.column.type),
+      required: item.column.required,
+      placeholder: '',
+      help_text: '',
+      widget_settings: { ...(item.column.settings ?? {}) }
+    }))
+
+  if (missingFields.length === 0) return
+  selectedForm.value.fields = [...selectedForm.value.fields, ...missingFields]
+}
+
+const addSelectedFieldToForm = () => {
+  if (!selectedForm.value) return
+
+  const tableId = Number(addFieldTableId.value)
+  if (!tableId || !addFieldColumnKey.value) return
+
+  const table = tableStructures.value.find((item) => item.id === tableId)
+  const column = table?.columns.find((item) => item.key === addFieldColumnKey.value)
+  if (!table || !column) return
+
+  selectedForm.value.fields = [
+    ...selectedForm.value.fields,
+    {
+      table_id: tableId,
       column_key: column.key,
       column_name: column.name,
       field_label: column.name,
@@ -548,10 +668,11 @@ const syncMissingFieldsFromActiveTable = () => {
       placeholder: '',
       help_text: '',
       widget_settings: { ...(column.settings ?? {}) }
-    }))
+    }
+  ]
 
-  if (missingFields.length === 0) return
-  selectedForm.value.fields = [...selectedForm.value.fields, ...missingFields]
+  selectedFormFieldIndex.value = selectedForm.value.fields.length - 1
+  addFieldColumnKey.value = ''
 }
 
 const copyToClipboard = () => {
@@ -584,7 +705,7 @@ const saveSingleForm = async () => {
 }
 
 const loadTableData = async () => {
-  if (!authStore.token || !selectedWorkspace.value || !activeTable.value) {
+  if (!authStore.token || !selectedWorkspace.value || !selectedDataTable.value) {
     tableDataRecords.value = []
     return
   }
@@ -594,7 +715,7 @@ const loadTableData = async () => {
   try {
     const result = await formBuilderUseCase.listTableData(
       selectedWorkspace.value.id,
-      activeTable.value.id,
+      selectedDataTable.value.id,
       dataPagination.value.skip,
       dataPagination.value.limit
     )
@@ -620,14 +741,33 @@ const goToPage = async (page: number) => {
   await loadTableData()
 }
 
+const goToDataTab = async () => {
+  workspaceTab.value = 'data'
+  if (!selectedDataTableId.value) {
+    selectedDataTableId.value = activeTable.value?.id ?? tableStructures.value[0]?.id ?? null
+  }
+  dataPagination.value.skip = 0
+  await loadTableData()
+}
+
+const onDataTableChange = async () => {
+  dataPagination.value.skip = 0
+  await loadTableData()
+}
+
+const onDataLimitChange = async () => {
+  dataPagination.value.skip = 0
+  await loadTableData()
+}
+
 const deleteDataRecord = async (recordId: number) => {
-  if (!authStore.token || !selectedWorkspace.value || !activeTable.value) return
+  if (!authStore.token || !selectedWorkspace.value || !selectedDataTable.value) return
   if (!window.confirm('Удалить эту запись?')) return
 
   try {
     await formBuilderUseCase.deleteTableDataRecord(
       selectedWorkspace.value.id,
-      activeTable.value.id,
+      selectedDataTable.value.id,
       recordId
     )
     await loadTableData()
@@ -722,7 +862,7 @@ onBeforeUnmount(() => {
           <button class="tab" :class="{ active: workspaceTab === 'details' }" @click="workspaceTab = 'details'">Детали</button>
           <button class="tab" :class="{ active: workspaceTab === 'tables' }" @click="workspaceTab = 'tables'">Таблицы</button>
           <button class="tab" :class="{ active: workspaceTab === 'forms' }" @click="goToFormsTab">Форма</button>
-          <button class="tab" :class="{ active: workspaceTab === 'data' }" @click="workspaceTab = 'data'; activeTable && loadTableData()">Данные</button>
+          <button class="tab" :class="{ active: workspaceTab === 'data' }" @click="goToDataTab">Данные</button>
         </div>
 
         <div class="actions-row" v-if="workspaceTab === 'details'">
@@ -917,11 +1057,22 @@ onBeforeUnmount(() => {
               </header>
 
               <form @submit.prevent>
-                <div v-for="field in selectedForm.fields" :key="field.column_key" class="form-field-preview">
+                <div
+                  v-for="(field, index) in selectedForm.fields"
+                  :key="`${field.table_id ?? 'default'}-${field.column_key}`"
+                  class="form-field-preview"
+                  :class="{ active: selectedFormFieldIndex === index }"
+                  draggable="true"
+                  @dragstart="startFieldDrag(index)"
+                  @dragover.prevent
+                  @drop.prevent="dropFieldAt(index)"
+                  @click="selectFormField(index)"
+                >
                   <label :for="`field-${field.column_key}`">
                     {{ field.field_label }}
                     <span v-if="field.required" class="required">*</span>
                   </label>
+                  <p class="field-table-label">Таблица: {{ getFieldTableName(field) }}</p>
                   <input
                     v-if="['text_input', 'number_input', 'date_input', 'datetime_input'].includes(field.widget_type)"
                     :id="`field-${field.column_key}`"
@@ -979,53 +1130,71 @@ onBeforeUnmount(() => {
 
               <section class="object-card">
                 <h4>Поля ({{ selectedForm.fields.length }})</h4>
-                <button class="small" @click="syncMissingFieldsFromActiveTable">Добавить недостающие поля таблицы</button>
+                <button class="small" @click="syncMissingFieldsFromWorkspace">Добавить все недостающие</button>
+                <div class="field-settings-row">
+                  <select v-model="addFieldTableId">
+                    <option value="">Таблица для добавления</option>
+                    <option v-for="table in allTableOptions" :key="`add-t-${table.id}`" :value="String(table.id)">
+                      {{ table.name }}
+                    </option>
+                  </select>
+                  <select v-model="addFieldColumnKey" :disabled="!addFieldTableId">
+                    <option value="">Поле таблицы</option>
+                    <option v-for="column in addFieldCandidates" :key="`add-c-${column.key}`" :value="column.key">
+                      {{ column.name }}
+                    </option>
+                  </select>
+                  <button class="small" @click="addSelectedFieldToForm">Добавить поле в конец формы</button>
+                </div>
                 <ul v-if="selectedForm.fields.length > 0" class="form-fields-list">
                   <li
                     v-for="(field, index) in selectedForm.fields"
                     :key="`${field.table_id ?? 'default'}-${field.column_key}`"
-                    draggable="true"
-                    @dragstart="startFieldDrag(index)"
-                    @dragover.prevent
-                    @drop.prevent="dropFieldAt(index)"
+                    :class="{ active: selectedFormFieldIndex === index }"
+                    @click="selectFormField(index)"
                   >
                     <div>
                       <strong>{{ field.field_label }}</strong>
-                      <span>{{ getWidgetTypeLabel(field.widget_type) }}</span>
+                      <span>{{ getWidgetTypeLabel(field.widget_type) }} · {{ field.column_key }} · {{ getFieldTableName(field) }}</span>
                     </div>
-                    <div class="field-settings-row">
-                      <select v-model="field.widget_type">
-                        <option value="text_input">text_input</option>
-                        <option value="textarea">textarea</option>
-                        <option value="number_input">number_input</option>
-                        <option value="date_input">date_input</option>
-                        <option value="datetime_input">datetime_input</option>
-                        <option value="select">select</option>
-                        <option value="checkbox">checkbox</option>
-                        <option value="radio">radio</option>
-                      </select>
-                      <select v-model.number="field.table_id">
-                        <option :value="null">Таблица по умолчанию</option>
-                        <option v-for="table in allTableOptions" :key="`ff-t-${table.id}-${field.column_key}`" :value="table.id">
-                          {{ table.name }}
-                        </option>
-                      </select>
-                      <input v-model="field.field_label" placeholder="Заголовок поля" />
-                      <input v-model="field.placeholder" placeholder="Placeholder" />
-                      <input v-model="field.help_text" placeholder="Подсказка" />
-                      <input
-                        v-if="field.widget_type === 'select' || field.widget_type === 'radio'"
-                        :value="getFieldOptionsText(field)"
-                        placeholder="Опции через запятую"
-                        @input="setFieldOptionsText(field, ($event.target as HTMLInputElement).value)"
-                      />
-                      <label class="checkbox-inline">
-                        <input v-model="field.required" type="checkbox" /> Обязательное
-                      </label>
-                    </div>
+                    <button class="small danger" @click.stop="removeFormField(index)">Удалить</button>
                   </li>
                 </ul>
                 <p v-else class="muted">Нет полей</p>
+              </section>
+
+              <section v-if="selectedFormField" class="object-card">
+                <h4>Настройки выбранного поля</h4>
+                <p class="muted">Текущая таблица: {{ getFieldTableName(selectedFormField) }}</p>
+                <input v-model="selectedFormField.field_label" placeholder="Заголовок поля" />
+                <select v-model="selectedFormField.widget_type">
+                  <option value="text_input">text_input</option>
+                  <option value="textarea">textarea</option>
+                  <option value="number_input">number_input</option>
+                  <option value="date_input">date_input</option>
+                  <option value="datetime_input">datetime_input</option>
+                  <option value="select">select</option>
+                  <option value="checkbox">checkbox</option>
+                  <option value="radio">radio</option>
+                </select>
+                <select v-model.number="selectedFormField.table_id">
+                  <option :value="null">Таблица по умолчанию</option>
+                  <option v-for="table in allTableOptions" :key="`sf-t-${table.id}`" :value="table.id">
+                    {{ table.name }}
+                  </option>
+                </select>
+                <input v-model="selectedFormField.placeholder" placeholder="Placeholder" />
+                <input v-model="selectedFormField.help_text" placeholder="Подсказка" />
+                <input
+                  v-if="selectedFormField.widget_type === 'select' || selectedFormField.widget_type === 'radio'"
+                  :value="getFieldOptionsText(selectedFormField)"
+                  placeholder="Опции через запятую"
+                  @input="setFieldOptionsText(selectedFormField, ($event.target as HTMLInputElement).value)"
+                />
+                <label class="checkbox-inline">
+                  <input v-model="selectedFormField.required" type="checkbox" /> Обязательное
+                </label>
+                <button class="small danger" @click="removeSelectedFormField">Удалить поле</button>
               </section>
 
               <section class="object-card">
@@ -1046,19 +1215,34 @@ onBeforeUnmount(() => {
 
         <section v-if="workspaceTab === 'data'" class="data-section">
           <div class="data-header">
-            <h3>{{ activeTable ? activeTable.name : 'Таблица' }}: Данные</h3>
-            <p v-if="activeTable">Показано {{ tableDataRecords.length }} из {{ dataPagination.total }} записей</p>
+            <h3>{{ selectedDataTable ? selectedDataTable.name : 'Таблица' }}: Данные</h3>
+            <p v-if="selectedDataTable">Показано {{ tableDataRecords.length }} из {{ dataPagination.total }} записей</p>
+          </div>
+
+          <div class="field-settings-row">
+            <select v-model.number="selectedDataTableId" @change="onDataTableChange">
+              <option :value="null">Выберите таблицу</option>
+              <option v-for="table in allTableOptions" :key="`data-t-${table.id}`" :value="table.id">
+                {{ table.name }}
+              </option>
+            </select>
+            <select v-model.number="dataPagination.limit" @change="onDataLimitChange">
+              <option :value="10">10 записей</option>
+              <option :value="25">25 записей</option>
+              <option :value="50">50 записей</option>
+              <option :value="100">100 записей</option>
+            </select>
           </div>
 
           <div v-if="dataLoading" class="muted">Загрузка данных...</div>
           <div v-if="dataError" class="error">{{ dataError }}</div>
 
-          <div v-if="tableDataRecords.length > 0 && activeTable" class="data-table-wrap">
+          <div v-if="tableDataRecords.length > 0 && selectedDataTable" class="data-table-wrap">
             <table class="data-table">
               <thead>
                 <tr>
                   <th>#</th>
-                  <th v-for="column in activeTable.columns" :key="column.key">{{ column.name }}</th>
+                  <th v-for="column in selectedDataTable.columns" :key="column.key">{{ column.name }}</th>
                   <th>Отправлено</th>
                   <th>Email</th>
                   <th>Действие</th>
@@ -1067,7 +1251,7 @@ onBeforeUnmount(() => {
               <tbody>
                 <tr v-for="(record, index) in tableDataRecords" :key="record.id">
                   <td>{{ dataPagination.skip + index + 1 }}</td>
-                  <td v-for="column in activeTable.columns" :key="column.key">
+                  <td v-for="column in selectedDataTable.columns" :key="column.key">
                     <span :title="JSON.stringify(record.data[column.key])">
                       {{ formatDataValue(record.data[column.key], column.type) }}
                     </span>
@@ -1082,7 +1266,7 @@ onBeforeUnmount(() => {
             </table>
           </div>
 
-          <div v-else-if="!dataLoading && activeTable" class="muted" style="text-align: center; padding: 20px;">
+          <div v-else-if="!dataLoading && selectedDataTable" class="muted" style="text-align: center; padding: 20px;">
             Нет записей в этой таблице
           </div>
 
@@ -1611,6 +1795,15 @@ form {
 .form-field-preview {
   display: grid;
   gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 8px;
+  cursor: pointer;
+}
+
+.form-field-preview.active {
+  border-color: #7ea4ad;
+  background: #f2f8f9;
 }
 
 .form-field-preview label {
@@ -1662,6 +1855,12 @@ form {
   color: var(--text-muted);
 }
 
+.field-table-label {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
 .form-config {
   display: grid;
   gap: 10px;
@@ -1681,6 +1880,11 @@ form {
   display: grid;
   gap: 2px;
   cursor: grab;
+}
+
+.form-fields-list li.active {
+  border-color: #7ea4ad;
+  background: #eef6f8;
 }
 
 .form-fields-list li:active {
