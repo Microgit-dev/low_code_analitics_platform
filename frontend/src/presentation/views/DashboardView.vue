@@ -2,18 +2,21 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
+import { FormBuilderUseCase } from '../../application/usecases/FormBuilderUseCase'
 import { TableSchemaUseCase } from '../../application/usecases/TableSchemaUseCase'
 import { WorkspaceUseCase } from '../../application/usecases/WorkspaceUseCase'
 import type { Workspace } from '../../domain/entities/Auth'
 import type { ColumnType, TableRelation, TableStructure } from '../../domain/entities/TableSchema'
+import type { FormConfiguration, FormField, WidgetType } from '../../domain/entities/FormBuilder'
 import { useAuthStore } from '../stores/authStore'
 
 const authStore = useAuthStore()
 const router = useRouter()
 const workspaceUseCase = new WorkspaceUseCase()
 const tableSchemaUseCase = new TableSchemaUseCase()
+const formBuilderUseCase = new FormBuilderUseCase(authStore.token || '')
 
-type WorkspaceTab = 'details' | 'tables'
+type WorkspaceTab = 'details' | 'tables' | 'forms' | 'data'
 type TablePosition = { x: number; y: number }
 
 const workspaces = ref<Workspace[]>([])
@@ -53,6 +56,19 @@ const relationSourceColumn = ref('')
 const relationTargetColumn = ref('')
 
 const dragState = ref<{ sourceTableId: number; columnKey: string } | null>(null)
+
+// Form Builder state
+const formConfigurations = ref<FormConfiguration[]>([])
+const selectedFormId = ref<number | null>(null)
+const formLoading = ref(false)
+const formError = ref('')
+const formFieldDragIndex = ref<number | null>(null)
+
+// Data Viewer state
+const tableDataRecords = ref<any[]>([])
+const dataLoading = ref(false)
+const dataError = ref('')
+const dataPagination = ref({ skip: 0, limit: 50, total: 0 })
 
 const selectedWorkspace = computed(() => {
   if (selectedWorkspaceId.value === null) return null
@@ -189,6 +205,9 @@ const selectWorkspace = async (workspaceId: number) => {
 const selectTable = (tableId: number) => {
   activeTableId.value = tableId
   selectedColumnRef.value = null
+  if (workspaceTab.value === 'forms') {
+    void loadForms()
+  }
 }
 
 const selectColumn = (tableId: number, columnKey: string) => {
@@ -393,6 +412,237 @@ const deleteRelation = async (relationId: number) => {
   await loadSchema()
 }
 
+const loadForms = async () => {
+  if (!authStore.token || !selectedWorkspace.value || !activeTable.value) {
+    formConfigurations.value = []
+    selectedFormId.value = null
+    return
+  }
+
+  formLoading.value = true
+  formError.value = ''
+  try {
+    const forms = await formBuilderUseCase.listForms(selectedWorkspace.value.id, activeTable.value.id)
+
+    let singleForm = forms[0] ?? null
+
+    if (!singleForm) {
+      const defaultFields: FormField[] = activeTable.value.columns.map((column) => ({
+        table_id: activeTable.value?.id,
+        column_key: column.key,
+        column_name: column.name,
+        field_label: column.name,
+        widget_type: mapWidgetTypeFromColumn(column.type),
+        required: column.required,
+        placeholder: '',
+        help_text: '',
+        widget_settings: { ...(column.settings ?? {}) }
+      }))
+
+      singleForm = await formBuilderUseCase.createForm(
+        selectedWorkspace.value.id,
+        activeTable.value.id,
+        `${activeTable.value.name} Form`,
+        '',
+        defaultFields,
+        false
+      )
+    }
+
+    formConfigurations.value = [singleForm]
+    selectedFormId.value = singleForm.id
+    syncMissingFieldsFromActiveTable()
+  } catch (error) {
+    formError.value = 'Не удалось загрузить формы'
+    console.error(error)
+  } finally {
+    formLoading.value = false
+  }
+}
+
+const selectedForm = computed(() => {
+  if (!selectedFormId.value) return null
+  return formConfigurations.value.find((f) => f.id === selectedFormId.value) ?? null
+})
+
+const getWidgetTypeLabel = (type: string): string => {
+  const labels: Record<string, string> = {
+    text_input: 'Текстовое поле',
+    textarea: 'Многострочный текст',
+    number_input: 'Числовое поле',
+    date_input: 'Дата',
+    datetime_input: 'Дата и время',
+    select: 'Выпадающий список',
+    checkbox: 'Чекбокс',
+    radio: 'Радио'
+  }
+  return labels[type] || type
+}
+
+const getFieldInputType = (widgetType: string): string => {
+  const typeMap: Record<string, string> = {
+    number_input: 'number',
+    date_input: 'date',
+    datetime_input: 'datetime-local'
+  }
+  return typeMap[widgetType] || 'text'
+}
+
+const mapWidgetTypeFromColumn = (columnType: ColumnType): WidgetType => {
+  if (columnType === 'number') return 'number_input'
+  if (columnType === 'date') return 'date_input'
+  if (columnType === 'datetime') return 'datetime_input'
+  if (columnType === 'enum') return 'select'
+  if (columnType === 'boolean') return 'checkbox'
+  return 'text_input'
+}
+
+const getFieldOptionsText = (field: FormField): string => {
+  const options = field.widget_settings?.options
+  if (!Array.isArray(options)) return ''
+  return options.map((item) => String(item)).join(', ')
+}
+
+const setFieldOptionsText = (field: FormField, value: string) => {
+  const options = value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+  field.widget_settings = {
+    ...(field.widget_settings ?? {}),
+    options
+  }
+}
+
+const startFieldDrag = (index: number) => {
+  formFieldDragIndex.value = index
+}
+
+const dropFieldAt = (targetIndex: number) => {
+  if (!selectedForm.value || formFieldDragIndex.value === null) return
+
+  const sourceIndex = formFieldDragIndex.value
+  formFieldDragIndex.value = null
+  if (sourceIndex === targetIndex) return
+
+  const fields = [...selectedForm.value.fields]
+  const [moved] = fields.splice(sourceIndex, 1)
+  fields.splice(targetIndex, 0, moved)
+  selectedForm.value.fields = fields
+}
+
+const syncMissingFieldsFromActiveTable = () => {
+  if (!selectedForm.value || !activeTable.value) return
+
+  const existingKeys = new Set(selectedForm.value.fields.map((field) => field.column_key))
+  const missingFields: FormField[] = activeTable.value.columns
+    .filter((column) => !existingKeys.has(column.key))
+    .map((column) => ({
+      table_id: activeTable.value?.id,
+      column_key: column.key,
+      column_name: column.name,
+      field_label: column.name,
+      widget_type: mapWidgetTypeFromColumn(column.type),
+      required: column.required,
+      placeholder: '',
+      help_text: '',
+      widget_settings: { ...(column.settings ?? {}) }
+    }))
+
+  if (missingFields.length === 0) return
+  selectedForm.value.fields = [...selectedForm.value.fields, ...missingFields]
+}
+
+const copyToClipboard = () => {
+  if (!selectedForm.value) return
+  const text = `${window.location.origin}/form/${selectedForm.value.id}`
+  navigator.clipboard.writeText(text).then(() => {
+    alert('Ссылка скопирована!')
+  })
+}
+
+const goToFormsTab = async () => {
+  workspaceTab.value = 'forms'
+  await loadForms()
+}
+
+const saveSingleForm = async () => {
+  if (!selectedForm.value || !selectedWorkspace.value) return
+
+  await formBuilderUseCase.updateForm(
+    selectedWorkspace.value.id,
+    selectedForm.value.id,
+    selectedForm.value.name,
+    selectedForm.value.description,
+    selectedForm.value.fields,
+    selectedForm.value.is_published,
+    selectedForm.value.collect_email
+  )
+
+  await loadForms()
+}
+
+const loadTableData = async () => {
+  if (!authStore.token || !selectedWorkspace.value || !activeTable.value) {
+    tableDataRecords.value = []
+    return
+  }
+
+  dataLoading.value = true
+  dataError.value = ''
+  try {
+    const result = await formBuilderUseCase.listTableData(
+      selectedWorkspace.value.id,
+      activeTable.value.id,
+      dataPagination.value.skip,
+      dataPagination.value.limit
+    )
+    tableDataRecords.value = result.items
+    dataPagination.value = {
+      skip: result.skip,
+      limit: result.limit,
+      total: result.total
+    }
+  } catch (error) {
+    dataError.value = 'Не удалось загрузить данные'
+    console.error(error)
+  } finally {
+    dataLoading.value = false
+  }
+}
+
+const currentPage = computed(() => Math.floor(dataPagination.value.skip / dataPagination.value.limit) + 1)
+const totalPages = computed(() => Math.ceil(dataPagination.value.total / dataPagination.value.limit) || 1)
+
+const goToPage = async (page: number) => {
+  dataPagination.value.skip = (page - 1) * dataPagination.value.limit
+  await loadTableData()
+}
+
+const deleteDataRecord = async (recordId: number) => {
+  if (!authStore.token || !selectedWorkspace.value || !activeTable.value) return
+  if (!window.confirm('Удалить эту запись?')) return
+
+  try {
+    await formBuilderUseCase.deleteTableDataRecord(
+      selectedWorkspace.value.id,
+      activeTable.value.id,
+      recordId
+    )
+    await loadTableData()
+  } catch (error) {
+    alert('Ошибка при удалении записи')
+  }
+}
+
+const formatDataValue = (value: unknown, columnType: ColumnType): string => {
+  if (value === null || value === undefined) return '—'
+  if (typeof value === 'boolean') return value ? 'Да' : 'Нет'
+  if (typeof value === 'object') return JSON.stringify(value).substring(0, 50) + '...'
+  return String(value).substring(0, 80)
+}
+
 const formatDate = (value: string): string => {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
@@ -471,6 +721,8 @@ onBeforeUnmount(() => {
         <div class="workspace-tabs">
           <button class="tab" :class="{ active: workspaceTab === 'details' }" @click="workspaceTab = 'details'">Детали</button>
           <button class="tab" :class="{ active: workspaceTab === 'tables' }" @click="workspaceTab = 'tables'">Таблицы</button>
+          <button class="tab" :class="{ active: workspaceTab === 'forms' }" @click="goToFormsTab">Форма</button>
+          <button class="tab" :class="{ active: workspaceTab === 'data' }" @click="workspaceTab = 'data'; activeTable && loadTableData()">Данные</button>
         </div>
 
         <div class="actions-row" v-if="workspaceTab === 'details'">
@@ -645,6 +897,199 @@ onBeforeUnmount(() => {
                 </ul>
               </section>
             </aside>
+          </div>
+        </section>
+
+        <section v-if="workspaceTab === 'forms'" class="forms-section">
+          <div class="forms-header">
+            <h3>Конструктор форм</h3>
+            <p>Создавайте формы на основе структур таблиц и собирайте записи от пользователей.</p>
+          </div>
+
+          <div v-if="formLoading" class="muted">Загрузка форм...</div>
+          <div v-if="formError" class="error">{{ formError }}</div>
+
+          <div v-if="selectedForm" class="form-editor">
+            <article class="form-preview">
+              <header class="form-header">
+                <h4>{{ selectedForm.name }}</h4>
+                <p>{{ selectedForm.description }}</p>
+              </header>
+
+              <form @submit.prevent>
+                <div v-for="field in selectedForm.fields" :key="field.column_key" class="form-field-preview">
+                  <label :for="`field-${field.column_key}`">
+                    {{ field.field_label }}
+                    <span v-if="field.required" class="required">*</span>
+                  </label>
+                  <input
+                    v-if="['text_input', 'number_input', 'date_input', 'datetime_input'].includes(field.widget_type)"
+                    :id="`field-${field.column_key}`"
+                    :type="getFieldInputType(field.widget_type)"
+                    :placeholder="field.placeholder"
+                    :required="field.required"
+                  />
+                  <textarea
+                    v-else-if="field.widget_type === 'textarea'"
+                    :id="`field-${field.column_key}`"
+                    :placeholder="field.placeholder"
+                    :required="field.required"
+                  />
+                  <select
+                    v-else-if="field.widget_type === 'select' && field.widget_settings.options"
+                    :id="`field-${field.column_key}`"
+                    :required="field.required"
+                  >
+                    <option value="">{{ field.placeholder || 'Выберите...' }}</option>
+                    <option v-for="opt in field.widget_settings.options" :key="opt" :value="opt">{{ opt }}</option>
+                  </select>
+                  <div v-else-if="field.widget_type === 'checkbox'" class="checkbox-wrapper">
+                    <input :id="`field-${field.column_key}`" type="checkbox" :required="field.required" />
+                  </div>
+                  <div v-else-if="field.widget_type === 'radio' && field.widget_settings.options" class="radio-wrapper">
+                    <label v-for="opt in field.widget_settings.options" :key="opt">
+                      <input type="radio" :name="`field-${field.column_key}`" :value="opt" :required="field.required" />
+                      {{ opt }}
+                    </label>
+                  </div>
+                  <p v-if="field.help_text" class="help-text">{{ field.help_text }}</p>
+                </div>
+              </form>
+            </article>
+
+            <aside class="form-config">
+              <section class="object-card">
+                <h4>Настройки формы</h4>
+                <div>
+                  <label>Название</label>
+                  <input v-model="selectedForm.name" />
+                </div>
+                <div>
+                  <label>Описание</label>
+                  <input v-model="selectedForm.description" />
+                </div>
+                <label class="checkbox-inline">
+                  <input v-model="selectedForm.is_published" type="checkbox" /> Опубликована
+                </label>
+                <label class="checkbox-inline">
+                  <input v-model="selectedForm.collect_email" type="checkbox" /> Собирать email
+                </label>
+                <button class="small" @click="saveSingleForm">Сохранить форму</button>
+              </section>
+
+              <section class="object-card">
+                <h4>Поля ({{ selectedForm.fields.length }})</h4>
+                <button class="small" @click="syncMissingFieldsFromActiveTable">Добавить недостающие поля таблицы</button>
+                <ul v-if="selectedForm.fields.length > 0" class="form-fields-list">
+                  <li
+                    v-for="(field, index) in selectedForm.fields"
+                    :key="`${field.table_id ?? 'default'}-${field.column_key}`"
+                    draggable="true"
+                    @dragstart="startFieldDrag(index)"
+                    @dragover.prevent
+                    @drop.prevent="dropFieldAt(index)"
+                  >
+                    <div>
+                      <strong>{{ field.field_label }}</strong>
+                      <span>{{ getWidgetTypeLabel(field.widget_type) }}</span>
+                    </div>
+                    <div class="field-settings-row">
+                      <select v-model="field.widget_type">
+                        <option value="text_input">text_input</option>
+                        <option value="textarea">textarea</option>
+                        <option value="number_input">number_input</option>
+                        <option value="date_input">date_input</option>
+                        <option value="datetime_input">datetime_input</option>
+                        <option value="select">select</option>
+                        <option value="checkbox">checkbox</option>
+                        <option value="radio">radio</option>
+                      </select>
+                      <select v-model.number="field.table_id">
+                        <option :value="null">Таблица по умолчанию</option>
+                        <option v-for="table in allTableOptions" :key="`ff-t-${table.id}-${field.column_key}`" :value="table.id">
+                          {{ table.name }}
+                        </option>
+                      </select>
+                      <input v-model="field.field_label" placeholder="Заголовок поля" />
+                      <input v-model="field.placeholder" placeholder="Placeholder" />
+                      <input v-model="field.help_text" placeholder="Подсказка" />
+                      <input
+                        v-if="field.widget_type === 'select' || field.widget_type === 'radio'"
+                        :value="getFieldOptionsText(field)"
+                        placeholder="Опции через запятую"
+                        @input="setFieldOptionsText(field, ($event.target as HTMLInputElement).value)"
+                      />
+                      <label class="checkbox-inline">
+                        <input v-model="field.required" type="checkbox" /> Обязательное
+                      </label>
+                    </div>
+                  </li>
+                </ul>
+                <p v-else class="muted">Нет полей</p>
+              </section>
+
+              <section class="object-card">
+                <h4>Поделиться</h4>
+                <p class="muted">Скопируйте ссылку для отправки пользователям:</p>
+                <div class="share-link">
+                  <code>/form/{{ selectedForm.id }}</code>
+                  <button class="small" @click="copyToClipboard">Копировать</button>
+                </div>
+              </section>
+            </aside>
+          </div>
+
+          <div v-else class="muted" style="text-align: center; padding: 20px;">
+            Выберите таблицу во вкладке "Таблицы", затем откройте вкладку "Форма"
+          </div>
+        </section>
+
+        <section v-if="workspaceTab === 'data'" class="data-section">
+          <div class="data-header">
+            <h3>{{ activeTable ? activeTable.name : 'Таблица' }}: Данные</h3>
+            <p v-if="activeTable">Показано {{ tableDataRecords.length }} из {{ dataPagination.total }} записей</p>
+          </div>
+
+          <div v-if="dataLoading" class="muted">Загрузка данных...</div>
+          <div v-if="dataError" class="error">{{ dataError }}</div>
+
+          <div v-if="tableDataRecords.length > 0 && activeTable" class="data-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th v-for="column in activeTable.columns" :key="column.key">{{ column.name }}</th>
+                  <th>Отправлено</th>
+                  <th>Email</th>
+                  <th>Действие</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(record, index) in tableDataRecords" :key="record.id">
+                  <td>{{ dataPagination.skip + index + 1 }}</td>
+                  <td v-for="column in activeTable.columns" :key="column.key">
+                    <span :title="JSON.stringify(record.data[column.key])">
+                      {{ formatDataValue(record.data[column.key], column.type) }}
+                    </span>
+                  </td>
+                  <td>{{ formatDate(record.submitted_at || record.created_at) }}</td>
+                  <td>{{ record.submitter_email || '—' }}</td>
+                  <td>
+                    <button class="small danger" @click="deleteDataRecord(record.id)">Удалить</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div v-else-if="!dataLoading && activeTable" class="muted" style="text-align: center; padding: 20px;">
+            Нет записей в этой таблице
+          </div>
+
+          <div v-if="totalPages > 1" class="pagination">
+            <button @click="goToPage(currentPage - 1)" :disabled="currentPage === 1">← Назад</button>
+            <span>Страница {{ currentPage }} из {{ totalPages }}</span>
+            <button @click="goToPage(currentPage + 1)" :disabled="currentPage === totalPages">Вперёд →</button>
           </div>
         </section>
 
@@ -1080,6 +1525,294 @@ dd {
   color: var(--danger);
 }
 
+/* Form Builder Styles */
+.forms-section {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  background: var(--bg-soft);
+  display: grid;
+  gap: 14px;
+}
+
+.forms-header p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+}
+
+.forms-list ul {
+  display: grid;
+  gap: 6px;
+}
+
+.form-link {
+  width: 100%;
+  text-align: left;
+  background: #dbe8ea;
+  color: var(--text-main);
+  border: 1px solid transparent;
+  padding: 10px;
+  border-radius: 10px;
+  display: grid;
+  gap: 4px;
+}
+
+.form-link.active {
+  background: linear-gradient(135deg, #3c6f7f, #2b8f86);
+  color: #f0fffd;
+  border-color: #70ada5;
+}
+
+.form-link span {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.form-link.active span {
+  color: #c6f7f0;
+}
+
+.form-editor {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.form-preview {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px;
+  background: #fafbfc;
+}
+
+.form-header {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.form-header h4 {
+  margin: 0 0 4px;
+}
+
+.form-header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+form {
+  display: grid;
+  gap: 14px;
+}
+
+.form-field-preview {
+  display: grid;
+  gap: 6px;
+}
+
+.form-field-preview label {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text-main);
+}
+
+.required {
+  color: var(--danger);
+}
+
+.form-field-preview input,
+.form-field-preview textarea,
+.form-field-preview select {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 10px 12px;
+  border-radius: 8px;
+  color: var(--text-main);
+  font: inherit;
+}
+
+.form-field-preview input:focus,
+.form-field-preview textarea:focus,
+.form-field-preview select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.checkbox-wrapper,
+.radio-wrapper {
+  display: flex;
+  gap: 8px;
+  flex-direction: column;
+}
+
+.radio-wrapper label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-weight: normal;
+}
+
+.help-text {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.form-config {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.form-fields-list {
+  display: grid;
+  gap: 6px;
+}
+
+.form-fields-list li {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  background: #f7fbfc;
+  display: grid;
+  gap: 2px;
+  cursor: grab;
+}
+
+.form-fields-list li:active {
+  cursor: grabbing;
+}
+
+.form-fields-list li:hover {
+  border-color: #7ea4ad;
+}
+
+.form-fields-list div {
+  display: grid;
+}
+
+.field-settings-row {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.form-fields-list strong {
+  font-size: 0.9rem;
+}
+
+.form-fields-list span {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.share-link {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: #f7fbfc;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.share-link code {
+  flex: 1;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+/* Data Viewer Styles */
+.data-section {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  background: var(--bg-soft);
+  display: grid;
+  gap: 14px;
+}
+
+.data-header p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+}
+
+.data-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fafbfc;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.data-table thead {
+  background: #f0f4f5;
+  border-bottom: 1px solid var(--line);
+}
+
+.data-table th {
+  text-align: left;
+  padding: 10px 12px;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text-main);
+}
+
+.data-table tbody tr:hover {
+  background-color: #f7fbfc;
+}
+
+.data-table td span {
+  display: inline-block;
+  max-width: 150px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pagination {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: #f0f4f5;
+  border-radius: 10px;
+}
+
+.pagination button {
+  padding: 8px 12px;
+  font-size: 0.9rem;
+}
+
+.pagination button:disabled {
+  background: #d9e3e5;
+  color: #7a8c92;
+  cursor: not-allowed;
+}
+
+.pagination span {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
 @media (max-width: 1100px) {
   .create-table {
     grid-template-columns: 1fr;
@@ -1091,6 +1824,10 @@ dd {
 
   .schema-canvas {
     min-width: 100%;
+  }
+
+  .form-editor {
+    grid-template-columns: 1fr;
   }
 }
 
