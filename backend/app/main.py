@@ -1,7 +1,10 @@
+import logging
 import time
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 
 from app.config import settings
@@ -25,6 +28,7 @@ from app.interfaces.api.v1.routes.workspace import router as workspace_router
 
 
 app = FastAPI(title=settings.app_name, debug=settings.debug)
+logger = logging.getLogger("uvicorn.error")
 
 app.add_middleware(
     CORSMiddleware,
@@ -33,6 +37,39 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(
+        "HTTP request method=%s path=%s query=%s content_type=%s content_length=%s",
+        request.method,
+        request.url.path,
+        request.url.query,
+        request.headers.get("content-type"),
+        request.headers.get("content-length"),
+    )
+    response = await call_next(request)
+    logger.info(
+        "HTTP response method=%s path=%s status=%s",
+        request.method,
+        request.url.path,
+        response.status_code,
+    )
+    return response
+
+
+@app.exception_handler(RequestValidationError)
+async def request_validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.error(
+        "Validation error method=%s path=%s query=%s content_type=%s errors=%s",
+        request.method,
+        request.url.path,
+        request.url.query,
+        request.headers.get("content-type"),
+        exc.errors(),
+    )
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 
 @app.on_event("startup")
