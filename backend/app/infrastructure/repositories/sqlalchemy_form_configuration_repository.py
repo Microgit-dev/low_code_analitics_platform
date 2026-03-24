@@ -12,6 +12,7 @@ from app.domain.repositories.form_configuration_repository import (
 )
 from app.infrastructure.db.models.form_configuration_model import FormConfigurationModel
 from app.infrastructure.db.models.table_data_record_model import TableDataRecordModel
+from app.infrastructure.db.models.table_structure_model import TableStructureModel
 from app.infrastructure.db.models.workspace_model import WorkspaceModel
 
 
@@ -197,6 +198,98 @@ class SQLAlchemyTableDataRecordRepository(TableDataRecordRepository):
         )
         return self.session.execute(stmt).scalar() is not None
 
+    def _is_empty_value(self, value: object) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, str):
+            return value.strip() == ""
+        if isinstance(value, (list, tuple, dict, set)):
+            return len(value) == 0
+        return False
+
+    def _next_auto_increment_value(
+        self,
+        workspace_id: int,
+        table_id: int,
+        column_key: str,
+        start: int,
+        step: int,
+    ) -> int:
+        stmt = select(TableDataRecordModel.data_json).where(
+            TableDataRecordModel.workspace_id == workspace_id,
+            TableDataRecordModel.table_id == table_id,
+        )
+        rows = self.session.execute(stmt).scalars().all()
+
+        max_value: int | None = None
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            raw = row.get(column_key)
+            if isinstance(raw, bool):
+                continue
+
+            value: int | None = None
+            if isinstance(raw, int):
+                value = raw
+            elif isinstance(raw, str) and raw.isdigit():
+                value = int(raw)
+
+            if value is None:
+                continue
+            if max_value is None or value > max_value:
+                max_value = value
+
+        if max_value is None or max_value < start:
+            return start
+        return max_value + step
+
+    def _apply_number_auto_increment(self, workspace_id: int, table_id: int, data: dict) -> dict:
+        table = self.session.execute(
+            select(TableStructureModel).where(
+                TableStructureModel.id == table_id,
+                TableStructureModel.workspace_id == workspace_id,
+            )
+        ).scalar()
+        if not table:
+            return deepcopy(data)
+
+        payload = deepcopy(data)
+        for column in table.columns_json or []:
+            if not isinstance(column, dict):
+                continue
+            if column.get("type") != "number":
+                continue
+
+            settings = column.get("settings")
+            if not isinstance(settings, dict):
+                continue
+            if settings.get("autoIncrement") is not True:
+                continue
+
+            key = column.get("key")
+            if not isinstance(key, str) or not key:
+                continue
+
+            current_value = payload.get(key)
+            if not self._is_empty_value(current_value):
+                continue
+
+            start_raw = settings.get("autoIncrementStart", 1)
+            step_raw = settings.get("autoIncrementStep", 1)
+            start = start_raw if isinstance(start_raw, int) else 1
+            step = step_raw if isinstance(step_raw, int) and step_raw > 0 else 1
+
+            payload[key] = self._next_auto_increment_value(
+                workspace_id=workspace_id,
+                table_id=table_id,
+                column_key=key,
+                start=start,
+                step=step,
+            )
+
+        return payload
+
     def list_by_table(
         self, workspace_id: int, table_id: int, skip: int = 0, limit: int = 50
     ) -> tuple[List[TableDataRecord], int]:
@@ -260,10 +353,11 @@ class SQLAlchemyTableDataRecordRepository(TableDataRecordRepository):
         self, workspace_id: int, table_id: int, data: dict, submitter_email: Optional[str] = None
     ) -> TableDataRecord:
         # Не проверяем owner здесь, т.к. это публичный endpoint
+        normalized_data = self._apply_number_auto_increment(workspace_id, table_id, data)
         db_record = TableDataRecordModel(
             workspace_id=workspace_id,
             table_id=table_id,
-            data_json=deepcopy(data),
+            data_json=deepcopy(normalized_data),
             submitter_email=submitter_email,
             submitted_at=func.now(),
         )

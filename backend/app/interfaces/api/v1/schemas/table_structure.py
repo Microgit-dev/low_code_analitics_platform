@@ -27,6 +27,25 @@ class ColumnDefinition(BaseModel):
 
     @model_validator(mode="after")
     def validate_settings(self) -> "ColumnDefinition":
+        if self.type == "number":
+            auto_increment = self.settings.get("autoIncrement", False)
+            is_id = self.settings.get("isId", False)
+
+            if not isinstance(auto_increment, bool):
+                raise ValueError("number type settings.autoIncrement must be boolean")
+            if not isinstance(is_id, bool):
+                raise ValueError("number type settings.isId must be boolean")
+
+            if is_id and not auto_increment:
+                raise ValueError("number id column requires settings.autoIncrement=true")
+
+            start = self.settings.get("autoIncrementStart", 1)
+            step = self.settings.get("autoIncrementStep", 1)
+            if not isinstance(start, int):
+                raise ValueError("number autoIncrementStart must be integer")
+            if not isinstance(step, int) or step <= 0:
+                raise ValueError("number autoIncrementStep must be positive integer")
+
         if self.type == "enum":
             options = self.settings.get("options")
             if not isinstance(options, list) or not options or not all(isinstance(item, str) and item for item in options):

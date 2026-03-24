@@ -48,6 +48,10 @@ const newColumnType = ref<ColumnType>('text')
 const newColumnRequired = ref(false)
 const newColumnEnumOptions = ref('')
 const newColumnListItemType = ref<'text' | 'number' | 'boolean' | 'enum'>('text')
+const newColumnNumberIsId = ref(false)
+const newColumnNumberAutoIncrement = ref(false)
+const newColumnNumberStart = ref(1)
+const newColumnNumberStep = ref(1)
 const newColumnGeoSrid = ref(4326)
 const newColumnGeoAllowHoles = ref(false)
 
@@ -375,6 +379,18 @@ const slugify = (value: string): string =>
     .slice(0, 60)
 
 const buildColumnSettings = (): Record<string, unknown> => {
+  if (newColumnType.value === 'number') {
+    const settings: Record<string, unknown> = {
+      autoIncrement: newColumnNumberAutoIncrement.value,
+      autoIncrementStart: Math.max(1, Number(newColumnNumberStart.value) || 1),
+      autoIncrementStep: Math.max(1, Number(newColumnNumberStep.value) || 1)
+    }
+    if (newColumnNumberIsId.value) {
+      settings.isId = true
+    }
+    return settings
+  }
+
   if (newColumnType.value === 'enum') {
     return {
       options: newColumnEnumOptions.value
@@ -436,6 +452,10 @@ const addColumnToActiveTable = async () => {
   newColumnRequired.value = false
   newColumnEnumOptions.value = ''
   newColumnListItemType.value = 'text'
+  newColumnNumberIsId.value = false
+  newColumnNumberAutoIncrement.value = false
+  newColumnNumberStart.value = 1
+  newColumnNumberStep.value = 1
   newColumnGeoSrid.value = 4326
   newColumnGeoAllowHoles.value = false
 
@@ -449,6 +469,44 @@ const removeColumnFromActiveTable = async (columnKey: string) => {
     selectedColumnRef.value = null
   }
   await saveTable(activeTable.value)
+}
+
+const getSelectedNumberSetting = <T,>(key: string, fallback: T): T => {
+  if (!selectedColumn.value || selectedColumn.value.type !== 'number') return fallback
+  const raw = selectedColumn.value.settings?.[key]
+  if (typeof fallback === 'boolean') {
+    return (Boolean(raw) as T)
+  }
+  if (typeof fallback === 'number') {
+    return ((typeof raw === 'number' ? raw : fallback) as T)
+  }
+  return fallback
+}
+
+const setSelectedNumberSetting = (key: string, value: unknown) => {
+  if (!selectedColumn.value || selectedColumn.value.type !== 'number') return
+  selectedColumn.value.settings = {
+    ...(selectedColumn.value.settings ?? {}),
+    [key]: value
+  }
+}
+
+const onNewColumnNumberIsIdChange = (checked: boolean) => {
+  newColumnNumberIsId.value = checked
+  if (checked) {
+    newColumnNumberAutoIncrement.value = true
+    newColumnRequired.value = true
+  }
+}
+
+const onSelectedColumnIsIdChange = (checked: boolean) => {
+  setSelectedNumberSetting('isId', checked)
+  if (checked) {
+    setSelectedNumberSetting('autoIncrement', true)
+    if (selectedColumn.value) {
+      selectedColumn.value.required = true
+    }
+  }
 }
 
 const startDraggingColumn = (sourceTableId: number, columnKey: string) => {
@@ -1383,6 +1441,36 @@ onBeforeUnmount(() => {
                   <input v-if="newColumnListItemType === 'enum'" v-model="newColumnEnumOptions" placeholder="List enum options" />
                 </div>
 
+                <div v-if="newColumnType === 'number'" class="type-settings">
+                  <label class="checkbox-inline">
+                    <input
+                      :checked="newColumnNumberIsId"
+                      type="checkbox"
+                      @change="onNewColumnNumberIsIdChange(($event.target as HTMLInputElement).checked)"
+                    />
+                    Использовать как ID
+                  </label>
+                  <label class="checkbox-inline">
+                    <input v-model="newColumnNumberAutoIncrement" type="checkbox" /> Автоинкремент
+                  </label>
+                  <label class="setting-label">Стартовое значение</label>
+                  <input
+                    v-model.number="newColumnNumberStart"
+                    type="number"
+                    min="1"
+                    placeholder="Стартовое значение"
+                    :disabled="!newColumnNumberAutoIncrement"
+                  />
+                  <label class="setting-label">Шаг инкремента</label>
+                  <input
+                    v-model.number="newColumnNumberStep"
+                    type="number"
+                    min="1"
+                    placeholder="Шаг"
+                    :disabled="!newColumnNumberAutoIncrement"
+                  />
+                </div>
+
                 <div v-if="newColumnType === 'geoPoint' || newColumnType === 'geoPolygon'" class="type-settings">
                   <input v-model.number="newColumnGeoSrid" type="number" min="1" placeholder="SRID" />
                   <label v-if="newColumnType === 'geoPolygon'" class="checkbox-inline">
@@ -1410,6 +1498,42 @@ onBeforeUnmount(() => {
                   <option value="geoPolygon">geoPolygon</option>
                 </select>
                 <label class="checkbox-inline"><input v-model="selectedColumn.required" type="checkbox" />required</label>
+                <div v-if="selectedColumn.type === 'number'" class="type-settings">
+                  <label class="checkbox-inline">
+                    <input
+                      :checked="getSelectedNumberSetting('isId', false)"
+                      type="checkbox"
+                      @change="onSelectedColumnIsIdChange(($event.target as HTMLInputElement).checked)"
+                    />
+                    Использовать как ID
+                  </label>
+                  <label class="checkbox-inline">
+                    <input
+                      :checked="getSelectedNumberSetting('autoIncrement', false)"
+                      type="checkbox"
+                      @change="setSelectedNumberSetting('autoIncrement', ($event.target as HTMLInputElement).checked)"
+                    />
+                    Автоинкремент
+                  </label>
+                  <label class="setting-label">Стартовое значение</label>
+                  <input
+                    :value="getSelectedNumberSetting('autoIncrementStart', 1)"
+                    type="number"
+                    min="1"
+                    placeholder="Стартовое значение"
+                    :disabled="!getSelectedNumberSetting('autoIncrement', false)"
+                    @input="setSelectedNumberSetting('autoIncrementStart', Math.max(1, Number(($event.target as HTMLInputElement).value) || 1))"
+                  />
+                  <label class="setting-label">Шаг инкремента</label>
+                  <input
+                    :value="getSelectedNumberSetting('autoIncrementStep', 1)"
+                    type="number"
+                    min="1"
+                    placeholder="Шаг"
+                    :disabled="!getSelectedNumberSetting('autoIncrement', false)"
+                    @input="setSelectedNumberSetting('autoIncrementStep', Math.max(1, Number(($event.target as HTMLInputElement).value) || 1))"
+                  />
+                </div>
                 <div class="row-actions">
                   <button class="small" @click="saveSelectedColumn">Сохранить</button>
                   <button class="small danger" @click="removeColumnFromActiveTable(selectedColumn.key)">Удалить</button>
@@ -2284,6 +2408,11 @@ ul {
   display: inline-flex;
   gap: 6px;
   align-items: center;
+  color: var(--text-muted);
+}
+
+.setting-label {
+  font-size: 0.84rem;
   color: var(--text-muted);
 }
 
