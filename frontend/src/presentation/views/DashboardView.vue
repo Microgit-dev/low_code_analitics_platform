@@ -93,6 +93,13 @@ const reportRecentLimit = ref(10)
 const reportExcelColumns = ref<Array<{ key: string; label: string; enabled: boolean }>>([])
 const reportMetrics = ref<DashboardMetricConfig[]>([])
 const reportCharts = ref<DashboardChartConfig[]>([])
+const templateModalOpen = ref(false)
+const templateTableId = ref<number | null>(null)
+const templateDragActive = ref(false)
+const templateUploading = ref(false)
+const templateError = ref('')
+const templateFileName = ref('')
+const templateFileInput = ref<HTMLInputElement | null>(null)
 
 const selectedWorkspace = computed(() => {
   if (selectedWorkspaceId.value === null) return null
@@ -862,6 +869,7 @@ const loadReports = async () => {
 const goToReportsTab = async () => {
   workspaceTab.value = 'reports'
   reportEditorOpen.value = false
+  templateModalOpen.value = false
   await loadReports()
 }
 
@@ -1030,6 +1038,132 @@ const downloadReport = async (reportId: number) => {
   anchor.click()
   document.body.removeChild(anchor)
   window.URL.revokeObjectURL(url)
+}
+
+const resetTemplateModalState = () => {
+  templateDragActive.value = false
+  templateUploading.value = false
+  templateError.value = ''
+  templateFileName.value = ''
+}
+
+const openTemplateModal = () => {
+  templateModalOpen.value = true
+  resetTemplateModalState()
+  templateTableId.value = activeTable.value?.id ?? tableStructures.value[0]?.id ?? null
+}
+
+const closeTemplateModal = () => {
+  if (templateUploading.value) return
+  templateModalOpen.value = false
+  resetTemplateModalState()
+}
+
+const isOdtFile = (file: File): boolean =>
+  file.name.toLowerCase().endsWith('.odt') || file.type === 'application/vnd.oasis.opendocument.text'
+
+const saveBlob = (blob: Blob, filename: string) => {
+  const url = window.URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+  window.URL.revokeObjectURL(url)
+}
+
+const extractTemplateApiError = (error: any): string => {
+  const data = error?.response?.data
+  if (typeof data === 'string' && data.trim()) return data
+
+  const detail = data?.detail
+  if (typeof detail === 'string' && detail.trim()) return detail
+
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0]
+    if (typeof first === 'string') return first
+    if (first && typeof first === 'object') {
+      const location = Array.isArray(first.loc) ? first.loc.join('.') : 'request'
+      const message = typeof first.msg === 'string' ? first.msg : 'Validation error'
+      return `${location}: ${message}`
+    }
+    return 'Validation error'
+  }
+
+  if (typeof error?.message === 'string' && error.message.trim()) return error.message
+  return 'Не удалось обработать шаблон. Проверьте формат {{ aggregation_func(key) }}.'
+}
+
+const processTemplateFile = async (file: File) => {
+  if (!selectedWorkspace.value || !templateTableId.value) {
+    templateError.value = 'Выберите таблицу, по которой нужно считать агрегаты.'
+    return
+  }
+  if (!isOdtFile(file)) {
+    templateError.value = 'Нужен файл в формате .odt'
+    return
+  }
+
+  templateUploading.value = true
+  templateError.value = ''
+  templateFileName.value = file.name
+
+  let completed = false
+  try {
+    const result = await reportUseCase.calculateByTemplate(selectedWorkspace.value.id, templateTableId.value, file)
+    const normalizedName = file.name.toLowerCase().endsWith('.odt')
+      ? file.name.slice(0, -4)
+      : file.name
+    saveBlob(result, `${normalizedName}_calculated.odt`)
+    completed = true
+  } catch (error: any) {
+    console.error('Template processing request failed', {
+      status: error?.response?.status,
+      data: error?.response?.data
+    })
+    templateError.value = extractTemplateApiError(error)
+  } finally {
+    templateUploading.value = false
+  }
+
+  if (completed) {
+    closeTemplateModal()
+  }
+}
+
+const onTemplateDragOver = (event: DragEvent) => {
+  event.preventDefault()
+  if (templateUploading.value) return
+  templateDragActive.value = true
+}
+
+const onTemplateDragLeave = (event: DragEvent) => {
+  event.preventDefault()
+  templateDragActive.value = false
+}
+
+const onTemplateDrop = async (event: DragEvent) => {
+  event.preventDefault()
+  templateDragActive.value = false
+  if (templateUploading.value) return
+
+  const file = event.dataTransfer?.files?.[0]
+  if (!file) return
+  await processTemplateFile(file)
+}
+
+const openTemplateFilePicker = () => {
+  if (templateUploading.value) return
+  templateFileInput.value?.click()
+}
+
+const onTemplateFileChange = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  await processTemplateFile(file)
 }
 
 const deleteDataRecord = async (recordId: number) => {
@@ -1556,7 +1690,10 @@ onBeforeUnmount(() => {
               <h3>Отчеты</h3>
               <p>Создавайте Excel-выгрузки и публичные дашборды с настройками.</p>
             </div>
-            <button class="small" @click="createReport">Новый отчет</button>
+            <div class="reports-header-actions">
+              <button class="small ghost" @click="openTemplateModal">Посчитать по шаблону</button>
+              <button class="small" @click="createReport">Новый отчет</button>
+            </div>
           </div>
 
           <div v-if="reportsLoading" class="muted">Загрузка отчетов...</div>
@@ -1725,6 +1862,53 @@ onBeforeUnmount(() => {
               <button class="small ghost" @click="reportEditorOpen = false">Закрыть</button>
             </div>
           </article>
+
+          <div v-if="templateModalOpen" class="template-modal-backdrop" @click.self="closeTemplateModal">
+            <article class="template-modal">
+              <header class="template-modal-header">
+                <h4>Посчитать по шаблону</h4>
+                <button class="small ghost" :disabled="templateUploading" @click="closeTemplateModal">Закрыть</button>
+              </header>
+
+              <p class="muted" v-pre>
+                Поддерживаемые выражения в `.odt`: {{ count(key) }}, {{ sum(key) }}, {{ avg(key) }}, {{ min(key) }},
+                {{ max(key) }}.
+              </p>
+
+              <label>Таблица источника</label>
+              <select v-model.number="templateTableId" :disabled="templateUploading">
+                <option :value="null">Выберите таблицу</option>
+                <option v-for="table in allTableOptions" :key="`template-table-${table.id}`" :value="table.id">
+                  {{ table.name }}
+                </option>
+              </select>
+
+              <div
+                class="template-dropzone"
+                :class="{ active: templateDragActive, disabled: templateUploading }"
+                @dragover="onTemplateDragOver"
+                @dragleave="onTemplateDragLeave"
+                @drop="onTemplateDrop"
+              >
+                <p>{{ templateUploading ? 'Обрабатываем шаблон...' : 'Перетащите сюда .odt файл' }}</p>
+                <p class="muted">или</p>
+                <button class="small" :disabled="templateUploading" @click="openTemplateFilePicker">
+                  Выбрать файл
+                </button>
+                <p v-if="templateFileName" class="muted">Текущий файл: {{ templateFileName }}</p>
+              </div>
+
+              <input
+                ref="templateFileInput"
+                class="template-file-input"
+                type="file"
+                accept=".odt,application/vnd.oasis.opendocument.text"
+                @change="onTemplateFileChange"
+              />
+
+              <p v-if="templateError" class="error">{{ templateError }}</p>
+            </article>
+          </div>
         </section>
 
         <section class="info-grid" v-if="workspaceTab === 'details'">
@@ -2490,6 +2674,13 @@ form {
   color: var(--text-muted);
 }
 
+.reports-header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .reports-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -2615,6 +2806,61 @@ form {
   gap: 8px;
 }
 
+.template-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(25, 48, 57, 0.4);
+  display: grid;
+  place-items: center;
+  z-index: 30;
+  padding: 16px;
+}
+
+.template-modal {
+  width: min(560px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #f8fcfc;
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.template-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.template-dropzone {
+  border: 2px dashed #84a7ae;
+  border-radius: 12px;
+  background: #eef6f8;
+  padding: 18px;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  text-align: center;
+}
+
+.template-dropzone.active {
+  border-color: #2b8f86;
+  background: #e4f6f1;
+}
+
+.template-dropzone.disabled {
+  opacity: 0.7;
+}
+
+.template-dropzone p {
+  margin: 0;
+}
+
+.template-file-input {
+  display: none;
+}
+
 @media (max-width: 1100px) {
   .create-table {
     grid-template-columns: 1fr;
@@ -2637,6 +2883,15 @@ form {
   .chart-row,
   .excel-column-row {
     grid-template-columns: 1fr;
+  }
+
+  .reports-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .reports-header-actions {
+    justify-content: flex-start;
   }
 }
 
