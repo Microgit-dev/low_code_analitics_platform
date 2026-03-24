@@ -13,6 +13,14 @@ import type { ColumnType, TableRelation, TableStructure } from '../../domain/ent
 import type { FormConfiguration, FormField, WidgetType } from '../../domain/entities/FormBuilder'
 import type { DashboardChartConfig, DashboardMetricConfig, ReportConfiguration, ReportType } from '../../domain/entities/Report'
 import { useAuthStore } from '../stores/authStore'
+import UiSectionHeader from '../components/common/UiSectionHeader.vue'
+import UiStatusText from '../components/common/UiStatusText.vue'
+import DashboardDataSection from '../components/dashboard/DashboardDataSection.vue'
+import DashboardImportSection from '../components/dashboard/DashboardImportSection.vue'
+import DashboardSidebar from '../components/dashboard/DashboardSidebar.vue'
+import DashboardTemplateModal from '../components/dashboard/DashboardTemplateModal.vue'
+import DashboardTileActions from '../components/dashboard/DashboardTileActions.vue'
+import DashboardTileCard from '../components/dashboard/DashboardTileCard.vue'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -128,7 +136,6 @@ const templateDragActive = ref(false)
 const templateUploading = ref(false)
 const templateError = ref('')
 const templateFileName = ref('')
-const templateFileInput = ref<HTMLInputElement | null>(null)
 
 const selectedWorkspace = computed(() => {
   if (selectedWorkspaceId.value === null) return null
@@ -1603,19 +1610,6 @@ const onTemplateDrop = async (event: DragEvent) => {
   await processTemplateFile(file)
 }
 
-const openTemplateFilePicker = () => {
-  if (templateUploading.value) return
-  templateFileInput.value?.click()
-}
-
-const onTemplateFileChange = async (event: Event) => {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  if (!file) return
-  await processTemplateFile(file)
-}
-
 const deleteDataRecord = async (recordId: number) => {
   if (!authStore.token || !selectedWorkspace.value || !selectedDataTable.value) return
   if (!window.confirm('Удалить эту запись?')) return
@@ -1671,41 +1665,19 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="dashboard">
-    <aside class="sidebar">
-      <header class="sidebar-header">
-        <h1>Workspace</h1>
-        <p>{{ authStore.me?.email }}</p>
-      </header>
-
-      <section class="create-widget">
-        <h2>Новый workspace</h2>
-        <div class="fields">
-          <input v-model="workspaceName" type="text" placeholder="Название" maxlength="255" />
-          <textarea v-model="workspaceDescription" rows="3" placeholder="Описание (опционально)" maxlength="2000" />
-          <button @click="createWorkspace">Создать</button>
-        </div>
-      </section>
-
-      <section class="workspace-nav">
-        <div class="nav-title">
-          <h2>Список</h2>
-          <span>{{ workspaces.length }}</span>
-        </div>
-        <p v-if="loading" class="muted">Загрузка...</p>
-        <p v-else-if="workspaces.length === 0" class="muted">Пока нет workspace</p>
-
-        <ul v-else>
-          <li v-for="workspace in workspaces" :key="workspace.id">
-            <button class="workspace-link" :class="{ active: selectedWorkspaceId === workspace.id }" @click="selectWorkspace(workspace.id)">
-              <strong>{{ workspace.name }}</strong>
-              <span>{{ workspace.description || 'Без описания' }}</span>
-            </button>
-          </li>
-        </ul>
-      </section>
-
-      <button class="ghost" @click="logout">Выйти</button>
-    </aside>
+    <DashboardSidebar
+      :auth-email="authStore.me?.email"
+      :workspace-name="workspaceName"
+      :workspace-description="workspaceDescription"
+      :workspaces="workspaces"
+      :loading="loading"
+      :selected-workspace-id="selectedWorkspaceId"
+      @update:workspace-name="workspaceName = $event"
+      @update:workspace-description="workspaceDescription = $event"
+      @create-workspace="createWorkspace"
+      @select-workspace="selectWorkspace"
+      @logout="logout"
+    />
 
     <section class="content">
       <article v-if="selectedWorkspace" class="workspace-content">
@@ -1723,11 +1695,11 @@ onBeforeUnmount(() => {
           <button class="tab" :class="{ active: workspaceTab === 'reports' }" @click="goToReportsTab">Отчеты</button>
         </div>
 
-        <div class="actions-row" v-if="workspaceTab === 'details'">
+        <DashboardTileActions v-if="workspaceTab === 'details'" class="actions-row">
           <button class="danger" :disabled="deleting" @click="deleteWorkspace">
             {{ deleting ? 'Удаляем...' : 'Удалить workspace' }}
           </button>
-        </div>
+        </DashboardTileActions>
 
         <section v-if="workspaceTab === 'tables'" class="designer">
           <div class="designer-header">
@@ -1741,8 +1713,8 @@ onBeforeUnmount(() => {
             <button @click="createTable">Добавить таблицу</button>
           </div>
 
-          <p v-if="schemaLoading" class="muted">Загрузка структуры...</p>
-          <p v-if="schemaError" class="error">{{ schemaError }}</p>
+          <UiStatusText v-if="schemaLoading">Загрузка структуры...</UiStatusText>
+          <UiStatusText v-if="schemaError" variant="error">{{ schemaError }}</UiStatusText>
 
           <div class="schema-layout">
             <div class="schema-canvas-wrap">
@@ -1788,10 +1760,10 @@ onBeforeUnmount(() => {
                 <h4>Выделенная таблица</h4>
                 <input v-model="activeTable.name" placeholder="Имя таблицы" />
                 <input v-model="activeTable.description" placeholder="Описание таблицы" />
-                <div class="row-actions">
+                <DashboardTileActions>
                   <button class="small" @click="saveTable(activeTable)">Сохранить таблицу</button>
                   <button class="small danger" @click="deleteActiveTable">Удалить таблицу</button>
-                </div>
+                </DashboardTileActions>
               </section>
 
               <section class="object-card" v-if="activeTable">
@@ -1919,10 +1891,10 @@ onBeforeUnmount(() => {
                     @input="setSelectedNumberSetting('autoIncrementStep', Math.max(1, Number(($event.target as HTMLInputElement).value) || 1))"
                   />
                 </div>
-                <div class="row-actions">
+                <DashboardTileActions>
                   <button class="small" @click="saveSelectedColumn">Сохранить</button>
                   <button class="small danger" @click="removeColumnFromActiveTable(selectedColumn.key)">Удалить</button>
-                </div>
+                </DashboardTileActions>
               </section>
 
               <section class="object-card relations">
@@ -1968,45 +1940,49 @@ onBeforeUnmount(() => {
         </section>
 
         <section v-if="workspaceTab === 'forms'" class="forms-section">
-          <div class="forms-header">
-            <div>
-              <h3>Конструктор форм</h3>
-              <p>Создавайте несколько форм для одной таблицы или для набора таблиц.</p>
-            </div>
-            <button class="small" @click="createNewForm">Новая форма</button>
-          </div>
+          <UiSectionHeader
+            title="Конструктор форм"
+            description="Создавайте несколько форм для одной таблицы или для набора таблиц."
+          >
+            <template #actions>
+              <button class="small" @click="createNewForm">Новая форма</button>
+            </template>
+          </UiSectionHeader>
 
-          <div v-if="formLoading" class="muted">Загрузка форм...</div>
-          <div v-if="formError" class="error">{{ formError }}</div>
+          <UiStatusText v-if="formLoading" as="div">Загрузка форм...</UiStatusText>
+          <UiStatusText v-if="formError" as="div" variant="error">{{ formError }}</UiStatusText>
 
           <div class="reports-grid" v-if="formConfigurations.length > 0">
-            <article
+            <DashboardTileCard
               v-for="form in formConfigurations"
               :key="form.id"
-              class="report-tile"
-              :class="{ active: selectedFormId === form.id }"
+              :active="selectedFormId === form.id"
             >
-              <header>
+              <template #title>
                 <h4>{{ form.name }}</h4>
+              </template>
+              <template #badge>
                 <span class="report-type">{{ form.is_published ? 'Публичная' : 'Черновик' }}</span>
-              </header>
+              </template>
               <p>{{ form.description || 'Без описания' }}</p>
               <p class="muted">Поля: {{ form.fields.length }}</p>
               <p class="muted">Таблицы: {{ getFormUsedTableNames(form) }}</p>
-              <div class="report-actions">
-                <button
-                  class="small"
-                  :disabled="!form.is_published"
-                  @click="openFormPublicLink(form.id)"
-                >
-                  Ссылка
-                </button>
-                <button class="small" @click="selectForm(form.id)">Редактировать</button>
-                <button class="small danger" @click="deleteForm(form.id)">Удалить</button>
-              </div>
-            </article>
+              <template #actions>
+                <DashboardTileActions>
+                  <button
+                    class="small"
+                    :disabled="!form.is_published"
+                    @click="openFormPublicLink(form.id)"
+                  >
+                    Ссылка
+                  </button>
+                  <button class="small" @click="selectForm(form.id)">Редактировать</button>
+                  <button class="small danger" @click="deleteForm(form.id)">Удалить</button>
+                </DashboardTileActions>
+              </template>
+            </DashboardTileCard>
           </div>
-          <p v-else-if="!formLoading" class="muted">Пока нет форм. Создайте первую.</p>
+          <UiStatusText v-else-if="!formLoading">Пока нет форм. Создайте первую.</UiStatusText>
 
           <div v-if="formEditorOpen && selectedForm" class="form-editor">
             <article class="form-preview">
@@ -2212,335 +2188,135 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
-        <section v-if="workspaceTab === 'data'" class="data-section">
-          <div class="data-header">
-            <h3>{{ selectedDataTable ? selectedDataTable.name : 'Таблица' }}: Данные</h3>
-            <p v-if="selectedDataTable">Показано {{ tableDataRecords.length }} из {{ dataPagination.total }} записей</p>
-          </div>
+        <DashboardDataSection
+          v-if="workspaceTab === 'data'"
+          :selected-data-table="selectedDataTable"
+          :table-data-records="tableDataRecords"
+          :data-pagination="dataPagination"
+          :data-loading="dataLoading"
+          :data-error="dataError"
+          :total-pages="totalPages"
+          :current-page="currentPage"
+          :all-table-options="allTableOptions"
+          :selected-data-table-id="selectedDataTableId"
+          :format-data-value="formatDataValue"
+          :format-date="formatDate"
+          @update:selected-data-table-id="selectedDataTableId = $event"
+          @update:data-limit="dataPagination.limit = $event"
+          @data-table-change="onDataTableChange"
+          @data-limit-change="onDataLimitChange"
+          @delete-record="deleteDataRecord"
+          @go-to-page="goToPage"
+        />
 
-          <div class="field-settings-row">
-            <select v-model.number="selectedDataTableId" @change="onDataTableChange">
-              <option :value="null">Выберите таблицу</option>
-              <option v-for="table in allTableOptions" :key="`data-t-${table.id}`" :value="table.id">
-                {{ table.name }}
-              </option>
-            </select>
-            <select v-model.number="dataPagination.limit" @change="onDataLimitChange">
-              <option :value="10">10 записей</option>
-              <option :value="25">25 записей</option>
-              <option :value="50">50 записей</option>
-              <option :value="100">100 записей</option>
-            </select>
-          </div>
-
-          <div v-if="dataLoading" class="muted">Загрузка данных...</div>
-          <div v-if="dataError" class="error">{{ dataError }}</div>
-
-          <div v-if="tableDataRecords.length > 0 && selectedDataTable" class="data-table-wrap">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th v-for="column in selectedDataTable.columns" :key="column.key">{{ column.name }}</th>
-                  <th>Отправлено</th>
-                  <th>Email</th>
-                  <th>Действие</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(record, index) in tableDataRecords" :key="record.id">
-                  <td>{{ dataPagination.skip + index + 1 }}</td>
-                  <td v-for="column in selectedDataTable.columns" :key="column.key">
-                    <span :title="JSON.stringify(record.data[column.key])">
-                      {{ formatDataValue(record.data[column.key], column.type) }}
-                    </span>
-                  </td>
-                  <td>{{ formatDate(record.submitted_at || record.created_at) }}</td>
-                  <td>{{ record.submitter_email || '—' }}</td>
-                  <td>
-                    <button class="small danger" @click="deleteDataRecord(record.id)">Удалить</button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div v-else-if="!dataLoading && selectedDataTable" class="muted" style="text-align: center; padding: 20px;">
-            Нет записей в этой таблице
-          </div>
-
-          <div v-if="totalPages > 1" class="pagination">
-            <button @click="goToPage(currentPage - 1)" :disabled="currentPage === 1">← Назад</button>
-            <span>Страница {{ currentPage }} из {{ totalPages }}</span>
-            <button @click="goToPage(currentPage + 1)" :disabled="currentPage === totalPages">Вперёд →</button>
-          </div>
-        </section>
-
-        <section v-if="workspaceTab === 'import'" class="import-section">
-          <div class="import-header">
-            <div>
-              <h3>Импорт</h3>
-              <p>Загрузите файл, просканируйте структуру, затем сопоставьте колонки и выполните импорт.</p>
-            </div>
-          </div>
-
-          <div class="import-panel">
-            <div class="import-flow">
-              <span class="flow-step" :class="{ active: !!importScanResult, warning: importRequiresRescan }">
-                Шаг 1: Сканирование
-              </span>
-              <span class="flow-step" :class="{ active: importCanApply }">
-                Шаг 2: Загрузка в систему
-              </span>
-            </div>
-
-            <div class="import-inputs">
-              <label>Файл</label>
-              <input type="file" accept=".csv,.xls,.xlsx" @change="onImportFileChange" />
-            </div>
-
-            <div class="import-zones">
-              <h4>Зоны поиска</h4>
-              <div class="zones-grid">
-                <div>
-                  <label>Header start</label>
-                  <input v-model.number="importHeaderRowStart" type="number" min="0" placeholder="auto" @input="onImportScanOptionsChanged" />
-                </div>
-                <div>
-                  <label>Header end</label>
-                  <input v-model.number="importHeaderRowEnd" type="number" min="0" placeholder="auto" @input="onImportScanOptionsChanged" />
-                </div>
-                <div>
-                  <label>Data start</label>
-                  <input v-model.number="importDataRowStart" type="number" min="0" placeholder="auto" @input="onImportScanOptionsChanged" />
-                </div>
-                <div>
-                  <label>Data end</label>
-                  <input v-model.number="importDataRowEnd" type="number" min="0" placeholder="до конца" @input="onImportScanOptionsChanged" />
-                </div>
-              </div>
-            </div>
-
-            <div class="import-zones">
-              <h4>Списки</h4>
-              <label>Разделители списка (через ;, используйте \n для новой строки)</label>
-              <input v-model="importListDelimiters" placeholder=",;|;\\n" @input="onImportScanOptionsChanged" />
-            </div>
-
-            <p class="import-warning" v-if="importScanResult">
-              Важно: ключи колонок ограничены {{ IMPORT_KEY_MAX_LENGTH }} символами.
-              При импорте длинные ключи автоматически сокращаются.
-            </p>
-
-            <div class="row-actions">
-              <button class="small" :disabled="!importFile || importLoading" @click="scanImport">
-                {{ importLoading ? 'Сканирование...' : 'Сканировать файл' }}
-              </button>
-              <button
-                class="small"
-                :disabled="!importCanApply || importApplying"
-                @click="applyImport"
-              >
-                {{ importApplying ? 'Импорт...' : 'Запустить импорт' }}
-              </button>
-            </div>
-
-            <p v-if="importRequiresRescan" class="muted">
-              Параметры сканирования изменены. Выполните шаг 1 повторно перед загрузкой.
-            </p>
-
-            <p v-if="importError" class="error">{{ importError }}</p>
-            <p v-if="importSuccess" class="success-text">{{ importSuccess }}</p>
-          </div>
-
-          <div v-if="importScanResult" class="import-results">
-            <article class="import-card">
-              <h4>Результат сканирования</h4>
-              <p class="muted">Лист: {{ importScanResult.sheet_name }} ({{ importScanResult.source_format }})</p>
-              <p class="muted">
-                Артефакты: merged cells {{ importScanResult.artifacts.merged_cells_count }},
-                разделители {{ importScanResult.artifacts.sections_count }}
-              </p>
-              <div v-if="importDetectedSeparators.length > 0" class="separator-artifacts">
-                <p class="muted">Найденные разделители:</p>
-                <div class="separator-list">
-                  <span v-for="(separator, index) in importVisibleSeparators" :key="`separator-${index}`" class="separator-pill" :title="separator">
-                    {{ separator }}
-                  </span>
-                </div>
-                <button v-if="importDetectedSeparators.length > 3" class="small ghost" @click="toggleAllSeparators">
-                  {{ importShowAllSeparators ? 'Свернуть список' : `Показать все (${importDetectedSeparators.length})` }}
-                </button>
-              </div>
-            </article>
-
-            <article class="import-card">
-              <div class="import-targets-head">
-                <h4>Цели импорта</h4>
-                <button class="small" @click="addImportTarget">Добавить цель</button>
-              </div>
-
-              <div v-if="importTargets.length === 0" class="muted">Добавьте цель импорта.</div>
-
-              <div v-for="target in importTargets" :key="target.localId" class="import-target">
-                <div class="import-target-row">
-                  <label>Режим</label>
-                  <select v-model="target.mode" @change="onImportTargetModeChange(target)">
-                    <option value="existing">В существующую таблицу</option>
-                    <option value="new">Создать новую таблицу</option>
-                  </select>
-                  <button class="small danger" @click="removeImportTarget(target.localId)">Удалить цель</button>
-                </div>
-
-                <div v-if="target.mode === 'existing'" class="import-target-row">
-                  <label>Таблица</label>
-                  <select v-model.number="target.table_id" @change="onImportTargetTableChange(target)">
-                    <option :value="null">Выберите таблицу</option>
-                    <option v-for="table in allTableOptions" :key="`imp-target-${target.localId}-${table.id}`" :value="table.id">
-                      {{ table.name }}
-                    </option>
-                  </select>
-                </div>
-
-                <div v-else class="import-target-row import-target-grid">
-                  <div>
-                    <label>Название новой таблицы</label>
-                    <input v-model="target.table_name" placeholder="Например: Импорт товаров" />
-                  </div>
-                  <div>
-                    <label>Описание</label>
-                    <input v-model="target.table_description" placeholder="Описание новой таблицы" />
-                  </div>
-                </div>
-
-                <div class="import-target-row import-target-grid">
-                  <label class="checkbox-inline">
-                    <input v-model="target.map_section_to_field" type="checkbox" />
-                    Добавить отдельный столбец "разделитель" и заполнить его значением разделителя
-                  </label>
-                  <div v-if="target.map_section_to_field">
-                    <label>Имя столбца разделителя</label>
-                    <input v-model="target.section_field_name" placeholder="Разделитель" />
-                  </div>
-                </div>
-
-                <div class="mapping-grid" v-if="importSourceKeys.length > 0">
-                  <div v-for="sourceKey in importSourceKeys" :key="`map-${target.localId}-${sourceKey}`" class="mapping-row">
-                    <strong>{{ sourceKey }}</strong>
-
-                    <select
-                      v-if="target.mode === 'existing'"
-                      v-model="target.column_mappings[sourceKey]"
-                    >
-                      <option :value="null">Не импортировать</option>
-                      <option v-for="column in getImportTargetColumns(target)" :key="`map-col-${target.localId}-${column.key}`" :value="column.key">
-                        {{ column.name }} ({{ column.key }})
-                      </option>
-                    </select>
-
-                    <input
-                      v-else
-                      v-model="target.column_mappings[sourceKey]"
-                      :placeholder="`Ключ колонки (например ${sourceKey})`"
-                    />
-
-                    <p v-if="target.mode === 'new'" class="mapping-hint">
-                      Итоговый ключ: <strong>{{ formatMappedKeyPreview(target.column_mappings[sourceKey]) }}</strong>
-                      <span v-if="isMappedKeyTruncated(target.column_mappings[sourceKey])" class="mapping-warning">
-                        (будет сокращен до {{ IMPORT_KEY_MAX_LENGTH }} символов)
-                      </span>
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </article>
-
-            <article class="import-card import-preview-card" v-if="importPreviewRows.length > 0">
-              <h4>Превью данных</h4>
-              <div class="data-table-wrap import-preview-wrap">
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th v-for="sourceKey in importSourceKeys" :key="`preview-head-${sourceKey}`">{{ sourceKey }}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="(row, rowIndex) in importPreviewRows" :key="`preview-row-${rowIndex}`">
-                      <td>{{ rowIndex + 1 }}</td>
-                      <td v-for="sourceKey in importSourceKeys" :key="`preview-cell-${rowIndex}-${sourceKey}`">
-                        <span :title="formatImportValue(row[sourceKey])">
-                          {{ formatImportValue(row[sourceKey]) }}
-                        </span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </article>
-          </div>
-        </section>
+        <DashboardImportSection
+          v-if="workspaceTab === 'import'"
+          :import-scan-result="importScanResult"
+          :import-requires-rescan="importRequiresRescan"
+          :import-can-apply="importCanApply"
+          :import-file="importFile"
+          :import-loading="importLoading"
+          :import-applying="importApplying"
+          :import-header-row-start="importHeaderRowStart"
+          :import-header-row-end="importHeaderRowEnd"
+          :import-data-row-start="importDataRowStart"
+          :import-data-row-end="importDataRowEnd"
+          :import-list-delimiters="importListDelimiters"
+          :import-targets="importTargets"
+          :all-table-options="allTableOptions"
+          :import-source-keys="importSourceKeys"
+          :import-preview-rows="importPreviewRows"
+          :import-detected-separators="importDetectedSeparators"
+          :import-visible-separators="importVisibleSeparators"
+          :import-show-all-separators="importShowAllSeparators"
+          :import-error="importError"
+          :import-success="importSuccess"
+          :import-key-max-length="IMPORT_KEY_MAX_LENGTH"
+          :get-import-target-columns="getImportTargetColumns"
+          :format-mapped-key-preview="formatMappedKeyPreview"
+          :is-mapped-key-truncated="isMappedKeyTruncated"
+          :format-import-value="formatImportValue"
+          :on-import-target-mode-change="onImportTargetModeChange"
+          :on-import-target-table-change="onImportTargetTableChange"
+          @update:import-header-row-start="importHeaderRowStart = $event"
+          @update:import-header-row-end="importHeaderRowEnd = $event"
+          @update:import-data-row-start="importDataRowStart = $event"
+          @update:import-data-row-end="importDataRowEnd = $event"
+          @update:import-list-delimiters="importListDelimiters = $event"
+          @import-file-change="onImportFileChange"
+          @import-scan-options-change="onImportScanOptionsChanged"
+          @scan-import="scanImport"
+          @apply-import="applyImport"
+          @toggle-separators="toggleAllSeparators"
+          @add-import-target="addImportTarget"
+          @remove-import-target="removeImportTarget"
+        />
 
         <section v-if="workspaceTab === 'reports'" class="reports-section">
-          <div class="reports-header">
-            <div>
-              <h3>Отчеты</h3>
-              <p>Создавайте Excel-выгрузки и публичные дашборды с настройками.</p>
-            </div>
-            <div class="report-create-actions">
-              <button class="small ghost" @click="openTemplateModal">Посчитать по шаблону</button>
-              <button class="small" @click="createReport('excel_export')">Табличный экспорт</button>
-              <button class="small" @click="createReport('dashboard')">Дашборд</button>
-            </div>
-          </div>
+          <UiSectionHeader
+            title="Отчеты"
+            description="Создавайте Excel-выгрузки и публичные дашборды с настройками."
+          >
+            <template #actions>
+              <DashboardTileActions>
+                <button class="small ghost" @click="openTemplateModal">Посчитать по шаблону</button>
+                <button class="small" @click="createReport('excel_export')">Табличный экспорт</button>
+                <button class="small" @click="createReport('dashboard')">Дашборд</button>
+              </DashboardTileActions>
+            </template>
+          </UiSectionHeader>
 
-          <div v-if="reportsLoading" class="muted">Загрузка отчетов...</div>
-          <div v-if="reportsError" class="error">{{ reportsError }}</div>
+          <UiStatusText v-if="reportsLoading" as="div">Загрузка отчетов...</UiStatusText>
+          <UiStatusText v-if="reportsError" as="div" variant="error">{{ reportsError }}</UiStatusText>
 
           <div class="reports-grid" v-if="reports.length > 0">
-            <article v-for="report in reports" :key="report.id" class="report-tile">
-              <header>
+            <DashboardTileCard v-for="report in reports" :key="report.id">
+              <template #title>
                 <h4>{{ report.name }}</h4>
+              </template>
+              <template #badge>
                 <span class="report-type">{{ getReportTypeLabel(report.report_type) }}</span>
-              </header>
+              </template>
               <p>{{ report.description || 'Без описания' }}</p>
               <p class="muted">Статус: {{ report.is_published ? 'опубликован' : 'черновик' }}</p>
-              <div class="report-actions">
-                <button
-                  v-if="report.report_type === 'excel_export'"
-                  class="small"
-                  @click="openTableReportView(report.id)"
-                >
-                  Открыть
-                </button>
-                <button
-                  v-if="report.report_type === 'excel_export'"
-                  class="small"
-                  @click="downloadReport(report.id, 'csv')"
-                >
-                  CSV
-                </button>
-                <button
-                  v-if="report.report_type === 'excel_export'"
-                  class="small"
-                  @click="downloadReport(report.id, 'xlsx')"
-                >
-                  Excel
-                </button>
-                <button
-                  v-else
-                  class="small"
-                  :disabled="!report.is_published"
-                  @click="openReportPublicLink(report.id)"
-                >
-                  Ссылка
-                </button>
-                <button class="small" @click="editReport(report)">Редактировать</button>
-                <button class="small danger" @click="deleteReport(report.id)">Удалить</button>
-              </div>
-            </article>
+              <template #actions>
+                <DashboardTileActions>
+                  <button
+                    v-if="report.report_type === 'excel_export'"
+                    class="small"
+                    @click="openTableReportView(report.id)"
+                  >
+                    Открыть
+                  </button>
+                  <button
+                    v-if="report.report_type === 'excel_export'"
+                    class="small"
+                    @click="downloadReport(report.id, 'csv')"
+                  >
+                    CSV
+                  </button>
+                  <button
+                    v-if="report.report_type === 'excel_export'"
+                    class="small"
+                    @click="downloadReport(report.id, 'xlsx')"
+                  >
+                    Excel
+                  </button>
+                  <button
+                    v-else
+                    class="small"
+                    :disabled="!report.is_published"
+                    @click="openReportPublicLink(report.id)"
+                  >
+                    Ссылка
+                  </button>
+                  <button class="small" @click="editReport(report)">Редактировать</button>
+                  <button class="small danger" @click="deleteReport(report.id)">Удалить</button>
+                </DashboardTileActions>
+              </template>
+            </DashboardTileCard>
           </div>
-          <p v-else-if="!reportsLoading" class="muted">Пока нет отчетов. Создайте первый.</p>
+          <UiStatusText v-else-if="!reportsLoading">Пока нет отчетов. Создайте первый.</UiStatusText>
 
           <article v-if="reportEditorOpen" class="report-editor">
             <header>
@@ -2585,58 +2361,27 @@ onBeforeUnmount(() => {
               <p v-else class="muted">Сначала выберите таблицу.</p>
             </section>
 
-            <div class="report-editor-actions">
+            <DashboardTileActions>
               <button class="small" @click="saveReport">Сохранить отчет</button>
               <button class="small ghost" @click="reportEditorOpen = false">Закрыть</button>
-            </div>
+            </DashboardTileActions>
           </article>
 
-          <div v-if="templateModalOpen" class="template-modal-backdrop" @click.self="closeTemplateModal">
-            <article class="template-modal">
-              <header class="template-modal-header">
-                <h4>Посчитать по шаблону</h4>
-                <button class="small ghost" :disabled="templateUploading" @click="closeTemplateModal">Закрыть</button>
-              </header>
-
-              <p class="muted" v-pre>
-                Поддерживаемые выражения в `.odt`: {{ count(key) }}, {{ sum(key) }}, {{ avg(key) }}, {{ min(key) }},
-                {{ max(key) }}.
-              </p>
-
-              <label>Таблица источника</label>
-              <select v-model.number="templateTableId" :disabled="templateUploading">
-                <option :value="null">Выберите таблицу</option>
-                <option v-for="table in allTableOptions" :key="`template-table-${table.id}`" :value="table.id">
-                  {{ table.name }}
-                </option>
-              </select>
-
-              <div
-                class="template-dropzone"
-                :class="{ active: templateDragActive, disabled: templateUploading }"
-                @dragover="onTemplateDragOver"
-                @dragleave="onTemplateDragLeave"
-                @drop="onTemplateDrop"
-              >
-                <p>{{ templateUploading ? 'Обрабатываем шаблон...' : 'Перетащите сюда .odt файл' }}</p>
-                <p class="muted">или</p>
-                <button class="small" :disabled="templateUploading" @click="openTemplateFilePicker">
-                  Выбрать файл
-                </button>
-                <p v-if="templateFileName" class="muted">Текущий файл: {{ templateFileName }}</p>
-              </div>
-
-              <input
-                ref="templateFileInput"
-                class="template-file-input"
-                type="file"
-                accept=".odt,application/vnd.oasis.opendocument.text"
-                @change="onTemplateFileChange"
-              />
-
-              <p v-if="templateError" class="error">{{ templateError }}</p>
-            </article>
-          </div>
+          <DashboardTemplateModal
+            :open="templateModalOpen"
+            :uploading="templateUploading"
+            :drag-active="templateDragActive"
+            :error="templateError"
+            :file-name="templateFileName"
+            :table-id="templateTableId"
+            :table-options="allTableOptions"
+            @close="closeTemplateModal"
+            @update:table-id="templateTableId = $event"
+            @drag-over="onTemplateDragOver"
+            @drag-leave="onTemplateDragLeave"
+            @drop="onTemplateDrop"
+            @file-selected="processTemplateFile"
+          />
         </section>
 
         <section class="info-grid" v-if="workspaceTab === 'details'">
@@ -2668,1219 +2413,4 @@ onBeforeUnmount(() => {
   </main>
 </template>
 
-<style scoped>
-.dashboard {
-  min-height: 100vh;
-  padding: 18px;
-  display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 16px;
-}
-
-.sidebar {
-  background: var(--bg-panel);
-  border-radius: 18px;
-  border: 1px solid var(--line);
-  padding: 16px;
-  display: grid;
-  gap: 14px;
-  align-content: start;
-}
-
-.sidebar-header h1 {
-  margin: 0;
-  letter-spacing: 0.02em;
-}
-
-.sidebar-header p {
-  margin: 6px 0 0;
-  color: var(--text-muted);
-}
-
-h2,
-h3,
-h4 {
-  margin: 0;
-}
-
-.create-widget,
-.workspace-nav {
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--bg-soft);
-  padding: 12px;
-}
-
-.fields {
-  display: grid;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-input,
-textarea,
-select {
-  border: 1px solid var(--line);
-  background: #edf4f5;
-  padding: 10px 12px;
-  border-radius: 10px;
-  color: var(--text-main);
-  font: inherit;
-}
-
-textarea {
-  resize: vertical;
-}
-
-button {
-  border: none;
-  background: var(--accent);
-  color: #e8fbff;
-  border-radius: 10px;
-  padding: 10px 16px;
-  font-weight: 700;
-}
-
-button.small {
-  padding: 7px 10px;
-  font-size: 0.84rem;
-}
-
-button.ghost {
-  background: #d9e3e5;
-  color: #1f353b;
-}
-
-button.danger {
-  background: var(--danger);
-  color: #fff;
-}
-
-ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.workspace-nav ul {
-  display: grid;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.workspace-link {
-  width: 100%;
-  text-align: left;
-  background: #dbe8ea;
-  color: var(--text-main);
-  border: 1px solid transparent;
-  padding: 10px;
-  border-radius: 10px;
-  display: grid;
-  gap: 4px;
-}
-
-.workspace-link.active {
-  background: linear-gradient(135deg, #3c6f7f, #2b8f86);
-  color: #f0fffd;
-  border-color: #70ada5;
-}
-
-.workspace-link span,
-.muted {
-  color: var(--text-muted);
-}
-
-.workspace-link.active span {
-  color: #c6f7f0;
-}
-
-.nav-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.nav-title span {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  font-size: 0.82rem;
-  padding: 2px 9px;
-  color: var(--text-muted);
-}
-
-.content {
-  border-radius: 18px;
-  border: 1px solid var(--line);
-  background: var(--bg-panel);
-  padding: 20px;
-}
-
-.workspace-content header p {
-  color: var(--text-muted);
-  margin: 8px 0 0;
-}
-
-.workspace-tabs {
-  margin-top: 14px;
-  display: inline-flex;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 4px;
-  background: #e9f1f3;
-}
-
-.workspace-tabs .tab {
-  background: transparent;
-  color: var(--text-main);
-  padding: 8px 14px;
-  border-radius: 8px;
-}
-
-.workspace-tabs .tab.active {
-  background: linear-gradient(135deg, #3d6f7d, #2b8e84);
-  color: #effffd;
-}
-
-.actions-row {
-  margin: 12px 0;
-}
-
-.designer {
-  margin-top: 8px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 14px;
-  background: var(--bg-soft);
-  display: grid;
-  gap: 14px;
-}
-
-.designer-header p {
-  margin: 6px 0 0;
-  color: var(--text-muted);
-}
-
-.create-table {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 8px;
-}
-
-.schema-layout {
-  display: grid;
-  grid-template-columns: minmax(620px, 1fr) 360px;
-  gap: 12px;
-}
-
-.schema-canvas-wrap {
-  border: 1px dashed var(--line);
-  border-radius: 12px;
-  background: linear-gradient(180deg, #ebf2f3 0%, #e4edf0 100%);
-  overflow: auto;
-}
-
-.schema-canvas {
-  position: relative;
-  min-height: 640px;
-  min-width: 940px;
-}
-
-.table-card {
-  position: absolute;
-  width: 280px;
-  max-width: 280px;
-  border: 1px solid #8ca8b1;
-  border-radius: 12px;
-  padding: 10px;
-  background: #f3f8f9;
-  display: grid;
-  gap: 8px;
-  box-shadow: 0 6px 14px rgba(38, 74, 85, 0.12);
-  overflow: hidden;
-}
-
-.table-card.active {
-  border-color: #2b8f86;
-  box-shadow: inset 0 0 0 1px #2b8f86;
-}
-
-.table-head {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  cursor: pointer;
-  min-width: 0;
-}
-
-.table-head strong {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.table-grip {
-  background: #dce8ea;
-  color: #45676f;
-  border-radius: 6px;
-  padding: 4px 6px;
-  font-size: 0.74rem;
-}
-
-.table-sub {
-  margin: 0;
-  font-size: 0.83rem;
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
-}
-
-.table-name-input,
-.table-description-input {
-  width: 100%;
-}
-
-.column-list {
-  display: grid;
-  gap: 6px;
-}
-
-.column-item {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 8px;
-  background: #f4f9fa;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  cursor: grab;
-  min-width: 0;
-}
-
-.column-item div {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-}
-
-.column-item strong,
-.column-item span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.column-item span {
-  color: var(--text-muted);
-  font-size: 0.82rem;
-}
-
-.column-item em {
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-.column-item:hover {
-  border-color: #7ea4ad;
-}
-
-.object-sidebar {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #eef5f7;
-  padding: 10px;
-  display: grid;
-  gap: 10px;
-  align-content: start;
-  max-height: 640px;
-  overflow: auto;
-}
-
-.object-card {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 12px;
-  background: #f7fbfc;
-  display: grid;
-  gap: 10px;
-}
-
-.new-column-form,
-.type-settings,
-.relation-form {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
-  align-items: center;
-}
-
-.checkbox-inline {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  color: var(--text-muted);
-}
-
-.setting-label {
-  font-size: 0.84rem;
-  color: var(--text-muted);
-}
-
-.add-column {
-  width: fit-content;
-}
-
-.row-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.relations {
-  background: #edf5f7;
-  display: grid;
-  gap: 10px;
-}
-
-.relation-list {
-  display: grid;
-  gap: 8px;
-}
-
-.relation-list li {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 9px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  background: #f7fbfb;
-}
-
-.relation-list span {
-  color: var(--text-muted);
-  font-size: 0.85rem;
-}
-
-.info-grid {
-  margin-top: 14px;
-}
-
-.info-card {
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 14px;
-  background: var(--bg-soft);
-}
-
-dl {
-  margin: 0;
-  display: grid;
-  gap: 10px;
-}
-
-dt {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-dd {
-  margin: 0;
-  font-weight: 600;
-}
-
-.empty-content {
-  min-height: 320px;
-  display: grid;
-  place-content: center;
-  text-align: center;
-  gap: 6px;
-}
-
-.error {
-  color: var(--danger);
-}
-
-/* Form Builder Styles */
-.forms-section {
-  margin-top: 8px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 14px;
-  background: var(--bg-soft);
-  display: grid;
-  gap: 14px;
-}
-
-.forms-header p {
-  margin: 6px 0 0;
-  color: var(--text-muted);
-}
-
-.forms-list ul {
-  display: grid;
-  gap: 6px;
-}
-
-.form-link {
-  width: 100%;
-  text-align: left;
-  background: #dbe8ea;
-  color: var(--text-main);
-  border: 1px solid transparent;
-  padding: 10px;
-  border-radius: 10px;
-  display: grid;
-  gap: 4px;
-}
-
-.form-link.active {
-  background: linear-gradient(135deg, #3c6f7f, #2b8f86);
-  color: #f0fffd;
-  border-color: #70ada5;
-}
-
-.form-link span {
-  color: var(--text-muted);
-  font-size: 0.82rem;
-}
-
-.form-link.active span {
-  color: #c6f7f0;
-}
-
-.form-editor {
-  display: grid;
-  grid-template-columns: 1fr 340px;
-  gap: 12px;
-  margin-top: 8px;
-}
-
-.form-preview {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 20px;
-  background: #fafbfc;
-}
-
-.form-header {
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--line);
-}
-
-.form-header h4 {
-  margin: 0 0 4px;
-}
-
-.form-header p {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 0.9rem;
-}
-
-form {
-  display: grid;
-  gap: 14px;
-}
-
-.form-field-preview {
-  display: grid;
-  gap: 6px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  padding: 8px;
-  cursor: pointer;
-}
-
-.form-field-preview.active {
-  border-color: #7ea4ad;
-  background: #f2f8f9;
-}
-
-.form-field-preview label {
-  font-weight: 600;
-  font-size: 0.95rem;
-  color: var(--text-main);
-}
-
-.required {
-  color: var(--danger);
-}
-
-.form-field-preview input,
-.form-field-preview textarea,
-.form-field-preview select {
-  width: 100%;
-  border: 1px solid var(--line);
-  background: #fff;
-  padding: 10px 12px;
-  border-radius: 8px;
-  color: var(--text-main);
-  font: inherit;
-}
-
-.form-field-preview input:focus,
-.form-field-preview textarea:focus,
-.form-field-preview select:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
-}
-
-.checkbox-wrapper,
-.radio-wrapper {
-  display: flex;
-  gap: 8px;
-  flex-direction: column;
-}
-
-.list-input-preview {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-}
-
-.radio-wrapper label {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  font-weight: normal;
-}
-
-.checkbox-wrapper label {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  font-weight: normal;
-}
-
-.help-text {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-.field-table-label {
-  margin: 0;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-}
-
-.form-config {
-  display: grid;
-  gap: 10px;
-  align-content: start;
-}
-
-.form-fields-list {
-  display: grid;
-  gap: 6px;
-}
-
-.form-fields-list li {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 8px;
-  background: #f7fbfc;
-  display: grid;
-  gap: 2px;
-  cursor: grab;
-}
-
-.form-fields-list li.active {
-  border-color: #7ea4ad;
-  background: #eef6f8;
-}
-
-.form-fields-list li:active {
-  cursor: grabbing;
-}
-
-.form-fields-list li:hover {
-  border-color: #7ea4ad;
-}
-
-.form-fields-list div {
-  display: grid;
-}
-
-.field-settings-row {
-  display: grid;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.form-fields-list strong {
-  font-size: 0.9rem;
-}
-
-.form-fields-list span {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-
-.share-link {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 10px;
-  background: #f7fbfc;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.share-link code {
-  flex: 1;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  word-break: break-all;
-}
-
-.form-config select[multiple] {
-  min-height: 118px;
-  background: #fff;
-}
-
-.options-editor {
-  display: grid;
-  gap: 8px;
-}
-
-.option-row,
-.option-add-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-  align-items: center;
-}
-
-/* Data Viewer Styles */
-.data-section {
-  margin-top: 8px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 14px;
-  background: var(--bg-soft);
-  display: grid;
-  gap: 14px;
-}
-
-.data-header p {
-  margin: 6px 0 0;
-  color: var(--text-muted);
-}
-
-.data-table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #fafbfc;
-}
-
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
-}
-
-.data-table thead {
-  background: #f0f4f5;
-  border-bottom: 1px solid var(--line);
-}
-
-.data-table th {
-  text-align: left;
-  padding: 10px 12px;
-  font-weight: 600;
-  color: var(--text-main);
-  white-space: nowrap;
-}
-
-.data-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--line);
-  color: var(--text-main);
-}
-
-.data-table tbody tr:hover {
-  background-color: #f7fbfc;
-}
-
-.data-table td span {
-  display: inline-block;
-  max-width: 150px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.pagination {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: center;
-  padding: 12px;
-  background: #f0f4f5;
-  border-radius: 10px;
-}
-
-.pagination button {
-  padding: 8px 12px;
-  font-size: 0.9rem;
-}
-
-.pagination button:disabled {
-  background: #d9e3e5;
-  color: #7a8c92;
-  cursor: not-allowed;
-}
-
-.pagination span {
-  color: var(--text-muted);
-  font-size: 0.9rem;
-}
-
-/* Import Styles */
-.import-section {
-  margin-top: 8px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 14px;
-  background: var(--bg-soft);
-  display: grid;
-  gap: 14px;
-}
-
-.import-header p {
-  margin: 6px 0 0;
-  color: var(--text-muted);
-}
-
-.import-panel,
-.import-card,
-.import-target {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #f7fbfc;
-  padding: 10px;
-}
-
-.import-panel,
-.import-results,
-.import-inputs,
-.import-zones,
-.mapping-grid {
-  display: grid;
-  gap: 10px;
-}
-
-.import-results,
-.import-card,
-.import-preview-card {
-  min-width: 0;
-}
-
-.import-flow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.flow-step {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 4px 10px;
-  font-size: 0.82rem;
-  color: var(--text-muted);
-  background: #edf4f6;
-}
-
-.flow-step.active {
-  border-color: #2b8f86;
-  color: #1f5a54;
-  background: #e2f3ef;
-}
-
-.flow-step.warning {
-  border-color: #d49f3f;
-  color: #8b621f;
-  background: #fff5df;
-}
-
-.zones-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
-  gap: 8px;
-}
-
-.import-targets-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.import-target-row {
-  display: grid;
-  grid-template-columns: 180px 1fr auto;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.import-target-grid {
-  grid-template-columns: 1fr 1fr;
-}
-
-.mapping-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  align-items: center;
-}
-
-.mapping-hint {
-  margin: 0;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  grid-column: 1 / -1;
-}
-
-.mapping-warning,
-.import-warning {
-  color: #8b621f;
-  font-size: 0.84rem;
-}
-
-.success-text {
-  color: #276f45;
-  font-weight: 600;
-}
-
-.import-preview-wrap {
-  width: 100%;
-  max-width: 100%;
-  max-height: 360px;
-  overflow-x: auto;
-  overflow-y: auto;
-}
-
-.import-preview-card {
-  overflow: hidden;
-}
-
-.import-preview-wrap .data-table {
-  width: max-content;
-  min-width: 100%;
-  table-layout: fixed;
-}
-
-.import-preview-wrap .data-table th,
-.import-preview-wrap .data-table td {
-  min-width: 150px;
-  max-width: 240px;
-  white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  vertical-align: top;
-}
-
-.import-preview-wrap .data-table td span {
-  max-width: none;
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-  display: block;
-}
-
-.separator-artifacts {
-  display: grid;
-  gap: 8px;
-}
-
-.separator-list {
-  display: grid;
-  gap: 6px;
-  max-height: 190px;
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.separator-pill {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #eef6f8;
-  color: var(--text-main);
-  padding: 6px 8px;
-  font-size: 0.84rem;
-  line-height: 1.35;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Reports Styles */
-.reports-section {
-  margin-top: 8px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 14px;
-  background: var(--bg-soft);
-  display: grid;
-  gap: 14px;
-}
-
-.reports-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: start;
-  gap: 12px;
-}
-
-.reports-header p {
-  margin: 6px 0 0;
-  color: var(--text-muted);
-}
-
-.report-create-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.reports-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 10px;
-}
-
-.report-tile {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 12px;
-  background: #f7fbfc;
-  display: grid;
-  gap: 8px;
-}
-
-.report-tile.active {
-  border-color: #2b8f86;
-  box-shadow: inset 0 0 0 1px #2b8f86;
-}
-
-.report-tile header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.report-tile h4 {
-  margin: 0;
-}
-
-.report-type {
-  font-size: 0.75rem;
-  border: 1px solid #9fb8bf;
-  border-radius: 999px;
-  padding: 2px 8px;
-  color: #355f6b;
-  background: #ecf4f6;
-}
-
-.report-tile p {
-  margin: 0;
-}
-
-.report-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.report-editor {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #f8fcfc;
-  padding: 12px;
-  display: grid;
-  gap: 12px;
-}
-
-.report-editor-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
-  gap: 10px;
-}
-
-.report-editor-grid.compact {
-  grid-template-columns: minmax(220px, 320px);
-}
-
-.report-editor-grid label,
-.report-settings h5 {
-  font-size: 0.9rem;
-  color: var(--text-main);
-}
-
-.report-settings {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 10px;
-  background: #f3f9fa;
-  display: grid;
-  gap: 8px;
-}
-
-.report-settings h5 {
-  margin: 0;
-}
-
-.excel-columns {
-  display: grid;
-  gap: 8px;
-}
-
-.excel-column-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  align-items: center;
-}
-
-.metrics-settings {
-  display: grid;
-  gap: 8px;
-}
-
-.metrics-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.metric-row {
-  display: grid;
-  grid-template-columns: 1fr 160px 1fr auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.chart-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr 140px 1fr 120px auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.report-editor-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.template-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(25, 48, 57, 0.4);
-  display: grid;
-  place-items: center;
-  z-index: 30;
-  padding: 16px;
-}
-
-.template-modal {
-  width: min(560px, 100%);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: #f8fcfc;
-  padding: 14px;
-  display: grid;
-  gap: 12px;
-}
-
-.template-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.template-dropzone {
-  border: 2px dashed #84a7ae;
-  border-radius: 12px;
-  background: #eef6f8;
-  padding: 18px;
-  display: grid;
-  gap: 8px;
-  justify-items: center;
-  text-align: center;
-}
-
-.template-dropzone.active {
-  border-color: #2b8f86;
-  background: #e4f6f1;
-}
-
-.template-dropzone.disabled {
-  opacity: 0.7;
-}
-
-.template-dropzone p {
-  margin: 0;
-}
-
-.template-file-input {
-  display: none;
-}
-
-@media (max-width: 1100px) {
-  .create-table {
-    grid-template-columns: 1fr;
-  }
-
-  .schema-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .schema-canvas {
-    min-width: 100%;
-  }
-
-  .form-editor {
-    grid-template-columns: 1fr;
-  }
-
-  .report-editor-grid,
-  .metric-row,
-  .chart-row,
-  .excel-column-row,
-  .zones-grid,
-  .import-target-row,
-  .mapping-row,
-  .import-target-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .reports-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .reports-header-actions {
-    justify-content: flex-start;
-  }
-}
-
-@media (max-width: 760px) {
-  .dashboard {
-    grid-template-columns: 1fr;
-  }
-
-  .content {
-    padding: 16px;
-  }
-}
-</style>
+<style scoped src="../styles/dashboard/dashboard-view.css"></style>

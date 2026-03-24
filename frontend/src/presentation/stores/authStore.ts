@@ -2,13 +2,13 @@ import { defineStore } from 'pinia'
 
 import type { User } from '../../domain/entities/Auth'
 import { AuthUseCase } from '../../application/usecases/AuthUseCase'
+import { clearStoredToken, getStoredToken, setStoredToken } from '../../infrastructure/auth/tokenStorage'
 
 const authUseCase = new AuthUseCase()
-const TOKEN_KEY = 'low_code_token'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
-    token: localStorage.getItem(TOKEN_KEY) as string | null,
+    token: getStoredToken(),
     me: null as User | null,
     loading: false,
     error: ''
@@ -63,13 +63,13 @@ export const useAuthStore = defineStore('auth', {
 
     setToken(token: string): void {
       this.token = token
-      localStorage.setItem(TOKEN_KEY, token)
+      setStoredToken(token)
     },
 
     logout(): void {
       this.token = null
       this.me = null
-      localStorage.removeItem(TOKEN_KEY)
+      clearStoredToken()
     }
   }
 })

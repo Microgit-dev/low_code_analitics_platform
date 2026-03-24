@@ -43,6 +43,13 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
     return AuthResponse(access_token=token)
 
 
+@router.post("/refresh", response_model=AuthResponse)
+def refresh(current_user: User = Depends(get_current_user)) -> AuthResponse:
+    token_service = TokenService()
+    token = token_service.create_access_token(current_user.id)
+    return AuthResponse(access_token=token)
+
+
 @router.get("/me", response_model=UserResponse)
 def me(current_user: User = Depends(get_current_user)) -> UserResponse:
     return UserResponse(id=current_user.id, email=current_user.email)
