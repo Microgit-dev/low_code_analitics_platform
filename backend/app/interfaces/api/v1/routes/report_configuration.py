@@ -1,8 +1,10 @@
+import csv
 from datetime import datetime
-from io import BytesIO
+from io import BytesIO, StringIO
 from typing import Any
+from zipfile import ZIP_DEFLATED, ZipFile
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from sqlalchemy import select
@@ -32,6 +34,7 @@ from app.interfaces.api.v1.schemas.report_configuration import (
     DashboardChartResponse,
     DashboardMetricResponse,
     PublicDashboardResponse,
+    PublicDashboardWidgetResponse,
     ReportConfigurationCreateRequest,
     ReportConfigurationResponse,
     ReportConfigurationUpdateRequest,
@@ -144,6 +147,238 @@ def _assert_workspace_owner(session: Session, workspace_id: int, owner_id: int) 
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
 
+def _normalize_dashboard_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    table_id = settings.get("table_id")
+    metrics = settings.get("metrics")
+    charts = settings.get("charts")
+    recent_limit = settings.get("recent_limit")
+
+    if isinstance(table_id, int) and isinstance(metrics, list) and isinstance(charts, list):
+        return {
+            "table_id": table_id,
+            "metrics": metrics,
+            "charts": charts,
+            "recent_limit": recent_limit if isinstance(recent_limit, int) and recent_limit > 0 else 10,
+        }
+
+    widgets = settings.get("widgets")
+    if not isinstance(widgets, list):
+        return {
+            "table_id": table_id,
+            "metrics": metrics if isinstance(metrics, list) else [],
+            "charts": charts if isinstance(charts, list) else [],
+            "recent_limit": recent_limit if isinstance(recent_limit, int) and recent_limit > 0 else 10,
+        }
+
+    normalized_metrics: list[dict[str, Any]] = []
+    normalized_charts: list[dict[str, Any]] = []
+    normalized_table_id: int | None = table_id if isinstance(table_id, int) else None
+    normalized_recent_limit = recent_limit if isinstance(recent_limit, int) and recent_limit > 0 else 10
+
+    for widget in widgets:
+        if not isinstance(widget, dict):
+            continue
+
+        widget_type = str(widget.get("type") or "")
+        source = widget.get("source")
+        source_table_id = source.get("table_id") if isinstance(source, dict) else None
+        query = widget.get("query") if isinstance(widget.get("query"), dict) else {}
+        presentation = widget.get("presentation") if isinstance(widget.get("presentation"), dict) else {}
+
+        if normalized_table_id is None and isinstance(source_table_id, int):
+            normalized_table_id = source_table_id
+
+        if widget_type == "table" and isinstance(source_table_id, int):
+            normalized_table_id = source_table_id
+            limit_raw = query.get("limit")
+            if isinstance(limit_raw, int) and limit_raw > 0:
+                normalized_recent_limit = limit_raw
+
+        if widget_type == "metric":
+            aggregation = str(query.get("aggregation") or "count")
+            field_key = query.get("field_key")
+            normalized_metrics.append(
+                {
+                    "label": str(widget.get("title") or ""),
+                    "aggregation": aggregation,
+                    "field_key": field_key if isinstance(field_key, str) and field_key else None,
+                }
+            )
+
+        if widget_type == "chart":
+            group_by_key = query.get("group_by_key")
+            if not isinstance(group_by_key, str) or not group_by_key:
+                continue
+
+            aggregation = str(query.get("aggregation") or "count")
+            value_key = query.get("field_key")
+            limit_raw = query.get("limit")
+            normalized_charts.append(
+                {
+                    "title": str(widget.get("title") or ""),
+                    "chart_type": "bar",
+                    "color": presentation.get("color") if isinstance(presentation.get("color"), str) else None,
+                    "group_by_key": group_by_key,
+                    "aggregation": aggregation,
+                    "value_key": value_key if isinstance(value_key, str) and value_key else None,
+                    "limit": limit_raw if isinstance(limit_raw, int) and limit_raw > 0 else 10,
+                }
+            )
+
+    return {
+        "table_id": normalized_table_id,
+        "metrics": normalized_metrics,
+        "charts": normalized_charts,
+        "recent_limit": normalized_recent_limit,
+    }
+
+
+def _normalize_table_report_settings(settings: dict[str, Any]) -> list[dict[str, Any]]:
+    datasets = settings.get("datasets")
+    if isinstance(datasets, list) and datasets:
+        normalized: list[dict[str, Any]] = []
+        for index, dataset in enumerate(datasets):
+            if not isinstance(dataset, dict):
+                continue
+            table_id = dataset.get("table_id")
+            if not isinstance(table_id, int):
+                continue
+            columns_raw = dataset.get("columns")
+            columns: list[tuple[str, str]] = []
+            if isinstance(columns_raw, list):
+                for column in columns_raw:
+                    if not isinstance(column, dict):
+                        continue
+                    key = column.get("key")
+                    if not isinstance(key, str) or not key:
+                        continue
+                    label_raw = column.get("label")
+                    label = str(label_raw) if isinstance(label_raw, (str, int, float)) else key
+                    columns.append((key, label))
+            normalized.append(
+                {
+                    "id": str(dataset.get("id") or f"dataset_{index + 1}"),
+                    "title": str(dataset.get("title") or f"Dataset {index + 1}"),
+                    "sheet_name": str(dataset.get("sheet_name") or f"Sheet{index + 1}")[:31] or f"Sheet{index + 1}",
+                    "table_id": table_id,
+                    "columns": columns,
+                }
+            )
+        if normalized:
+            return normalized
+
+    table_id = settings.get("table_id")
+    if not isinstance(table_id, int):
+        return []
+
+    columns_raw = settings.get("columns")
+    columns: list[tuple[str, str]] = []
+    if isinstance(columns_raw, list):
+        for column in columns_raw:
+            if not isinstance(column, dict):
+                continue
+            key = column.get("key")
+            if not isinstance(key, str) or not key:
+                continue
+            label_raw = column.get("label")
+            label = str(label_raw) if isinstance(label_raw, (str, int, float)) else key
+            columns.append((key, label))
+
+    return [
+        {
+            "id": "dataset_1",
+            "title": "Report",
+            "sheet_name": "Report",
+            "table_id": table_id,
+            "columns": columns,
+        }
+    ]
+
+
+def _build_widget_metric_value(widget: dict[str, Any], rows: list[TableDataRecordModel]) -> float | int | None:
+    query = widget.get("query") if isinstance(widget.get("query"), dict) else {}
+    aggregation = str(query.get("aggregation") or "count")
+    if aggregation == "count":
+        return len(rows)
+
+    field_key = query.get("field_key")
+    if not isinstance(field_key, str) or not field_key:
+        return None
+
+    values = _extract_metric_values(rows, field_key)
+    if not values:
+        return None
+    if aggregation == "sum":
+        return round(sum(values), 2)
+    if aggregation == "avg":
+        return round(sum(values) / len(values), 2)
+    if aggregation == "min":
+        return round(min(values), 2)
+    if aggregation == "max":
+        return round(max(values), 2)
+    return None
+
+
+def _build_widget_map_points(widget: dict[str, Any], rows: list[TableDataRecordModel]) -> list[dict[str, Any]]:
+    config = widget.get("config") if isinstance(widget.get("config"), dict) else {}
+    query = widget.get("query") if isinstance(widget.get("query"), dict) else {}
+    lat_field = config.get("latField")
+    lng_field = config.get("lngField")
+    label_field = config.get("labelField")
+    if not isinstance(lat_field, str) or not lat_field or not isinstance(lng_field, str) or not lng_field:
+        return []
+
+    limit_raw = query.get("limit")
+    limit = limit_raw if isinstance(limit_raw, int) and limit_raw > 0 else 30
+    points: list[dict[str, Any]] = []
+    for row in rows[:limit]:
+        row_data = row.data_json or {}
+        lat = _to_number(row_data.get(lat_field))
+        lng = _to_number(row_data.get(lng_field))
+        if lat is None or lng is None:
+            continue
+        label = row_data.get(label_field) if isinstance(label_field, str) and label_field else None
+        points.append(
+            {
+                "lat": lat,
+                "lng": lng,
+                "label": str(label or f"({lat}, {lng})"),
+            }
+        )
+    return points
+
+
+def _format_export_value(value: Any) -> Any:
+    if value is None:
+        return ""
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, list):
+        return ", ".join(str(_format_export_value(item)) for item in value)
+    if isinstance(value, dict):
+        return str({key: _format_export_value(item) for key, item in value.items()})
+    return str(value)
+
+
+def _make_unique_name(base_name: str, used_names: set[str], suffix: str = "") -> str:
+    candidate = (base_name or "sheet").strip() or "sheet"
+    if suffix and candidate.lower().endswith(suffix.lower()):
+        raw_candidate = candidate[: -len(suffix)]
+    else:
+        raw_candidate = candidate
+
+    raw_candidate = raw_candidate.strip() or "sheet"
+    candidate_full = f"{raw_candidate}{suffix}"
+    counter = 2
+    while candidate_full in used_names:
+        candidate_full = f"{raw_candidate}_{counter}{suffix}"
+        counter += 1
+    used_names.add(candidate_full)
+    return candidate_full
+
+
 @router.get("/reports/{report_id}/dashboard", response_model=PublicDashboardResponse)
 def get_public_dashboard(
     report_id: int,
@@ -159,23 +394,31 @@ def get_public_dashboard(
     if report.report_type != "dashboard":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Report type is not dashboard")
 
-    settings = report.settings or {}
+    raw_settings = report.settings or {}
+    settings = _normalize_dashboard_settings(raw_settings)
     table_id = settings.get("table_id")
     if not isinstance(table_id, int):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Dashboard table is not configured")
 
-    rows = (
-        session.execute(
-            select(TableDataRecordModel)
-            .where(
-                TableDataRecordModel.workspace_id == report.workspace_id,
-                TableDataRecordModel.table_id == table_id,
+    rows_cache: dict[int, list[TableDataRecordModel]] = {}
+
+    def get_rows_for_table(table_id_value: int) -> list[TableDataRecordModel]:
+        if table_id_value not in rows_cache:
+            rows_cache[table_id_value] = (
+                session.execute(
+                    select(TableDataRecordModel)
+                    .where(
+                        TableDataRecordModel.workspace_id == report.workspace_id,
+                        TableDataRecordModel.table_id == table_id_value,
+                    )
+                    .order_by(TableDataRecordModel.created_at.desc())
+                )
+                .scalars()
+                .all()
             )
-            .order_by(TableDataRecordModel.created_at.desc())
-        )
-        .scalars()
-        .all()
-    )
+        return rows_cache[table_id_value]
+
+    rows = get_rows_for_table(table_id)
 
     metrics_config = settings.get("metrics") or []
     metrics: list[DashboardMetricResponse] = []
@@ -222,6 +465,7 @@ def get_public_dashboard(
 
         title = str(chart.get("title") or "График")
         chart_type = str(chart.get("chart_type") or "bar")
+        color = chart.get("color")
         group_by_key = chart.get("group_by_key")
         aggregation = str(chart.get("aggregation") or "count")
         value_key = chart.get("value_key")
@@ -238,7 +482,14 @@ def get_public_dashboard(
             value_key=value_key if isinstance(value_key, str) and value_key else None,
             limit=limit,
         )
-        charts.append(DashboardChartResponse(title=title, chart_type="bar", points=points))
+        charts.append(
+            DashboardChartResponse(
+                title=title,
+                chart_type="bar",
+                color=color if isinstance(color, str) and color else None,
+                points=points,
+            )
+        )
 
     recent_limit_raw = settings.get("recent_limit", 10)
     recent_limit = recent_limit_raw if isinstance(recent_limit_raw, int) and recent_limit_raw > 0 else 10
@@ -253,6 +504,135 @@ def get_public_dashboard(
         for row in rows[:recent_limit]
     ]
 
+    widgets: list[PublicDashboardWidgetResponse] = []
+    raw_widgets = raw_settings.get("widgets")
+    if isinstance(raw_widgets, list):
+        for index, widget in enumerate(raw_widgets):
+            if not isinstance(widget, dict):
+                continue
+
+            widget_type = str(widget.get("type") or "")
+            widget_id = str(widget.get("id") or f"widget_{index + 1}")
+            title = str(widget.get("title") or "")
+            description = str(widget.get("description") or "").strip() or None
+            presentation = widget.get("presentation") if isinstance(widget.get("presentation"), dict) else {}
+            source = widget.get("source") if isinstance(widget.get("source"), dict) else {}
+            query = widget.get("query") if isinstance(widget.get("query"), dict) else {}
+            config = widget.get("config") if isinstance(widget.get("config"), dict) else {}
+            widget_table_id = source.get("table_id") if isinstance(source.get("table_id"), int) else table_id
+            widget_rows = get_rows_for_table(widget_table_id) if isinstance(widget_table_id, int) else rows
+            width = presentation.get("width")
+            color = presentation.get("color") if isinstance(presentation.get("color"), str) else None
+
+            if widget_type == "metric":
+                widgets.append(
+                    PublicDashboardWidgetResponse(
+                        id=widget_id,
+                        type="metric",
+                        title=title,
+                        description=description,
+                        width="half" if width == "half" else "full",
+                        color=color,
+                        value=_build_widget_metric_value(widget, widget_rows),
+                    )
+                )
+                continue
+
+            if widget_type == "chart":
+                group_by_key = query.get("group_by_key")
+                aggregation = str(query.get("aggregation") or "count")
+                value_key = query.get("field_key")
+                limit_raw = query.get("limit")
+                limit = limit_raw if isinstance(limit_raw, int) and limit_raw > 0 else 10
+                points = []
+                if isinstance(group_by_key, str) and group_by_key:
+                    points = _build_chart_points(
+                        rows=widget_rows,
+                        group_by_key=group_by_key,
+                        aggregation=aggregation,
+                        value_key=value_key if isinstance(value_key, str) and value_key else None,
+                        limit=limit,
+                    )
+                widgets.append(
+                    PublicDashboardWidgetResponse(
+                        id=widget_id,
+                        type="chart",
+                        title=title,
+                        description=description,
+                        width="half" if width == "half" else "full",
+                        color=color,
+                        points=points,
+                    )
+                )
+                continue
+
+            if widget_type == "table":
+                config_columns = config.get("columns")
+                column_keys = [str(item) for item in config_columns if isinstance(item, (str, int, float))] if isinstance(config_columns, list) else []
+                table_model = session.execute(
+                    select(TableStructureModel).where(
+                        TableStructureModel.workspace_id == report.workspace_id,
+                        TableStructureModel.id == widget_table_id,
+                    )
+                ).scalar()
+                table_columns = table_model.columns_json if table_model and isinstance(table_model.columns_json, list) else []
+                selected_columns = [
+                    {
+                        "key": str(column.get("key")),
+                        "label": str(column.get("name") or column.get("key")),
+                    }
+                    for column in table_columns
+                    if isinstance(column, dict)
+                    and column.get("key")
+                    and (not column_keys or str(column.get("key")) in column_keys)
+                ]
+                limit_raw = query.get("limit")
+                page_size = limit_raw if isinstance(limit_raw, int) and limit_raw > 0 else 20
+                table_rows = []
+                for row in widget_rows:
+                    row_data = row.data_json or {}
+                    table_rows.append({column["key"]: row_data.get(column["key"]) for column in selected_columns})
+
+                widgets.append(
+                    PublicDashboardWidgetResponse(
+                        id=widget_id,
+                        type="table",
+                        title=title,
+                        description=description,
+                        width="half" if width == "half" else "full",
+                        columns=selected_columns,
+                        rows=table_rows,
+                        page_size=page_size,
+                        total_rows=len(table_rows),
+                    )
+                )
+                continue
+
+            if widget_type == "map":
+                widgets.append(
+                    PublicDashboardWidgetResponse(
+                        id=widget_id,
+                        type="map",
+                        title=title,
+                        description=description,
+                        width="half" if width == "half" else "full",
+                        map_points=_build_widget_map_points(widget, widget_rows),
+                    )
+                )
+                continue
+
+            if widget_type == "text":
+                widgets.append(
+                    PublicDashboardWidgetResponse(
+                        id=widget_id,
+                        type="text",
+                        title=title,
+                        description=description,
+                        width="half" if width == "half" else "full",
+                        content=str(config.get("content") or ""),
+                    )
+                )
+
     return PublicDashboardResponse(
         id=report.id,
         name=report.name,
@@ -262,6 +642,7 @@ def get_public_dashboard(
         metrics=metrics,
         charts=charts,
         recent_records=recent_records,
+        widgets=widgets,
     )
 
 
@@ -377,6 +758,7 @@ def delete_report(
 def download_excel_report(
     workspace_id: int,
     report_id: int,
+    format: str = Query("xlsx", pattern="^(xlsx|csv)$"),
     current_user=Depends(get_current_user),
     repo: ReportConfigurationRepository = Depends(get_report_repo),
     session: Session = Depends(get_db),
@@ -391,70 +773,104 @@ def download_excel_report(
     if report.report_type != "excel_export":
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Report type is not excel_export")
 
-    settings = report.settings or {}
-    table_id = settings.get("table_id")
-    if not isinstance(table_id, int):
+    datasets = _normalize_table_report_settings(report.settings or {})
+    if not datasets:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Report table is not configured")
 
-    table = session.execute(
-        select(TableStructureModel).where(
-            TableStructureModel.workspace_id == workspace_id,
-            TableStructureModel.id == table_id,
-        )
-    ).scalar()
-    if not table:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found")
-
-    columns_config = settings.get("columns")
-    if isinstance(columns_config, list) and columns_config:
-        columns: list[tuple[str, str]] = []
-        for column in columns_config:
-            if not isinstance(column, dict):
-                continue
-            key = column.get("key")
-            if not isinstance(key, str) or not key:
-                continue
-            label_raw = column.get("label")
-            label = str(label_raw) if isinstance(label_raw, (str, int, float)) else key
-            columns.append((key, label))
-    else:
-        columns = [
-            (str(column.get("key")), str(column.get("name") or column.get("key")))
-            for column in (table.columns_json or [])
-            if isinstance(column, dict) and column.get("key")
-        ]
-
-    rows = (
-        session.execute(
-            select(TableDataRecordModel)
-            .where(
-                TableDataRecordModel.workspace_id == workspace_id,
-                TableDataRecordModel.table_id == table_id,
+    prepared_datasets: list[dict[str, Any]] = []
+    used_sheet_names: set[str] = set()
+    for index, dataset in enumerate(datasets):
+        table = session.execute(
+            select(TableStructureModel).where(
+                TableStructureModel.workspace_id == workspace_id,
+                TableStructureModel.id == dataset["table_id"],
             )
-            .order_by(TableDataRecordModel.created_at.desc())
+        ).scalar()
+        if not table:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found")
+
+        columns = dataset["columns"]
+        if not columns:
+            columns = [
+                (str(column.get("key")), str(column.get("name") or column.get("key")))
+                for column in (table.columns_json or [])
+                if isinstance(column, dict) and column.get("key")
+            ]
+
+        rows = (
+            session.execute(
+                select(TableDataRecordModel)
+                .where(
+                    TableDataRecordModel.workspace_id == workspace_id,
+                    TableDataRecordModel.table_id == dataset["table_id"],
+                )
+                .order_by(TableDataRecordModel.created_at.desc())
+            )
+            .scalars()
+            .all()
         )
-        .scalars()
-        .all()
-    )
+
+        prepared_datasets.append(
+            {
+                "title": dataset["title"],
+                "sheet_name": _make_unique_name((dataset["sheet_name"] or f"Sheet{index + 1}")[:31], used_sheet_names),
+                "columns": columns,
+                "rows": rows,
+            }
+        )
+
+    if format == "csv":
+        if len(prepared_datasets) == 1:
+            output = StringIO()
+            writer = csv.writer(output)
+            writer.writerow([label for _, label in prepared_datasets[0]["columns"]])
+            for row in prepared_datasets[0]["rows"]:
+                row_data = row.data_json or {}
+                writer.writerow([_format_export_value(row_data.get(key)) for key, _ in prepared_datasets[0]["columns"]])
+
+            return StreamingResponse(
+                iter([output.getvalue().encode("utf-8-sig")]),
+                media_type="text/csv; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="report_{report.id}.csv"'},
+            )
+
+        archive = BytesIO()
+        used_csv_names: set[str] = set()
+        with ZipFile(archive, "w", compression=ZIP_DEFLATED) as zip_file:
+            for index, dataset in enumerate(prepared_datasets):
+                output = StringIO()
+                writer = csv.writer(output)
+                writer.writerow([label for _, label in dataset["columns"]])
+                for row in dataset["rows"]:
+                    row_data = row.data_json or {}
+                    writer.writerow([_format_export_value(row_data.get(key)) for key, _ in dataset["columns"]])
+                safe_name = _make_unique_name(dataset["sheet_name"] or f"sheet_{index + 1}", used_csv_names, ".csv")
+                zip_file.writestr(safe_name, output.getvalue().encode("utf-8-sig"))
+
+        archive.seek(0)
+        return StreamingResponse(
+            archive,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="report_{report.id}_csv.zip"'},
+        )
 
     wb = Workbook()
-    ws = wb.active
-    ws.title = "Report"
-
-    headers = [label for _, label in columns]
-    ws.append(headers)
-
-    for row in rows:
-        row_data = row.data_json or {}
-        ws.append([row_data.get(key) for key, _ in columns])
+    first_sheet = True
+    for index, dataset in enumerate(prepared_datasets):
+        ws = wb.active if first_sheet else wb.create_sheet()
+        first_sheet = False
+        ws.title = (dataset["sheet_name"] or f"Sheet{index + 1}")[:31]
+        ws.append([label for _, label in dataset["columns"]])
+        for row in dataset["rows"]:
+            row_data = row.data_json or {}
+            ws.append([_format_export_value(row_data.get(key)) for key, _ in dataset["columns"]])
 
     output = BytesIO()
     wb.save(output)
     output.seek(0)
 
-    filename = f"report_{report.id}.xlsx"
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f'attachment; filename="report_{report.id}.xlsx"'},
     )
