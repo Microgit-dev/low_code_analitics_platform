@@ -80,6 +80,16 @@ class MoveTableColumnUseCase:
             raise TableStructureNotFoundError("Cannot move column")
 
 
+class DeleteTableStructureUseCase:
+    def __init__(self, repository: TableStructureRepository) -> None:
+        self.repository = repository
+
+    def execute(self, workspace_id: int, owner_id: int, table_id: int) -> None:
+        deleted = self.repository.delete_table(workspace_id, owner_id, table_id)
+        if not deleted:
+            raise TableStructureNotFoundError("Table structure not found")
+
+
 class ListTableRelationsUseCase:
     def __init__(self, repository: TableStructureRepository) -> None:
         self.repository = repository

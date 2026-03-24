@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.application.use_cases.workspace.manage_table_structures import (
     CreateTableRelationUseCase,
     CreateTableStructureUseCase,
+    DeleteTableStructureUseCase,
     DeleteTableRelationUseCase,
     ListTableRelationsUseCase,
     ListTableStructuresUseCase,
@@ -117,6 +118,24 @@ def update_table_structure(
         created_at=updated.created_at,
         updated_at=updated.updated_at,
     )
+
+
+@router.delete("/tables/{table_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_table_structure(
+    workspace_id: int,
+    table_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    repository = SQLAlchemyTableStructureRepository(db)
+    use_case = DeleteTableStructureUseCase(repository)
+
+    try:
+        use_case.execute(workspace_id=workspace_id, owner_id=current_user.id, table_id=table_id)
+    except TableStructureNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/columns/move", status_code=status.HTTP_204_NO_CONTENT)

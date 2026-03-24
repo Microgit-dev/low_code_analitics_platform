@@ -5,6 +5,8 @@ export type WidgetType =
   | "date_input"
   | "datetime_input"
   | "select"
+  | "multiselect"
+  | "list_input"
   | "checkbox"
   | "radio";
 
@@ -50,4 +52,12 @@ export interface TableDataRecordsListResponse {
   skip: number;
   limit: number;
   pages: number;
+}
+
+export interface PublicFormSubmitResult {
+  form_id: number;
+  records: Array<{
+    table_id: number;
+    record_id: number;
+  }>;
 }

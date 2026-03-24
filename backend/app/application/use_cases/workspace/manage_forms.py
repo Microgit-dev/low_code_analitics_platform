@@ -20,7 +20,7 @@ class ListFormConfigurationsUseCase:
     def __init__(self, repository: FormConfigurationRepository):
         self.repository = repository
 
-    def execute(self, workspace_id: int, table_id: int) -> List[FormConfiguration]:
+    def execute(self, workspace_id: int, table_id: Optional[int] = None) -> List[FormConfiguration]:
         return self.repository.list_by_table(workspace_id, table_id)
 
 

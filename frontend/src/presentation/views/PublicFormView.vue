@@ -16,6 +16,7 @@ const submitted = ref(false)
 // Form data
 const formData = ref<Record<string, any>>({})
 const submitterEmail = ref('')
+const listDraftValues = ref<Record<string, string>>({})
 
 const getFieldInputType = (widgetType: string): string => {
   const typeMap: Record<string, string> = {
@@ -26,6 +27,23 @@ const getFieldInputType = (widgetType: string): string => {
   return typeMap[widgetType] || 'text'
 }
 
+const getFieldOptions = (field: FormConfiguration['fields'][number]): string[] => {
+  const options = field.widget_settings?.options
+  if (!Array.isArray(options)) return []
+  return options.map((item) => String(item)).filter(Boolean)
+}
+
+const isArrayWidget = (field: FormConfiguration['fields'][number]): boolean =>
+  field.widget_type === 'multiselect' || (field.widget_type === 'checkbox' && getFieldOptions(field).length > 0) || field.widget_type === 'list_input'
+
+const isFieldFilled = (field: FormConfiguration['fields'][number], value: unknown): boolean => {
+  if (isArrayWidget(field)) {
+    return Array.isArray(value) && value.length > 0
+  }
+
+  return value !== null && value !== undefined && value !== ''
+}
+
 const getWidgetTypeLabel = (type: string): string => {
   const labels: Record<string, string> = {
     text_input: 'Текстовое поле',
@@ -34,10 +52,39 @@ const getWidgetTypeLabel = (type: string): string => {
     date_input: 'Дата',
     datetime_input: 'Дата и время',
     select: 'Выпадающий список',
+    multiselect: 'Множественный выбор',
+    list_input: 'Список значений',
     checkbox: 'Чекбокс',
     radio: 'Радио'
   }
   return labels[type] || type
+}
+
+const ensureArrayFieldValue = (fieldKey: string) => {
+  if (!Array.isArray(formData.value[fieldKey])) {
+    formData.value[fieldKey] = []
+  }
+}
+
+const addListItem = (fieldKey: string) => {
+  const draft = (listDraftValues.value[fieldKey] || '').trim()
+  if (!draft) return
+
+  ensureArrayFieldValue(fieldKey)
+  const current = formData.value[fieldKey] as string[]
+  if (current.includes(draft)) {
+    listDraftValues.value[fieldKey] = ''
+    return
+  }
+  current.push(draft)
+  listDraftValues.value[fieldKey] = ''
+}
+
+const removeListItem = (fieldKey: string, index: number) => {
+  ensureArrayFieldValue(fieldKey)
+  const current = formData.value[fieldKey] as unknown[]
+  if (index < 0 || index >= current.length) return
+  current.splice(index, 1)
 }
 
 const isFormValid = computed(() => {
@@ -45,7 +92,7 @@ const isFormValid = computed(() => {
   return form.value.fields.every((field) => {
     if (!field.required) return true
     const value = formData.value[field.column_key]
-    return value !== null && value !== undefined && value !== ''
+    return isFieldFilled(field, value)
   })
 })
 
@@ -55,6 +102,12 @@ const loadForm = async () => {
   try {
     const response = await httpClient.get<FormConfiguration>(`/forms/${formId}`)
     form.value = response.data
+
+    for (const field of form.value.fields) {
+      if (isArrayWidget(field)) {
+        ensureArrayFieldValue(field.column_key)
+      }
+    }
   } catch (err) {
     error.value = 'Форма не найдена или не опубликована'
     console.error(err)
@@ -147,8 +200,45 @@ onMounted(() => {
               <option v-for="opt in field.widget_settings.options" :key="opt" :value="opt">{{ opt }}</option>
             </select>
 
+            <select
+              v-else-if="field.widget_type === 'multiselect' && field.widget_settings.options"
+              :id="`field-${field.column_key}`"
+              v-model="formData[field.column_key]"
+              multiple
+            >
+              <option v-for="opt in field.widget_settings.options" :key="`multi-${field.column_key}-${opt}`" :value="opt">{{ opt }}</option>
+            </select>
+
+            <div v-else-if="field.widget_type === 'list_input'" class="list-editor">
+              <div class="list-editor-add-row">
+                <input
+                  v-model="listDraftValues[field.column_key]"
+                  :placeholder="field.placeholder || 'Добавить элемент списка'"
+                  @keydown.enter.prevent="addListItem(field.column_key)"
+                />
+                <button type="button" class="small-btn" @click="addListItem(field.column_key)">Добавить</button>
+              </div>
+              <ul v-if="Array.isArray(formData[field.column_key]) && formData[field.column_key].length > 0" class="list-editor-items">
+                <li v-for="(item, idx) in formData[field.column_key]" :key="`li-${field.column_key}-${idx}`">
+                  <span>{{ item }}</span>
+                  <button type="button" class="small-btn danger-btn" @click="removeListItem(field.column_key, idx)">Удалить</button>
+                </li>
+              </ul>
+            </div>
+
             <div v-else-if="field.widget_type === 'checkbox'" class="checkbox-wrapper">
+              <template v-if="getFieldOptions(field).length > 0">
+                <label v-for="opt in getFieldOptions(field)" :key="`checkbox-${field.column_key}-${opt}`">
+                  <input
+                    v-model="formData[field.column_key]"
+                    type="checkbox"
+                    :value="opt"
+                  />
+                  {{ opt }}
+                </label>
+              </template>
               <input
+                v-else
                 :id="`field-${field.column_key}`"
                 v-model="formData[field.column_key]"
                 type="checkbox"
@@ -282,6 +372,51 @@ form {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.list-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.list-editor-add-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.list-editor-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.list-editor-items li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #d4e0e3;
+  background: #f7fbfc;
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+
+.small-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  background: #2f5f78;
+  color: #fff;
+  cursor: pointer;
+}
+
+.danger-btn {
+  background: #b94b59;
 }
 
 .checkbox-wrapper input,

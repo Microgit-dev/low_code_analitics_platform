@@ -9,8 +9,8 @@ class FormConfigurationRepository(ABC):
     """Абстрактный репозиторий для управления конфигурациями форм"""
 
     @abstractmethod
-    def list_by_table(self, workspace_id: int, table_id: int) -> List[FormConfiguration]:
-        """Получить все формы для таблицы"""
+    def list_by_table(self, workspace_id: int, table_id: Optional[int] = None) -> List[FormConfiguration]:
+        """Получить формы workspace, опционально отфильтрованные по таблице"""
         pass
 
     @abstractmethod

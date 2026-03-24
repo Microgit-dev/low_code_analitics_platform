@@ -11,7 +11,7 @@ class FormFieldSchema(BaseModel):
     column_key: str
     column_name: str
     field_label: str
-    widget_type: str  # text_input, textarea, number_input, date_input, datetime_input, select, checkbox, radio
+    widget_type: str  # text_input, textarea, number_input, date_input, datetime_input, select, multiselect, list_input, checkbox, radio
     required: bool = True
     placeholder: Optional[str] = None
     help_text: Optional[str] = None

@@ -23,6 +23,10 @@ export class TableSchemaUseCase {
     return tableSchemaApi.updateTable(token, workspaceId, tableId, payload)
   }
 
+  async deleteTable(token: string, workspaceId: number, tableId: number): Promise<void> {
+    return tableSchemaApi.deleteTable(token, workspaceId, tableId)
+  }
+
   async moveColumn(
     token: string,
     workspaceId: number,
