@@ -36,6 +36,8 @@ const previewRows = ref<TableDataRecord[]>([])
 const previewLoading = ref(false)
 const previewError = ref('')
 const addTableId = ref<number | null>(null)
+const draggedColumnKey = ref<string | null>(null)
+const dragOverIndex = ref<number | null>(null)
 
 const selectedDataset = computed(() => datasets.value.find((item) => item.id === selectedDatasetId.value) ?? null)
 const selectedTable = computed(() => {
@@ -82,15 +84,7 @@ function normalizeTableSettings(raw: Record<string, unknown>, tableOptions: Tabl
                 }))
                 .filter((column) => column.key)
             : [],
-          sorting: Array.isArray(item.sorting)
-            ? item.sorting
-                .filter((sorting): sorting is Record<string, unknown> => !!sorting && typeof sorting === 'object')
-                .map((sorting) => ({
-                  field: String(sorting.field || ''),
-                  direction: sorting.direction === 'asc' ? 'asc' : 'desc',
-                }))
-                .filter((sorting) => sorting.field)
-            : [],
+          sorting: [],
           filters: [],
         })),
     }
@@ -153,7 +147,7 @@ async function loadEditor() {
 
     if (!reportId.value) throw new Error('Missing report id')
     const report: ReportConfiguration = await reportUseCase.getReport(workspaceId.value, reportId.value)
-    if (report.report_type !== 'excel_export') {
+    if (report.report_type !== 'table_export') {
       throw new Error('Wrong report type')
     }
 
@@ -215,6 +209,47 @@ function moveColumn(columnKey: string, direction: -1 | 1) {
   selectedDataset.value.columns = next
 }
 
+function updateColumnLabel(columnKey: string, label: string) {
+  if (!selectedDataset.value) return
+  selectedDataset.value.columns = selectedDataset.value.columns.map((column) =>
+    column.key === columnKey ? { ...column, label: label || '' } : column
+  )
+}
+
+function onColumnDragStart(columnKey: string) {
+  draggedColumnKey.value = columnKey
+}
+
+function onColumnDragEnd() {
+  draggedColumnKey.value = null
+  dragOverIndex.value = null
+}
+
+function onColumnDragOver(event: DragEvent, index: number) {
+  event.preventDefault()
+  dragOverIndex.value = index
+}
+
+function onColumnDrop(event: DragEvent, dropIndex: number) {
+  event.preventDefault()
+  if (!selectedDataset.value || !draggedColumnKey.value) return
+
+  const dragIndex = selectedDataset.value.columns.findIndex((c) => c.key === draggedColumnKey.value)
+  if (dragIndex === dropIndex || dragIndex < 0) {
+    draggedColumnKey.value = null
+    dragOverIndex.value = null
+    return
+  }
+
+  const next = [...selectedDataset.value.columns]
+  const [column] = next.splice(dragIndex, 1)
+  next.splice(dropIndex, 0, column)
+  selectedDataset.value.columns = next
+
+  draggedColumnKey.value = null
+  dragOverIndex.value = null
+}
+
 async function loadPreview() {
   if (!selectedDataset.value?.table_id) {
     previewRows.value = []
@@ -253,7 +288,7 @@ async function saveReport() {
           workspaceId.value,
           reportName.value.trim(),
           reportDescription.value.trim(),
-          'excel_export',
+          'table_export',
           settings as unknown as Record<string, unknown>,
           reportIsPublished.value
         )
@@ -262,7 +297,7 @@ async function saveReport() {
           reportId.value as number,
           reportName.value.trim(),
           reportDescription.value.trim(),
-          'excel_export',
+          'table_export',
           settings as unknown as Record<string, unknown>,
           reportIsPublished.value
         )
@@ -297,195 +332,735 @@ onMounted(loadEditor)
 
 <template>
   <main class="table-report-page">
-    <header class="topbar">
-      <div>
-        <button class="ghost-link" @click="router.push({ name: 'dashboard' })">← Назад</button>
-        <h1>Табличный отчет</h1>
-        <p>Отдельный конструктор для multi-table CSV/XLSX экспорта.</p>
+    <header class="header-bar">
+      <div class="header-content">
+        <button class="back-btn" @click="router.push({ name: 'dashboard' })">← Назад</button>
+        <div>
+          <h1>Табличный отчет</h1>
+          <p>Многотабличный экспорт в CSV/XLSX</p>
+        </div>
       </div>
-      <div class="topbar-actions">
+      <div class="header-actions">
         <button
           v-if="!isCreateMode && reportId"
-          class="secondary-btn"
+          class="btn-secondary"
           @click="router.push({ name: 'table-report-view', params: { workspaceId, reportId } })"
         >
-          Открыть представление
+          Открыть отчет
         </button>
-        <label class="checkbox-inline">
+        <label class="checkbox-label">
           <input v-model="reportIsPublished" type="checkbox" />
           Опубликован
         </label>
-        <button class="primary-btn" :disabled="saving" @click="saveReport">
+        <button class="btn-primary" :disabled="saving" @click="saveReport">
           {{ saving ? 'Сохранение...' : 'Сохранить' }}
         </button>
       </div>
     </header>
 
-    <div v-if="loading" class="surface-card">Загрузка...</div>
-    <div v-else-if="pageError" class="surface-card error">{{ pageError }}</div>
+    <div v-if="loading" class="card">⏳ Загрузка...</div>
+    <div v-else-if="pageError" class="card error-message">❌ {{ pageError }}</div>
+
     <template v-else>
-      <section class="surface-card meta-grid">
-        <div>
+      <!-- Metadata -->
+      <section class="card meta-section">
+        <div class="form-group">
           <label>Название отчета</label>
-          <input v-model="reportName" placeholder="Например: Экспорт по нескольким таблицам" />
+          <input v-model="reportName" placeholder="Введите название отчета" class="input-text" />
         </div>
-        <div>
+        <div class="form-group">
           <label>Описание</label>
-          <input v-model="reportDescription" placeholder="Что попадет в экспорт" />
+          <input v-model="reportDescription" placeholder="Краткое описание содержимого" class="input-text" />
         </div>
       </section>
 
-      <section class="surface-card">
-        <div class="section-head">
+      <!-- Datasets Management -->
+      <section class="card datasets-section">
+        <div class="section-header">
           <div>
             <h3>Наборы таблиц</h3>
-            <p class="muted">Каждый набор станет отдельной таблицей preview и отдельным sheet в Excel.</p>
+            <p class="muted">Каждый набор экспортируется в отдельный лист Excel</p>
           </div>
-          <div class="dataset-add">
-            <select v-model.number="addTableId">
+          <div class="dataset-controls">
+            <select v-model.number="addTableId" class="input-text">
+              <option :value="null">Выберите таблицу</option>
               <option v-for="table in tables" :key="table.id" :value="table.id">{{ table.name }}</option>
             </select>
-            <button class="secondary-btn" @click="addDataset">Добавить таблицу</button>
+            <button class="btn-secondary" @click="addDataset">+ Добавить</button>
           </div>
         </div>
 
-        <div class="dataset-tabs">
+        <div class="dataset-list">
           <button
-            v-for="dataset in datasets"
-            :key="dataset.id"
-            class="dataset-tab"
-            :class="{ active: dataset.id === selectedDatasetId }"
-            @click="selectedDatasetId = dataset.id"
+            v-for="(ds, idx) in datasets"
+            :key="ds.id"
+            class="dataset-item"
+            :class="{ active: ds.id === selectedDatasetId }"
+            @click="selectedDatasetId = ds.id"
           >
-            <span>{{ dataset.title }}</span>
-            <small>{{ tables.find((table) => table.id === dataset.table_id)?.name || 'Без таблицы' }}</small>
+            <span class="dataset-title">{{ ds.title }}</span>
+            <span class="dataset-table">{{ tables.find((t) => t.id === ds.table_id)?.name || '—' }}</span>
+            <span v-if="datasets.length > 1" class="dataset-index">{{ idx + 1 }}</span>
           </button>
         </div>
       </section>
 
-      <section class="editor-layout" v-if="selectedDataset">
-        <aside class="surface-card editor-panel">
-          <div class="section-head">
-            <h3>Настройки набора</h3>
-            <div class="inline-actions">
-              <button class="small-btn" @click="moveDataset(selectedDataset.id, -1)">↑</button>
-              <button class="small-btn" @click="moveDataset(selectedDataset.id, 1)">↓</button>
-              <button class="danger-btn" :disabled="datasets.length === 1" @click="removeDataset(selectedDataset.id)">Удалить</button>
+      <!-- Editor -->
+      <section v-if="selectedDataset" class="editor-section">
+        <div class="editor-column editor-settings">
+          <div class="card settings-card">
+            <div class="card-header">
+              <h3>Параметры набора</h3>
+              <div v-if="datasets.length > 1" class="dataset-actions">
+                <button class="btn-sm" @click="moveDataset(selectedDataset.id, -1)" title="Поднять">↑</button>
+                <button class="btn-sm" @click="moveDataset(selectedDataset.id, 1)" title="Опустить">↓</button>
+                <button class="btn-sm danger" @click="removeDataset(selectedDataset.id)" title="Удалить">✕</button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Заголовок набора</label>
+              <input v-model="selectedDataset.title" class="input-text" placeholder="Название для таблицы" />
+            </div>
+
+            <div class="form-group">
+              <label>Имя листа (макс. 31 символ)</label>
+              <input v-model="selectedDataset.sheet_name" maxlength="31" class="input-text" placeholder="Sheet1" />
+            </div>
+
+            <div class="form-group">
+              <label>Исходная таблица</label>
+              <select v-model.number="selectedDataset.table_id" @change="syncColumnsWithTable(selectedDataset)" class="input-text">
+                <option :value="null">—</option>
+                <option v-for="table in tables" :key="table.id" :value="table.id">{{ table.name }}</option>
+              </select>
             </div>
           </div>
+        </div>
 
-          <div class="field-block">
-            <label>Заголовок набора</label>
-            <input v-model="selectedDataset.title" />
-          </div>
+        <div class="editor-column editor-columns">
+          <div class="card columns-card">
+            <div class="card-header">
+              <h3>Столбцы ({{ selectedDataset.columns.length }})</h3>
+            </div>
 
-          <div class="field-block">
-            <label>Имя листа Excel</label>
-            <input v-model="selectedDataset.sheet_name" maxlength="31" />
-          </div>
+            <div v-if="!selectedTable" class="muted-text">Выберите таблицу</div>
 
-          <div class="field-block">
-            <label>Таблица</label>
-            <select v-model.number="selectedDataset.table_id" @change="syncColumnsWithTable(selectedDataset)">
-              <option :value="null">Выберите таблицу</option>
-              <option v-for="table in tables" :key="table.id" :value="table.id">{{ table.name }}</option>
-            </select>
-          </div>
+            <div v-else-if="selectedDataset.columns.length === 0" class="muted-text">
+              Добавьте столбцы скроллинг ниже ↓
+            </div>
 
-          <div class="field-block">
-            <label>Столбцы и порядок</label>
-            <div v-if="selectedTable" class="column-list">
-              <div v-for="column in selectedTable.columns" :key="column.key" class="column-item">
-                <label class="column-toggle">
-                  <input
-                    type="checkbox"
-                    :checked="selectedDataset.columns.some((item) => item.key === column.key)"
-                    @change="toggleColumn(column, ($event.target as HTMLInputElement).checked)"
-                  />
-                  <span>{{ column.name }}</span>
-                </label>
-                <template v-if="selectedDataset.columns.some((item) => item.key === column.key)">
-                  <input
-                    :value="selectedDataset.columns.find((item) => item.key === column.key)?.label || column.name"
-                    placeholder="Подпись столбца"
-                    @input="
-                      selectedDataset.columns = selectedDataset.columns.map((item) =>
-                        item.key === column.key
-                          ? { ...item, label: ($event.target as HTMLInputElement).value || column.name }
-                          : item
-                      )
-                    "
-                  />
-                  <div class="inline-actions">
-                    <button class="small-btn" @click="moveColumn(column.key, -1)">↑</button>
-                    <button class="small-btn" @click="moveColumn(column.key, 1)">↓</button>
-                  </div>
-                </template>
+            <div v-else class="columns-list">
+              <div
+                v-for="(column, idx) in selectedDataset.columns"
+                :key="column.key"
+                class="column-row"
+                :class="{ 'dragging': draggedColumnKey === column.key, 'drag-over': dragOverIndex === idx }"
+                draggable="true"
+                @dragstart="onColumnDragStart(column.key)"
+                @dragend="onColumnDragEnd"
+                @dragover="onColumnDragOver($event, idx)"
+                @drop="onColumnDrop($event, idx)"
+                @dragleave="dragOverIndex = null"
+              >
+                <div class="column-info">
+                  <span class="column-index">{{ idx + 1 }}</span>
+                  <span class="drag-handle">⋮</span>
+                  <span class="column-key">{{ column.key }}</span>
+                </div>
+                <input
+                  :value="column.label"
+                  class="input-text column-label"
+                  placeholder="Заголовок столбца"
+                  @input="updateColumnLabel(column.key, ($event.target as HTMLInputElement).value)"
+                />
+                <div class="column-buttons">
+                  <button class="btn-sm" @click="moveColumn(column.key, -1)" :disabled="idx === 0" title="Выше">↑</button>
+                  <button class="btn-sm" @click="moveColumn(column.key, 1)" :disabled="idx === selectedDataset.columns.length - 1" title="Ниже">↓</button>
+                  <button class="btn-sm danger" @click="toggleColumn(selectedTable.columns.find((c) => c.key === column.key)!, false)" title="Удалить">✕</button>
+                </div>
               </div>
             </div>
           </div>
-        </aside>
+        </div>
 
-        <section class="surface-card preview-panel">
-          <div class="section-head">
-            <div>
-              <h3>Preview</h3>
-              <p class="muted">Предпросмотр выбранной таблицы с учетом столбцов и порядка.</p>
+        <div class="editor-column editor-available">
+          <div class="card available-card">
+            <div class="card-header">
+              <h3>Доступные столбцы</h3>
+            </div>
+
+            <div v-if="!selectedTable" class="muted-text">Выберите таблицу</div>
+
+            <div v-else class="available-list">
+              <label v-for="column in selectedTable.columns" :key="column.key" class="available-item">
+                <input
+                  type="checkbox"
+                  :checked="selectedDataset.columns.some((c) => c.key === column.key)"
+                  @change="toggleColumn(column, ($event.target as HTMLInputElement).checked)"
+                />
+                <span class="column-name">{{ column.name }}</span>
+                <span class="column-type">{{ column.key }}</span>
+              </label>
             </div>
           </div>
+        </div>
+      </section>
 
-          <div v-if="previewLoading" class="muted">Загрузка preview...</div>
-          <div v-else-if="previewError" class="error">{{ previewError }}</div>
-          <div v-else-if="selectedDataset.columns.length > 0" class="preview-table-wrap">
-            <table class="preview-table">
-              <thead>
-                <tr>
-                  <th v-for="column in selectedDataset.columns" :key="column.key">{{ column.label }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="row in previewRows" :key="row.id">
-                  <td v-for="column in selectedDataset.columns" :key="column.key">{{ row.data[column.key] ?? '—' }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <p v-else class="muted">Выберите хотя бы один столбец.</p>
-        </section>
+      <!-- Preview -->
+      <section class="card preview-section">
+        <div class="section-header">
+          <h3>Предпросмотр</h3>
+          <p class="muted">Первые 15 строк с выбранными столбцами</p>
+        </div>
+
+        <div v-if="previewLoading" class="muted-text">⏳ Загрузка...</div>
+        <div v-else-if="previewError" class="error-message">❌ {{ previewError }}</div>
+        <div v-else-if="selectedDataset && selectedDataset.columns.length > 0" class="preview-table">
+          <table>
+            <thead>
+              <tr>
+                <th v-for="col in selectedDataset.columns" :key="col.key">{{ col.label }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="row in previewRows" :key="row.id">
+                <td v-for="col in selectedDataset.columns" :key="col.key">{{ row.data[col.key] ?? '—' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-else class="muted-text">Выберите таблицу и столбцы для предпросмотра</p>
       </section>
     </template>
   </main>
 </template>
 
 <style scoped>
-.table-report-page { min-height: 100vh; padding: 28px; background: linear-gradient(180deg, #f7fbfb 0%, #eef4f5 100%); display: grid; gap: 18px; }
-.surface-card { border: 1px solid rgba(64, 90, 97, 0.14); border-radius: 22px; background: rgba(255,255,255,0.9); padding: 18px; box-shadow: 0 18px 50px rgba(31,61,67,0.08); }
-.topbar, .topbar-actions, .section-head, .inline-actions, .dataset-add { display:flex; align-items:center; gap:12px; }
-.topbar, .section-head { justify-content:space-between; }
-.topbar h1, .section-head h3 { margin:0; }
-.ghost-link, .primary-btn, .secondary-btn, .small-btn, .danger-btn, .dataset-tab { border:none; cursor:pointer; }
-.ghost-link { background:transparent; padding:0; color:#156f69; }
-.primary-btn, .secondary-btn, .danger-btn, .small-btn { border-radius:12px; padding:10px 14px; }
-.primary-btn { background:#156f69; color:#fff; }
-.secondary-btn, .small-btn { background:#eef5f4; color:#144c49; }
-.danger-btn { background:#fff2f4; color:#b63b53; }
-.checkbox-inline { display:flex; align-items:center; gap:8px; }
-.meta-grid, .editor-layout { display:grid; gap:16px; }
-.meta-grid { grid-template-columns: 1fr 1fr; }
-.editor-layout { grid-template-columns: minmax(360px, 430px) minmax(0, 1fr); }
-.dataset-tabs, .column-list, .editor-panel, .preview-panel, .field-block { display:grid; gap:12px; }
-.dataset-tabs { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
-.dataset-tab { background:#f5f9f8; border:1px solid rgba(64, 90, 97, 0.12); border-radius:16px; padding:12px 14px; display:grid; gap:4px; text-align:left; }
-.dataset-tab.active { background:#156f69; color:#fff; }
-.dataset-tab small, .muted { color:#6c8189; }
-.dataset-tab.active small { color:rgba(255,255,255,0.75); }
-.column-item { display:grid; grid-template-columns: minmax(140px, 1fr) minmax(140px, 1fr) auto; gap:10px; align-items:center; }
-.column-toggle { display:flex; gap:8px; align-items:center; }
-.preview-table-wrap { overflow:auto; }
-.preview-table { width:100%; border-collapse:collapse; }
-.preview-table th, .preview-table td { padding:12px 14px; border-bottom:1px solid rgba(64,90,97,0.1); text-align:left; }
-input, select { width:100%; border:1px solid rgba(64, 90, 97, 0.16); border-radius:12px; padding:10px 12px; background:#fff; font:inherit; }
-input[type='checkbox'] { width:auto; }
-.error { color:#b63b53; }
-@media (max-width: 980px) { .meta-grid, .editor-layout { grid-template-columns: 1fr; } .table-report-page { padding:16px; } }
+.table-report-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f5f9f8 0%, #eef4f5 100%);
+  padding: 24px;
+}
+
+/* Header */
+.header-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  gap: 20px;
+}
+
+.header-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.back-btn {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+  color: #156f69;
+  padding: 0;
+}
+
+.header-bar h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  color: #1a1a1a;
+}
+
+.header-bar p {
+  margin: 4px 0 0 0;
+  color: #6c8189;
+  font-size: 0.9rem;
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* Buttons */
+.btn-primary,
+.btn-secondary,
+.btn-sm,
+.btn-sm.danger {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: #156f69;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #0f4a47;
+}
+
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: #e8f1f0;
+  color: #156f69;
+}
+
+.btn-secondary:hover {
+  background: #d8e8e6;
+}
+
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  background: #e8f1f0;
+  color: #156f69;
+}
+
+.btn-sm:hover:not(:disabled) {
+  background: #d8e8e6;
+}
+
+.btn-sm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-sm.danger {
+  background: #f0e8ea;
+  color: #b63b53;
+}
+
+.btn-sm.danger:hover {
+  background: #e8d8df;
+}
+
+/* Cards */
+.card {
+  background: white;
+  border: 1px solid rgba(64, 90, 97, 0.12);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(64, 90, 97, 0.08);
+}
+
+.card-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+/* Forms */
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: #1a1a1a;
+  font-size: 0.9rem;
+}
+
+.input-text {
+  width: 100%;
+  border: 1px solid rgba(64, 90, 97, 0.16);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  background: white;
+  transition: border-color 0.2s;
+}
+
+.input-text:focus {
+  outline: none;
+  border-color: #156f69;
+  box-shadow: 0 0 0 2px rgba(22, 111, 105, 0.1);
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.checkbox-label input[type='checkbox'] {
+  width: auto;
+  cursor: pointer;
+}
+
+/* Metadata Section */
+.meta-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 768px) {
+  .meta-section {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Datasets Section */
+.datasets-section {
+}
+
+.section-header {
+  margin-bottom: 20px;
+}
+
+.section-header h3 {
+  margin: 0 0 4px 0;
+  font-size: 1.1rem;
+}
+
+.section-header .muted {
+  margin: 0;
+}
+
+.dataset-controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.dataset-controls select {
+  flex: 1;
+  min-width: 200px;
+}
+
+.dataset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dataset-item {
+  background: #f5f9f8;
+  border: 1px solid rgba(64, 90, 97, 0.2);
+  border-radius: 10px;
+  padding: 12px 14px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  transition: all 0.2s;
+  min-width: 200px;
+}
+
+.dataset-item:hover {
+  border-color: rgba(22, 111, 105, 0.4);
+  background: #eef4f5;
+}
+
+.dataset-item.active {
+  background: #156f69;
+  color: white;
+  border-color: #156f69;
+}
+
+.dataset-title {
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.dataset-table {
+  font-size: 0.8rem;
+  color: #6c8189;
+}
+
+.dataset-item.active .dataset-table {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.dataset-index {
+  font-size: 0.75rem;
+  opacity: 0.5;
+}
+
+.dataset-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* Editor Section */
+.editor-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.editor-column {
+}
+
+.settings-card,
+.columns-card,
+.available-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Columns List */
+.columns-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.column-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  background: #f9fbfb;
+  border-radius: 8px;
+  border: 1px solid rgba(64, 90, 97, 0.1);
+  transition: all 0.2s;
+  cursor: move;
+}
+
+.column-row:hover {
+  border-color: rgba(22, 111, 105, 0.3);
+  background: #f0f7f6;
+}
+
+.column-row.dragging {
+  opacity: 0.5;
+  background: rgba(22, 111, 105, 0.1);
+}
+
+.column-row.drag-over {
+  border-color: #156f69;
+  border-width: 2px;
+  background: rgba(22, 111, 105, 0.08);
+  box-shadow: 0 0 8px rgba(22, 111, 105, 0.2);
+}
+
+.column-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 100px;
+}
+
+.column-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: #e8f1f0;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: #156f69;
+  font-weight: 600;
+}
+
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  color: #6c8189;
+  font-size: 1.2rem;
+  user-select: none;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.column-key {
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: #6c8189;
+}
+
+.column-label {
+  padding: 6px 10px;
+}
+
+.column-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+/* Available Columns List */
+.available-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.available-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: #f9fbfb;
+  border-radius: 8px;
+  border: 1px solid rgba(64, 90, 97, 0.1);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.available-item:hover {
+  background: #eef4f5;
+  border-color: rgba(64, 90, 97, 0.2);
+}
+
+.available-item input[type='checkbox'] {
+  width: auto;
+  cursor: pointer;
+}
+
+.column-name {
+  font-weight: 500;
+  flex: 1;
+  color: #1a1a1a;
+}
+
+.column-type {
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: #6c8189;
+  background: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Preview Section */
+.preview-section {
+}
+
+.preview-table {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.preview-table table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+}
+
+.preview-table th,
+.preview-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid rgba(64, 90, 97, 0.1);
+  font-size: 0.9rem;
+}
+
+.preview-table th {
+  background: #f5f9f8;
+  font-weight: 500;
+  color: #1a1a1a;
+}
+
+.preview-table td {
+  color: #333;
+}
+
+.preview-table tbody tr:hover {
+  background: #f5f9f8;
+}
+
+/* Utility */
+.muted {
+  color: #6c8189;
+  font-size: 0.9rem;
+}
+
+.muted-text {
+  color: #6c8189;
+  text-align: center;
+  padding: 20px;
+  font-size: 0.9rem;
+}
+
+.error-message {
+  color: #b63b53;
+  border-color: rgba(182, 59, 83, 0.2);
+  background: rgba(182, 59, 83, 0.05);
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .editor-section {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .editor-column:nth-child(3) {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 768px) {
+  .table-report-page {
+    padding: 12px;
+  }
+
+  .header-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .editor-section {
+    grid-template-columns: 1fr;
+  }
+
+  .dataset-controls {
+    flex-direction: column;
+  }
+
+  .dataset-controls select,
+  .dataset-controls button {
+    width: 100%;
+  }
+}
 </style>

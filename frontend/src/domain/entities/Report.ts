@@ -1,4 +1,4 @@
-export type ReportType = "excel_export" | "dashboard";
+export type ReportType = "table_export" | "dashboard";
 
 export type MetricAggregation = "count" | "sum" | "avg" | "min" | "max";
 export type WidgetMetricAggregation = MetricAggregation;
@@ -7,6 +7,15 @@ export type DashboardWidgetType = "text" | "metric" | "table" | "chart" | "map";
 export interface ExcelReportColumn {
   key: string;
   label: string;
+  header_group?: string | null;
+  aggregation?: MetricAggregation | null;
+}
+
+export interface AggregatedColumn {
+  key: string;
+  label: string;
+  aggregation: MetricAggregation;
+  source_field?: string | null;
 }
 
 export interface TableStructureOption {
@@ -79,6 +88,8 @@ export interface TableReportDataset {
   sheet_name: string;
   table_id: number | null;
   columns: ExcelReportColumn[];
+  aggregated_columns?: AggregatedColumn[];
+  group_by_columns?: string[];
   sorting: Array<{ field: string; direction: "asc" | "desc" }>;
   filters: Array<Record<string, unknown>>;
 }

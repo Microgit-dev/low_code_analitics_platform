@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -56,12 +57,17 @@ def get_report_repo(session: Session = Depends(get_db)) -> ReportConfigurationRe
 
 def _map_report(report: ReportConfiguration) -> ReportConfigurationResponse:
     now = datetime.utcnow()
+    # Backward compatibility: convert old 'excel_export' type to new 'table_export'
+    report_type = report.report_type
+    if report_type == 'excel_export':
+        report_type = 'table_export'
+    
     return ReportConfigurationResponse(
         id=report.id,
         workspace_id=report.workspace_id,
         name=report.name,
         description=report.description,
-        report_type=report.report_type,
+        report_type=report_type,
         settings=report.settings,
         is_published=report.is_published,
         created_at=report.created_at or now,
@@ -251,7 +257,7 @@ def _normalize_table_report_settings(settings: dict[str, Any]) -> list[dict[str,
             if not isinstance(table_id, int):
                 continue
             columns_raw = dataset.get("columns")
-            columns: list[tuple[str, str]] = []
+            columns: list[dict[str, Any]] = []
             if isinstance(columns_raw, list):
                 for column in columns_raw:
                     if not isinstance(column, dict):
@@ -261,7 +267,13 @@ def _normalize_table_report_settings(settings: dict[str, Any]) -> list[dict[str,
                         continue
                     label_raw = column.get("label")
                     label = str(label_raw) if isinstance(label_raw, (str, int, float)) else key
-                    columns.append((key, label))
+                    header_group_raw = column.get("header_group")
+                    header_group = (
+                        str(header_group_raw)
+                        if isinstance(header_group_raw, (str, int, float)) and str(header_group_raw).strip()
+                        else None
+                    )
+                    columns.append({"key": key, "label": label, "header_group": header_group})
             normalized.append(
                 {
                     "id": str(dataset.get("id") or f"dataset_{index + 1}"),
@@ -269,6 +281,8 @@ def _normalize_table_report_settings(settings: dict[str, Any]) -> list[dict[str,
                     "sheet_name": str(dataset.get("sheet_name") or f"Sheet{index + 1}")[:31] or f"Sheet{index + 1}",
                     "table_id": table_id,
                     "columns": columns,
+                    "aggregated_columns": dataset.get("aggregated_columns", []) if isinstance(dataset.get("aggregated_columns"), list) else [],
+                    "group_by_columns": dataset.get("group_by_columns", []) if isinstance(dataset.get("group_by_columns"), list) else [],
                 }
             )
         if normalized:
@@ -279,7 +293,7 @@ def _normalize_table_report_settings(settings: dict[str, Any]) -> list[dict[str,
         return []
 
     columns_raw = settings.get("columns")
-    columns: list[tuple[str, str]] = []
+    columns: list[dict[str, Any]] = []
     if isinstance(columns_raw, list):
         for column in columns_raw:
             if not isinstance(column, dict):
@@ -289,7 +303,13 @@ def _normalize_table_report_settings(settings: dict[str, Any]) -> list[dict[str,
                 continue
             label_raw = column.get("label")
             label = str(label_raw) if isinstance(label_raw, (str, int, float)) else key
-            columns.append((key, label))
+            header_group_raw = column.get("header_group")
+            header_group = (
+                str(header_group_raw)
+                if isinstance(header_group_raw, (str, int, float)) and str(header_group_raw).strip()
+                else None
+            )
+            columns.append({"key": key, "label": label, "header_group": header_group})
 
     return [
         {
@@ -298,6 +318,8 @@ def _normalize_table_report_settings(settings: dict[str, Any]) -> list[dict[str,
             "sheet_name": "Report",
             "table_id": table_id,
             "columns": columns,
+            "aggregated_columns": [],
+            "group_by_columns": [],
         }
     ]
 
@@ -324,6 +346,32 @@ def _build_widget_metric_value(widget: dict[str, Any], rows: list[TableDataRecor
     if aggregation == "max":
         return round(max(values), 2)
     return None
+
+
+def _build_group_header_row(columns: list[dict[str, Any]]) -> list[str]:
+    return [str(column.get("header_group") or "") for column in columns]
+
+
+def _has_group_headers(columns: list[dict[str, Any]]) -> bool:
+    return any(str(column.get("header_group") or "").strip() for column in columns)
+
+
+def _apply_xlsx_group_merges(ws, columns: list[dict[str, Any]]) -> None:
+    if not _has_group_headers(columns):
+        return
+
+    index = 0
+    while index < len(columns):
+        label = str(columns[index].get("header_group") or "").strip()
+        start = index
+        index += 1
+        while index < len(columns) and str(columns[index].get("header_group") or "").strip() == label:
+            index += 1
+
+        if label and index - start > 1:
+            start_col = get_column_letter(start + 1)
+            end_col = get_column_letter(index)
+            ws.merge_cells(f"{start_col}1:{end_col}1")
 
 
 def _build_widget_map_points(widget: dict[str, Any], rows: list[TableDataRecordModel]) -> list[dict[str, Any]]:
@@ -384,6 +432,86 @@ def _make_unique_name(base_name: str, used_names: set[str], suffix: str = "") ->
         counter += 1
     used_names.add(candidate_full)
     return candidate_full
+
+
+def _extract_row_data(row: Any) -> dict[str, Any]:
+    """Extract data from either a TableDataRecordModel or a dict."""
+    if isinstance(row, dict):
+        return row
+    if hasattr(row, "data_json"):
+        return row.data_json or {}
+    return {}
+
+
+def _get_row_value(row: Any, key: str) -> Any:
+    """Get a value from either a TableDataRecordModel or a dict."""
+    if isinstance(row, dict):
+        return row.get(key)
+    row_data = _extract_row_data(row)
+    return row_data.get(key)
+
+
+def _aggregate_rows(
+    rows: list[TableDataRecordModel],
+    group_by_columns: list[str],
+    aggregated_columns: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Group rows and apply aggregation functions."""
+    if not group_by_columns or not aggregated_columns:
+        return []
+
+    grouped: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
+    for row in rows:
+        row_data = row.data_json or {}
+        key = tuple(row_data.get(col) for col in group_by_columns)
+        if key not in grouped:
+            grouped[key] = []
+        grouped[key].append(row_data)
+
+    results = []
+    for key_values, group_rows in grouped.items():
+        result_row = {}
+        for col_name, key_value in zip(group_by_columns, key_values):
+            result_row[col_name] = key_value
+
+        for agg_col in aggregated_columns:
+            key = agg_col.get("key", "")
+            agg_type = agg_col.get("aggregation", "count")
+            source_field = agg_col.get("source_field", key)
+
+            if agg_type == "count":
+                result_row[key] = len(group_rows)
+            elif agg_type == "sum":
+                total = sum(
+                    float(row.get(source_field, 0)) if isinstance(row.get(source_field), (int, float)) else 0
+                    for row in group_rows
+                )
+                result_row[key] = total
+            elif agg_type == "avg":
+                values = [
+                    float(row.get(source_field))
+                    for row in group_rows
+                    if isinstance(row.get(source_field), (int, float))
+                ]
+                result_row[key] = sum(values) / len(values) if values else None
+            elif agg_type == "min":
+                values = [
+                    row.get(source_field)
+                    for row in group_rows
+                    if isinstance(row.get(source_field), (int, float))
+                ]
+                result_row[key] = min(values) if values else None
+            elif agg_type == "max":
+                values = [
+                    row.get(source_field)
+                    for row in group_rows
+                    if isinstance(row.get(source_field), (int, float))
+                ]
+                result_row[key] = max(values) if values else None
+
+        results.append(result_row)
+
+    return results
 
 def _normalize_template_key(raw_key: str) -> str:
     key = raw_key.strip()
@@ -843,8 +971,8 @@ def download_excel_report(
     except ReportConfigurationNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
 
-    if report.report_type != "excel_export":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Report type is not excel_export")
+    if report.report_type != "table_export":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Report type is not table_export")
 
     datasets = _normalize_table_report_settings(report.settings or {})
     if not datasets:
@@ -865,7 +993,11 @@ def download_excel_report(
         columns = dataset["columns"]
         if not columns:
             columns = [
-                (str(column.get("key")), str(column.get("name") or column.get("key")))
+                {
+                    "key": str(column.get("key")),
+                    "label": str(column.get("name") or column.get("key")),
+                    "header_group": None,
+                }
                 for column in (table.columns_json or [])
                 if isinstance(column, dict) and column.get("key")
             ]
@@ -883,12 +1015,30 @@ def download_excel_report(
             .all()
         )
 
+        # Handle aggregated columns
+        group_by_columns = dataset.get("group_by_columns", [])
+        aggregated_columns = dataset.get("aggregated_columns", [])
+        final_columns = columns
+        final_rows = rows
+        
+        if group_by_columns and aggregated_columns:
+            # Build columns list: group_by columns + aggregated columns
+            group_col_dicts = [{"key": col, "label": col} for col in group_by_columns]
+            agg_col_dicts = aggregated_columns if isinstance(aggregated_columns, list) else []
+            final_columns = group_col_dicts + agg_col_dicts
+            
+            # Aggregate the data
+            aggregated_rows = _aggregate_rows(rows, group_by_columns, aggregated_columns)
+            # Convert dicts to a row-like format that can be iterated
+            final_rows = aggregated_rows
+
         prepared_datasets.append(
             {
                 "title": dataset["title"],
                 "sheet_name": _make_unique_name((dataset["sheet_name"] or f"Sheet{index + 1}")[:31], used_sheet_names),
-                "columns": columns,
-                "rows": rows,
+                "columns": final_columns,
+                "rows": final_rows,
+                "is_aggregated": bool(group_by_columns and aggregated_columns),
             }
         )
 
@@ -896,10 +1046,14 @@ def download_excel_report(
         if len(prepared_datasets) == 1:
             output = StringIO()
             writer = csv.writer(output)
-            writer.writerow([label for _, label in prepared_datasets[0]["columns"]])
+            if _has_group_headers(prepared_datasets[0]["columns"]):
+                writer.writerow(_build_group_header_row(prepared_datasets[0]["columns"]))
+            writer.writerow([str(column.get("label") or column.get("key") or "") for column in prepared_datasets[0]["columns"]])
             for row in prepared_datasets[0]["rows"]:
-                row_data = row.data_json or {}
-                writer.writerow([_format_export_value(row_data.get(key)) for key, _ in prepared_datasets[0]["columns"]])
+                writer.writerow([
+                    _format_export_value(_get_row_value(row, str(column.get("key") or "")))
+                    for column in prepared_datasets[0]["columns"]
+                ])
 
             return StreamingResponse(
                 iter([output.getvalue().encode("utf-8-sig")]),
@@ -913,10 +1067,14 @@ def download_excel_report(
             for index, dataset in enumerate(prepared_datasets):
                 output = StringIO()
                 writer = csv.writer(output)
-                writer.writerow([label for _, label in dataset["columns"]])
+                if _has_group_headers(dataset["columns"]):
+                    writer.writerow(_build_group_header_row(dataset["columns"]))
+                writer.writerow([str(column.get("label") or column.get("key") or "") for column in dataset["columns"]])
                 for row in dataset["rows"]:
-                    row_data = row.data_json or {}
-                    writer.writerow([_format_export_value(row_data.get(key)) for key, _ in dataset["columns"]])
+                    writer.writerow([
+                        _format_export_value(_get_row_value(row, str(column.get("key") or "")))
+                        for column in dataset["columns"]
+                    ])
                 safe_name = _make_unique_name(dataset["sheet_name"] or f"sheet_{index + 1}", used_csv_names, ".csv")
                 zip_file.writestr(safe_name, output.getvalue().encode("utf-8-sig"))
 
@@ -933,10 +1091,17 @@ def download_excel_report(
         ws = wb.active if first_sheet else wb.create_sheet()
         first_sheet = False
         ws.title = (dataset["sheet_name"] or f"Sheet{index + 1}")[:31]
-        ws.append([label for _, label in dataset["columns"]])
+        if _has_group_headers(dataset["columns"]):
+            ws.append(_build_group_header_row(dataset["columns"]))
+            ws.append([str(column.get("label") or column.get("key") or "") for column in dataset["columns"]])
+            _apply_xlsx_group_merges(ws, dataset["columns"])
+        else:
+            ws.append([str(column.get("label") or column.get("key") or "") for column in dataset["columns"]])
         for row in dataset["rows"]:
-            row_data = row.data_json or {}
-            ws.append([_format_export_value(row_data.get(key)) for key, _ in dataset["columns"]])
+            ws.append([
+                _format_export_value(_get_row_value(row, str(column.get("key") or "")))
+                for column in dataset["columns"]
+            ])
 
     output = BytesIO()
     wb.save(output)

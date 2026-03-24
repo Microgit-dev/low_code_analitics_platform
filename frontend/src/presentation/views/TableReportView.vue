@@ -79,6 +79,7 @@ function normalizeTableSettings(raw: Record<string, unknown>): TableReportSettin
                 .map((column) => ({
                   key: String(column.key || ''),
                   label: String(column.label || column.key || ''),
+                  header_group: typeof column.header_group === 'string' ? column.header_group : null,
                 }))
                 .filter((column) => column.key)
             : [],
@@ -103,6 +104,7 @@ function normalizeTableSettings(raw: Record<string, unknown>): TableReportSettin
               .map((column) => ({
                 key: String(column.key || ''),
                 label: String(column.label || column.key || ''),
+                header_group: typeof column.header_group === 'string' ? column.header_group : null,
               }))
               .filter((column) => column.key)
           : [],

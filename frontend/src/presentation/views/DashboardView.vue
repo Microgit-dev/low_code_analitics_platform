@@ -13,6 +13,7 @@ import type { ColumnType, TableRelation, TableStructure } from '../../domain/ent
 import type { FormConfiguration, FormField, WidgetType } from '../../domain/entities/FormBuilder'
 import type { DashboardChartConfig, DashboardMetricConfig, ReportConfiguration, ReportType } from '../../domain/entities/Report'
 import { useAuthStore } from '../stores/authStore'
+import UiMultiSelect from '../components/common/UiMultiSelect.vue'
 import UiSectionHeader from '../components/common/UiSectionHeader.vue'
 import UiStatusText from '../components/common/UiStatusText.vue'
 import DashboardDataSection from '../components/dashboard/DashboardDataSection.vue'
@@ -33,6 +34,7 @@ const reportUseCase = new ReportUseCase(authStore.token || '')
 type WorkspaceTab = 'details' | 'tables' | 'forms' | 'data' | 'import' | 'reports'
 type TablePosition = { x: number; y: number }
 type ImportTargetUi = ImportTargetConfig & { localId: number }
+type ReportCreationKind = 'dashboard' | 'table_export'
 
 const workspaces = ref<Workspace[]>([])
 const loading = ref(false)
@@ -120,10 +122,13 @@ const reportsLoading = ref(false)
 const reportsError = ref('')
 const selectedReportId = ref<number | null>(null)
 
+const reportCreateModalOpen = ref(false)
+const reportCreateKind = ref<ReportCreationKind>('dashboard')
+const reportCreateSelectedTableIds = ref<number[]>([])
 const reportEditorOpen = ref(false)
 const reportName = ref('')
 const reportDescription = ref('')
-const reportType = ref<ReportType>('excel_export')
+const reportType = ref<ReportType>('table_export')
 const reportIsPublished = ref(false)
 const reportTableId = ref<number | null>(null)
 const reportRecentLimit = ref(10)
@@ -155,6 +160,11 @@ const selectedDataTable = computed(() => {
 const selectedReport = computed(() => {
   if (selectedReportId.value === null) return null
   return reports.value.find((report) => report.id === selectedReportId.value) ?? null
+})
+
+const reportCreateSelectedTables = computed(() => {
+  const selected = new Set(reportCreateSelectedTableIds.value)
+  return tableStructures.value.filter((table) => selected.has(table.id))
 })
 
 const selectedReportTable = computed(() => {
@@ -1319,8 +1329,141 @@ const onDataLimitChange = async () => {
 }
 
 const getReportTypeLabel = (type: ReportType) => {
-  if (type === 'excel_export') return 'Excel выгрузка'
+  if (type === 'table_export') return 'Табличная выгрузка'
   return 'Публичный дашборд'
+}
+
+const getReportCardTypeLabel = (report: ReportConfiguration) => {
+  if (report.report_type !== 'table_export') {
+    return 'Публичный дашборд'
+  }
+
+  return 'Табличная выгрузка'
+}
+
+const syncReportCreateSelectedTablesWithSchema = () => {
+  const allowed = new Set(tableStructures.value.map((table) => table.id))
+  reportCreateSelectedTableIds.value = reportCreateSelectedTableIds.value.filter((id) => allowed.has(id))
+}
+
+const openCreateReportModal = () => {
+  if (!selectedWorkspace.value) return
+
+  reportCreateKind.value = 'dashboard'
+  reportName.value = ''
+  reportDescription.value = ''
+  reportIsPublished.value = false
+  syncReportCreateSelectedTablesWithSchema()
+  reportCreateSelectedTableIds.value = tableStructures.value[0]?.id ? [tableStructures.value[0].id] : []
+
+  reportCreateModalOpen.value = true
+}
+
+const closeCreateReportModal = () => {
+  reportCreateModalOpen.value = false
+}
+
+const onReportCreateTypeChange = () => {
+  if (reportCreateSelectedTableIds.value.length === 0 && tableStructures.value.length > 0) {
+    reportCreateSelectedTableIds.value = [tableStructures.value[0].id]
+  }
+}
+
+const createReportFromModal = async () => {
+  if (!selectedWorkspace.value || !reportName.value.trim()) return
+  if (reportCreateSelectedTables.value.length === 0) {
+    alert('Выберите хотя бы одну таблицу.')
+    return
+  }
+
+  const reportTitle = reportName.value.trim()
+  const reportDesc = reportDescription.value.trim()
+
+  try {
+    if (reportCreateKind.value === 'dashboard') {
+      const primaryTable = reportCreateSelectedTables.value[0]
+
+      const settings: Record<string, unknown> = {
+        table_id: primaryTable.id,
+        selected_table_ids: reportCreateSelectedTables.value.map((table) => table.id),
+        metrics: [{ label: 'Количество записей', aggregation: 'count', field_key: null }],
+        charts: [],
+        recent_limit: 10,
+        widgets: [
+          {
+            id: `metric_${Date.now()}`,
+            type: 'metric',
+            title: 'Количество записей',
+            source: { table_id: primaryTable.id },
+            query: { aggregation: 'count', field_key: null, group_by_key: null, limit: 8 },
+            presentation: { color: '#156f69', width: 'half' },
+            config: {}
+          },
+          {
+            id: `table_${Date.now()}`,
+            type: 'table',
+            title: 'Последние записи',
+            source: { table_id: primaryTable.id },
+            query: { limit: 10 },
+            presentation: { width: 'full' },
+            config: { columns: primaryTable.columns.map((column) => column.key) }
+          }
+        ]
+      }
+
+      const created = await reportUseCase.createReport(
+        selectedWorkspace.value.id,
+        reportTitle,
+        reportDesc,
+        'dashboard',
+        settings,
+        reportIsPublished.value
+      )
+
+      reportCreateModalOpen.value = false
+      await loadReports()
+      await router.push({
+        name: 'report-detail',
+        params: { workspaceId: selectedWorkspace.value.id, reportId: created.id }
+      })
+    } else {
+      const datasets = reportCreateSelectedTables.value
+        .map((dataset, index) => ({
+          id: `dataset_${index + 1}`,
+          title: dataset.name,
+          sheet_name: dataset.name.slice(0, 31) || `Sheet${index + 1}`,
+          table_id: dataset.id,
+          columns: [],
+          aggregated_columns: [],
+          group_by_columns: [],
+          sorting: [],
+          filters: []
+        }))
+
+      const settings: Record<string, unknown> = {
+        datasets
+      }
+
+      const created = await reportUseCase.createReport(
+        selectedWorkspace.value.id,
+        reportTitle,
+        reportDesc,
+        'table_export',
+        settings,
+        reportIsPublished.value
+      )
+
+      reportCreateModalOpen.value = false
+      await loadReports()
+      await router.push({
+        name: 'table-report-detail',
+        params: { workspaceId: selectedWorkspace.value.id, reportId: created.id }
+      })
+    }
+  } catch (error) {
+    console.error(error)
+    alert('Не удалось создать отчет')
+  }
 }
 
 const syncReportColumnsWithSelectedTable = () => {
@@ -1345,7 +1488,7 @@ const resetReportEditor = () => {
   selectedReportId.value = null
   reportName.value = ''
   reportDescription.value = ''
-  reportType.value = 'excel_export'
+  reportType.value = 'table_export'
   reportIsPublished.value = false
   reportTableId.value = activeTable.value?.id ?? tableStructures.value[0]?.id ?? null
   reportRecentLimit.value = 10
@@ -1376,23 +1519,12 @@ const goToReportsTab = async () => {
   workspaceTab.value = 'reports'
   reportEditorOpen.value = false
   templateModalOpen.value = false
+  syncReportCreateSelectedTablesWithSchema()
   await loadReports()
 }
 
-const createReport = (type: ReportType) => {
-  if (!selectedWorkspace.value) return
-  if (type === 'dashboard') {
-    router.push({
-      name: 'report-create',
-      params: { workspaceId: selectedWorkspace.value.id },
-      query: { type: 'dashboard' }
-    })
-    return
-  }
-  router.push({
-    name: 'table-report-create',
-    params: { workspaceId: selectedWorkspace.value.id }
-  })
+const createReport = () => {
+  openCreateReportModal()
 }
 
 const editReport = (report: ReportConfiguration) => {
@@ -1422,7 +1554,7 @@ const saveReport = async () => {
     .map((column) => ({ key: column.key, label: column.label || column.key }))
 
   const settings: Record<string, unknown> = { table_id: reportTableId.value }
-  if (reportType.value === 'excel_export') {
+  if (reportType.value === 'table_export') {
     settings.columns = excelColumns
   } else {
     settings.metrics = reportMetrics.value
@@ -2260,8 +2392,7 @@ onBeforeUnmount(() => {
             <template #actions>
               <DashboardTileActions>
                 <button class="small ghost" @click="openTemplateModal">Посчитать по шаблону</button>
-                <button class="small" @click="createReport('excel_export')">Табличный экспорт</button>
-                <button class="small" @click="createReport('dashboard')">Дашборд</button>
+                <button class="small" @click="createReport">Новый отчет</button>
               </DashboardTileActions>
             </template>
           </UiSectionHeader>
@@ -2275,28 +2406,28 @@ onBeforeUnmount(() => {
                 <h4>{{ report.name }}</h4>
               </template>
               <template #badge>
-                <span class="report-type">{{ getReportTypeLabel(report.report_type) }}</span>
+                <span class="report-type">{{ getReportCardTypeLabel(report) }}</span>
               </template>
               <p>{{ report.description || 'Без описания' }}</p>
               <p class="muted">Статус: {{ report.is_published ? 'опубликован' : 'черновик' }}</p>
               <template #actions>
                 <DashboardTileActions>
                   <button
-                    v-if="report.report_type === 'excel_export'"
+                    v-if="report.report_type === 'table_export'"
                     class="small"
                     @click="openTableReportView(report.id)"
                   >
                     Открыть
                   </button>
                   <button
-                    v-if="report.report_type === 'excel_export'"
+                    v-if="report.report_type === 'table_export'"
                     class="small"
                     @click="downloadReport(report.id, 'csv')"
                   >
                     CSV
                   </button>
                   <button
-                    v-if="report.report_type === 'excel_export'"
+                    v-if="report.report_type === 'table_export'"
                     class="small"
                     @click="downloadReport(report.id, 'xlsx')"
                   >
@@ -2318,54 +2449,75 @@ onBeforeUnmount(() => {
           </div>
           <UiStatusText v-else-if="!reportsLoading">Пока нет отчетов. Создайте первый.</UiStatusText>
 
-          <article v-if="reportEditorOpen" class="report-editor">
-            <header>
-              <h4>{{ selectedReport ? 'Редактирование отчета' : 'Новый отчет' }}</h4>
-            </header>
+          <div v-if="reportCreateModalOpen" class="report-create-modal-backdrop" @click.self="closeCreateReportModal">
+            <article class="report-create-modal">
+              <header class="report-create-head">
+                <h4>Новый отчет</h4>
+                <button class="small ghost" @click="closeCreateReportModal">Закрыть</button>
+              </header>
 
-            <div class="report-editor-grid">
-              <div>
-                <label>Название</label>
-                <input v-model="reportName" placeholder="Например: Продажи за неделю" />
-              </div>
-              <div>
-                <label>Таблица источника</label>
-                <select v-model.number="reportTableId" @change="onReportTableChange">
-                  <option :value="null">Выберите таблицу</option>
-                  <option v-for="table in allTableOptions" :key="`r-t-${table.id}`" :value="table.id">
-                    {{ table.name }}
-                  </option>
-                </select>
-              </div>
-              <div>
-                <label>Описание</label>
-                <input v-model="reportDescription" placeholder="Коротко про назначение" />
-              </div>
-            </div>
-
-            <label class="checkbox-inline">
-              <input v-model="reportIsPublished" type="checkbox" /> Опубликовать
-            </label>
-
-            <section class="report-settings">
-              <h5>Структура Excel</h5>
-              <p class="muted">Выберите столбцы и подписи в выгрузке.</p>
-              <div class="excel-columns" v-if="reportExcelColumns.length > 0">
-                <div v-for="column in reportExcelColumns" :key="`excel-${column.key}`" class="excel-column-row">
-                  <label class="checkbox-inline">
-                    <input v-model="column.enabled" type="checkbox" /> {{ column.key }}
-                  </label>
-                  <input v-model="column.label" placeholder="Заголовок в Excel" />
+              <div class="report-create-grid">
+                <div>
+                  <label>Название</label>
+                  <input v-model="reportName" placeholder="Например: Сводка по продажам" />
+                </div>
+                <div>
+                  <label>Тип отчета</label>
+                  <select v-model="reportCreateKind" @change="onReportCreateTypeChange">
+                    <option value="dashboard">Дашборд</option>
+                    <option value="table_export">Табличная выгрузка (Excel/CSV)</option>
+                  </select>
+                </div>
+                <div class="report-create-full">
+                  <label>Описание</label>
+                  <input v-model="reportDescription" placeholder="Коротко про назначение отчета" />
                 </div>
               </div>
-              <p v-else class="muted">Сначала выберите таблицу.</p>
-            </section>
 
-            <DashboardTileActions>
-              <button class="small" @click="saveReport">Сохранить отчет</button>
-              <button class="small ghost" @click="reportEditorOpen = false">Закрыть</button>
-            </DashboardTileActions>
-          </article>
+              <label class="checkbox-inline">
+                <input v-model="reportIsPublished" type="checkbox" /> Опубликовать сразу
+              </label>
+
+              <section v-if="reportCreateKind === 'dashboard'" class="report-create-section">
+                <h5>Таблицы для дашборда</h5>
+                <p class="muted">Выберите одну или несколько таблиц. Базовая конфигурация будет создана автоматически.</p>
+
+                <div class="report-create-grid">
+                  <div class="report-create-full">
+                    <label>Таблицы</label>
+                    <UiMultiSelect
+                      v-model="reportCreateSelectedTableIds"
+                      :options="allTableOptions"
+                      placeholder="Выберите таблицы для дашборда"
+                      @change="onReportCreateTypeChange"
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <section v-else class="report-create-section">
+                <h5>Таблицы для табличного отчета</h5>
+                <p class="muted">Выберите таблицы через мультиселект. Столбцы, порядок и листы настраиваются в детальном редакторе.</p>
+
+                <div class="report-create-grid">
+                  <div class="report-create-full">
+                    <label>Таблицы</label>
+                    <UiMultiSelect
+                      v-model="reportCreateSelectedTableIds"
+                      :options="allTableOptions"
+                      placeholder="Выберите таблицы для табличного отчета"
+                      @change="onReportCreateTypeChange"
+                    />
+                  </div>
+                </div>
+              </section>
+
+              <DashboardTileActions>
+                <button class="small" @click="createReportFromModal">Создать отчет</button>
+                <button class="small ghost" @click="closeCreateReportModal">Отмена</button>
+              </DashboardTileActions>
+            </article>
+          </div>
 
           <DashboardTemplateModal
             :open="templateModalOpen"
