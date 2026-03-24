@@ -9,6 +9,7 @@ import PublicDashboardView from '../views/PublicDashboardView.vue'
 import ReportDetailView from '../views/ReportDetailView.vue'
 import TableReportDetailView from '../views/TableReportDetailView.vue'
 import TableReportView from '../views/TableReportView.vue'
+import { getStoredToken } from '../../infrastructure/auth/tokenStorage'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -53,7 +54,7 @@ export const router = createRouter({
 })
 
 router.beforeEach((to: RouteLocationNormalized, _from: RouteLocationNormalized, next: NavigationGuardNext) => {
-  const token = localStorage.getItem('low_code_token')
+  const token = getStoredToken()
 
   if (to.meta.requiresAuth && !token) {
     next({ name: 'login' })
