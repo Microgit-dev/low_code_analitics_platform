@@ -3,10 +3,12 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { FormBuilderUseCase } from '../../application/usecases/FormBuilderUseCase'
+import { ImportUseCase } from '../../application/usecases/ImportUseCase'
 import { ReportUseCase } from '../../application/usecases/ReportUseCase'
 import { TableSchemaUseCase } from '../../application/usecases/TableSchemaUseCase'
 import { WorkspaceUseCase } from '../../application/usecases/WorkspaceUseCase'
 import type { Workspace } from '../../domain/entities/Auth'
+import type { ImportApplyConfig, ImportScanResult, ImportTargetConfig } from '../../domain/entities/Import'
 import type { ColumnType, TableRelation, TableStructure } from '../../domain/entities/TableSchema'
 import type { FormConfiguration, FormField, WidgetType } from '../../domain/entities/FormBuilder'
 import type { DashboardChartConfig, DashboardMetricConfig, ReportConfiguration, ReportType } from '../../domain/entities/Report'
@@ -17,10 +19,12 @@ const router = useRouter()
 const workspaceUseCase = new WorkspaceUseCase()
 const tableSchemaUseCase = new TableSchemaUseCase()
 const formBuilderUseCase = new FormBuilderUseCase(authStore.token || '')
+const importUseCase = new ImportUseCase()
 const reportUseCase = new ReportUseCase(authStore.token || '')
 
-type WorkspaceTab = 'details' | 'tables' | 'forms' | 'data' | 'reports'
+type WorkspaceTab = 'details' | 'tables' | 'forms' | 'data' | 'import' | 'reports'
 type TablePosition = { x: number; y: number }
+type ImportTargetUi = ImportTargetConfig & { localId: number }
 
 const workspaces = ref<Workspace[]>([])
 const loading = ref(false)
@@ -84,6 +88,24 @@ const dataError = ref('')
 const dataPagination = ref({ skip: 0, limit: 50, total: 0 })
 const selectedDataTableId = ref<number | null>(null)
 
+// Import state
+const importFile = ref<File | null>(null)
+const importLoading = ref(false)
+const importApplying = ref(false)
+const importError = ref('')
+const importSuccess = ref('')
+const importScanResult = ref<ImportScanResult | null>(null)
+const importHeaderRowStart = ref<number | null>(null)
+const importHeaderRowEnd = ref<number | null>(null)
+const importDataRowStart = ref<number | null>(null)
+const importDataRowEnd = ref<number | null>(null)
+const importListDelimiters = ref(',;|\\n')
+const importTargets = ref<ImportTargetUi[]>([])
+const importTargetSeq = ref(1)
+const importShowAllSeparators = ref(false)
+const importRequiresRescan = ref(false)
+const IMPORT_KEY_MAX_LENGTH = 64
+
 // Reports state
 const reports = ref<ReportConfiguration[]>([])
 const reportsLoading = ref(false)
@@ -125,6 +147,16 @@ const selectedReportTable = computed(() => {
   if (reportTableId.value === null) return null
   return tableStructures.value.find((table) => table.id === reportTableId.value) ?? null
 })
+
+const importSourceKeys = computed(() => importScanResult.value?.detected_columns.map((col) => col.source_key) ?? [])
+const importPreviewRows = computed(() => (importScanResult.value?.preview_rows ?? []).slice(0, 30))
+const importDetectedSeparators = computed(() => importScanResult.value?.artifacts.detected_sections ?? [])
+const importVisibleSeparators = computed(() =>
+  importShowAllSeparators.value ? importDetectedSeparators.value : importDetectedSeparators.value.slice(0, 3)
+)
+const importCanApply = computed(
+  () => Boolean(importFile.value) && Boolean(importScanResult.value) && !importRequiresRescan.value
+)
 
 const selectedColumnParent = computed(() => {
   if (selectedColumnRef.value === null) return null
@@ -290,6 +322,11 @@ const deleteWorkspace = async () => {
 const selectWorkspace = async (workspaceId: number) => {
   selectedWorkspaceId.value = workspaceId
   workspaceTab.value = 'tables'
+  importFile.value = null
+  importScanResult.value = null
+  importTargets.value = []
+  importError.value = ''
+  importSuccess.value = ''
   await loadSchema()
 }
 
@@ -1021,6 +1058,242 @@ const goToDataTab = async () => {
   await loadTableData()
 }
 
+const toNullableNumber = (value: string | number | null | undefined): number | null => {
+  if (value === '' || value === null || value === undefined) return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+const normalizeImportKey = (value: string): string =>
+  value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9а-я]+/gi, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, IMPORT_KEY_MAX_LENGTH) || 'column'
+
+const formatMappedKeyPreview = (value: string | null | undefined): string => {
+  const normalized = normalizeImportKey(String(value || ''))
+  return normalized || 'column'
+}
+
+const isMappedKeyTruncated = (value: string | null | undefined): boolean => {
+  const raw = String(value || '').trim()
+  return raw.length > IMPORT_KEY_MAX_LENGTH
+}
+
+const getImportTargetColumns = (target: ImportTargetUi) => {
+  if (target.mode !== 'existing' || !target.table_id) return []
+  const table = tableStructures.value.find((item) => item.id === target.table_id)
+  return table?.columns ?? []
+}
+
+const syncImportTargetMappings = (target: ImportTargetUi) => {
+  if (!importScanResult.value) return
+
+  const nextMappings: Record<string, string | null> = {}
+  if (target.mode === 'new') {
+    for (const detected of importScanResult.value.detected_columns) {
+      const current = target.column_mappings[detected.source_key]
+      nextMappings[detected.source_key] =
+        typeof current === 'string' && current.trim().length > 0
+          ? normalizeImportKey(current)
+          : normalizeImportKey(detected.suggested_key || detected.source_key)
+    }
+  } else {
+    const columns = getImportTargetColumns(target)
+    for (const detected of importScanResult.value.detected_columns) {
+      const current = target.column_mappings[detected.source_key]
+      if (current && columns.some((column) => column.key === current)) {
+        nextMappings[detected.source_key] = current
+        continue
+      }
+
+      const exactByKey = columns.find((column) => column.key === detected.suggested_key)
+      const exactByName = columns.find((column) => column.name === detected.suggested_name)
+      nextMappings[detected.source_key] = exactByKey?.key || exactByName?.key || null
+    }
+  }
+
+  target.column_mappings = nextMappings
+}
+
+const addImportTarget = () => {
+  const fallbackTableId = activeTable.value?.id ?? tableStructures.value[0]?.id ?? null
+  const target: ImportTargetUi = {
+    localId: importTargetSeq.value,
+    mode: 'existing',
+    table_id: fallbackTableId,
+    table_name: '',
+    table_description: '',
+    column_mappings: {},
+    map_section_to_field: false,
+    section_field_name: 'Раздел'
+  }
+  importTargetSeq.value += 1
+  if (importScanResult.value) {
+    syncImportTargetMappings(target)
+  }
+  importTargets.value.push(target)
+}
+
+const removeImportTarget = (localId: number) => {
+  importTargets.value = importTargets.value.filter((target) => target.localId !== localId)
+}
+
+const onImportTargetModeChange = (target: ImportTargetUi) => {
+  if (target.mode === 'existing') {
+    target.table_name = ''
+    target.table_description = ''
+    target.table_id = target.table_id ?? activeTable.value?.id ?? tableStructures.value[0]?.id ?? null
+  } else {
+    target.table_id = null
+    target.table_name = target.table_name || `Импорт ${importTargets.value.length}`
+  }
+  syncImportTargetMappings(target)
+}
+
+const onImportTargetTableChange = (target: ImportTargetUi) => {
+  syncImportTargetMappings(target)
+}
+
+const onImportFileChange = (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0] ?? null
+  importFile.value = file
+  importError.value = ''
+  importSuccess.value = ''
+  importScanResult.value = null
+  importShowAllSeparators.value = false
+  importRequiresRescan.value = false
+}
+
+const onImportScanOptionsChanged = () => {
+  if (!importScanResult.value) return
+  importRequiresRescan.value = true
+  importSuccess.value = ''
+}
+
+const scanImport = async () => {
+  if (!authStore.token || !selectedWorkspace.value || !importFile.value) return
+
+  importLoading.value = true
+  importError.value = ''
+  importSuccess.value = ''
+  try {
+    const delimiters = importListDelimiters.value
+      .split(';')
+      .map((item) => item.replace(/\\n/g, '\n').trim())
+      .filter(Boolean)
+
+    const result = await importUseCase.scanFile(authStore.token, selectedWorkspace.value.id, importFile.value, {
+      sheet_name: null,
+      header_row_start: toNullableNumber(importHeaderRowStart.value),
+      header_row_end: toNullableNumber(importHeaderRowEnd.value),
+      data_row_start: toNullableNumber(importDataRowStart.value),
+      data_row_end: toNullableNumber(importDataRowEnd.value),
+      list_split_delimiters: delimiters.length > 0 ? delimiters : [',', ';', '|', '\n']
+    })
+
+    importScanResult.value = result
+    importHeaderRowStart.value = toNullableNumber(result.structure.header_row_start)
+    importHeaderRowEnd.value = toNullableNumber(result.structure.header_row_end)
+    importDataRowStart.value = toNullableNumber(result.structure.data_row_start)
+    importDataRowEnd.value = null
+    importShowAllSeparators.value = false
+    importRequiresRescan.value = false
+
+    if (importTargets.value.length === 0) {
+      addImportTarget()
+    } else {
+      importTargets.value.forEach(syncImportTargetMappings)
+    }
+  } catch (error) {
+    importError.value = 'Не удалось просканировать файл'
+    console.error(error)
+  } finally {
+    importLoading.value = false
+  }
+}
+
+const buildImportApplyConfig = (): ImportApplyConfig => {
+  const delimiters = importListDelimiters.value
+    .split(';')
+    .map((item) => item.replace(/\\n/g, '\n').trim())
+    .filter(Boolean)
+
+  return {
+    scan: {
+      sheet_name: null,
+      header_row_start: toNullableNumber(importHeaderRowStart.value),
+      header_row_end: toNullableNumber(importHeaderRowEnd.value),
+      data_row_start: toNullableNumber(importDataRowStart.value),
+      data_row_end: toNullableNumber(importDataRowEnd.value),
+      list_split_delimiters: delimiters.length > 0 ? delimiters : [',', ';', '|', '\n']
+    },
+    targets: importTargets.value.map((target) => ({
+      mode: target.mode,
+      table_id: target.mode === 'existing' ? toNullableNumber(target.table_id) : null,
+      table_name: target.mode === 'new' ? (target.table_name || '').trim() : undefined,
+      table_description: target.mode === 'new' ? (target.table_description || '').trim() : undefined,
+      column_mappings: Object.fromEntries(
+        Object.entries(target.column_mappings).map(([source, mapped]) => [source, mapped && mapped.trim() ? mapped.trim() : null])
+      ),
+      map_section_to_field: Boolean(target.map_section_to_field),
+      section_field_name: (target.section_field_name || 'Раздел').trim() || 'Раздел'
+    }))
+  }
+}
+
+const applyImport = async () => {
+  if (!authStore.token || !selectedWorkspace.value || !importFile.value || !importScanResult.value) return
+
+  if (importRequiresRescan.value) {
+    importError.value = 'Изменились параметры сканирования. Сначала выполните сканирование заново.'
+    return
+  }
+
+  if (importTargets.value.length === 0) {
+    importError.value = 'Добавьте хотя бы одну цель импорта'
+    return
+  }
+
+  importApplying.value = true
+  importError.value = ''
+  importSuccess.value = ''
+  try {
+    const config = buildImportApplyConfig()
+    const result = await importUseCase.applyImport(authStore.token, selectedWorkspace.value.id, importFile.value, config)
+    importSuccess.value = result.imported_tables
+      .map((item) => `${item.table_name}: ${item.created_records} записей`)
+      .join(' | ')
+    await loadSchema()
+    await loadTableData()
+  } catch (error) {
+    importError.value = 'Ошибка при импорте данных'
+    console.error(error)
+  } finally {
+    importApplying.value = false
+  }
+}
+
+const goToImportTab = () => {
+  workspaceTab.value = 'import'
+  importError.value = ''
+  importSuccess.value = ''
+}
+
+const toggleAllSeparators = () => {
+  importShowAllSeparators.value = !importShowAllSeparators.value
+}
+
+const formatImportValue = (value: unknown): string => {
+  if (value === null || value === undefined || value === '') return '—'
+  if (Array.isArray(value)) return value.join(', ')
+  if (typeof value === 'object') return JSON.stringify(value)
+  return String(value)
+}
+
 const onDataTableChange = async () => {
   dataPagination.value.skip = 0
   await loadTableData()
@@ -1361,6 +1634,7 @@ onBeforeUnmount(() => {
           <button class="tab" :class="{ active: workspaceTab === 'tables' }" @click="workspaceTab = 'tables'">Таблицы</button>
           <button class="tab" :class="{ active: workspaceTab === 'forms' }" @click="goToFormsTab">Формы</button>
           <button class="tab" :class="{ active: workspaceTab === 'data' }" @click="goToDataTab">Данные</button>
+          <button class="tab" :class="{ active: workspaceTab === 'import' }" @click="goToImportTab">Импорт</button>
           <button class="tab" :class="{ active: workspaceTab === 'reports' }" @click="goToReportsTab">Отчеты</button>
         </div>
 
@@ -1917,6 +2191,211 @@ onBeforeUnmount(() => {
           </div>
         </section>
 
+        <section v-if="workspaceTab === 'import'" class="import-section">
+          <div class="import-header">
+            <div>
+              <h3>Импорт</h3>
+              <p>Загрузите файл, просканируйте структуру, затем сопоставьте колонки и выполните импорт.</p>
+            </div>
+          </div>
+
+          <div class="import-panel">
+            <div class="import-flow">
+              <span class="flow-step" :class="{ active: !!importScanResult, warning: importRequiresRescan }">
+                Шаг 1: Сканирование
+              </span>
+              <span class="flow-step" :class="{ active: importCanApply }">
+                Шаг 2: Загрузка в систему
+              </span>
+            </div>
+
+            <div class="import-inputs">
+              <label>Файл</label>
+              <input type="file" accept=".csv,.xls,.xlsx" @change="onImportFileChange" />
+            </div>
+
+            <div class="import-zones">
+              <h4>Зоны поиска</h4>
+              <div class="zones-grid">
+                <div>
+                  <label>Header start</label>
+                  <input v-model.number="importHeaderRowStart" type="number" min="0" placeholder="auto" @input="onImportScanOptionsChanged" />
+                </div>
+                <div>
+                  <label>Header end</label>
+                  <input v-model.number="importHeaderRowEnd" type="number" min="0" placeholder="auto" @input="onImportScanOptionsChanged" />
+                </div>
+                <div>
+                  <label>Data start</label>
+                  <input v-model.number="importDataRowStart" type="number" min="0" placeholder="auto" @input="onImportScanOptionsChanged" />
+                </div>
+                <div>
+                  <label>Data end</label>
+                  <input v-model.number="importDataRowEnd" type="number" min="0" placeholder="до конца" @input="onImportScanOptionsChanged" />
+                </div>
+              </div>
+            </div>
+
+            <div class="import-zones">
+              <h4>Списки</h4>
+              <label>Разделители списка (через ;, используйте \n для новой строки)</label>
+              <input v-model="importListDelimiters" placeholder=",;|;\\n" @input="onImportScanOptionsChanged" />
+            </div>
+
+            <p class="import-warning" v-if="importScanResult">
+              Важно: ключи колонок ограничены {{ IMPORT_KEY_MAX_LENGTH }} символами.
+              При импорте длинные ключи автоматически сокращаются.
+            </p>
+
+            <div class="row-actions">
+              <button class="small" :disabled="!importFile || importLoading" @click="scanImport">
+                {{ importLoading ? 'Сканирование...' : 'Сканировать файл' }}
+              </button>
+              <button
+                class="small"
+                :disabled="!importCanApply || importApplying"
+                @click="applyImport"
+              >
+                {{ importApplying ? 'Импорт...' : 'Запустить импорт' }}
+              </button>
+            </div>
+
+            <p v-if="importRequiresRescan" class="muted">
+              Параметры сканирования изменены. Выполните шаг 1 повторно перед загрузкой.
+            </p>
+
+            <p v-if="importError" class="error">{{ importError }}</p>
+            <p v-if="importSuccess" class="success-text">{{ importSuccess }}</p>
+          </div>
+
+          <div v-if="importScanResult" class="import-results">
+            <article class="import-card">
+              <h4>Результат сканирования</h4>
+              <p class="muted">Лист: {{ importScanResult.sheet_name }} ({{ importScanResult.source_format }})</p>
+              <p class="muted">
+                Артефакты: merged cells {{ importScanResult.artifacts.merged_cells_count }},
+                разделители {{ importScanResult.artifacts.sections_count }}
+              </p>
+              <div v-if="importDetectedSeparators.length > 0" class="separator-artifacts">
+                <p class="muted">Найденные разделители:</p>
+                <div class="separator-list">
+                  <span v-for="(separator, index) in importVisibleSeparators" :key="`separator-${index}`" class="separator-pill" :title="separator">
+                    {{ separator }}
+                  </span>
+                </div>
+                <button v-if="importDetectedSeparators.length > 3" class="small ghost" @click="toggleAllSeparators">
+                  {{ importShowAllSeparators ? 'Свернуть список' : `Показать все (${importDetectedSeparators.length})` }}
+                </button>
+              </div>
+            </article>
+
+            <article class="import-card">
+              <div class="import-targets-head">
+                <h4>Цели импорта</h4>
+                <button class="small" @click="addImportTarget">Добавить цель</button>
+              </div>
+
+              <div v-if="importTargets.length === 0" class="muted">Добавьте цель импорта.</div>
+
+              <div v-for="target in importTargets" :key="target.localId" class="import-target">
+                <div class="import-target-row">
+                  <label>Режим</label>
+                  <select v-model="target.mode" @change="onImportTargetModeChange(target)">
+                    <option value="existing">В существующую таблицу</option>
+                    <option value="new">Создать новую таблицу</option>
+                  </select>
+                  <button class="small danger" @click="removeImportTarget(target.localId)">Удалить цель</button>
+                </div>
+
+                <div v-if="target.mode === 'existing'" class="import-target-row">
+                  <label>Таблица</label>
+                  <select v-model.number="target.table_id" @change="onImportTargetTableChange(target)">
+                    <option :value="null">Выберите таблицу</option>
+                    <option v-for="table in allTableOptions" :key="`imp-target-${target.localId}-${table.id}`" :value="table.id">
+                      {{ table.name }}
+                    </option>
+                  </select>
+                </div>
+
+                <div v-else class="import-target-row import-target-grid">
+                  <div>
+                    <label>Название новой таблицы</label>
+                    <input v-model="target.table_name" placeholder="Например: Импорт товаров" />
+                  </div>
+                  <div>
+                    <label>Описание</label>
+                    <input v-model="target.table_description" placeholder="Описание новой таблицы" />
+                  </div>
+                </div>
+
+                <div class="import-target-row import-target-grid">
+                  <label class="checkbox-inline">
+                    <input v-model="target.map_section_to_field" type="checkbox" />
+                    Добавить отдельный столбец "разделитель" и заполнить его значением разделителя
+                  </label>
+                  <div v-if="target.map_section_to_field">
+                    <label>Имя столбца разделителя</label>
+                    <input v-model="target.section_field_name" placeholder="Разделитель" />
+                  </div>
+                </div>
+
+                <div class="mapping-grid" v-if="importSourceKeys.length > 0">
+                  <div v-for="sourceKey in importSourceKeys" :key="`map-${target.localId}-${sourceKey}`" class="mapping-row">
+                    <strong>{{ sourceKey }}</strong>
+
+                    <select
+                      v-if="target.mode === 'existing'"
+                      v-model="target.column_mappings[sourceKey]"
+                    >
+                      <option :value="null">Не импортировать</option>
+                      <option v-for="column in getImportTargetColumns(target)" :key="`map-col-${target.localId}-${column.key}`" :value="column.key">
+                        {{ column.name }} ({{ column.key }})
+                      </option>
+                    </select>
+
+                    <input
+                      v-else
+                      v-model="target.column_mappings[sourceKey]"
+                      :placeholder="`Ключ колонки (например ${sourceKey})`"
+                    />
+
+                    <p v-if="target.mode === 'new'" class="mapping-hint">
+                      Итоговый ключ: <strong>{{ formatMappedKeyPreview(target.column_mappings[sourceKey]) }}</strong>
+                      <span v-if="isMappedKeyTruncated(target.column_mappings[sourceKey])" class="mapping-warning">
+                        (будет сокращен до {{ IMPORT_KEY_MAX_LENGTH }} символов)
+                      </span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <article class="import-card import-preview-card" v-if="importPreviewRows.length > 0">
+              <h4>Превью данных</h4>
+              <div class="data-table-wrap import-preview-wrap">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th v-for="sourceKey in importSourceKeys" :key="`preview-head-${sourceKey}`">{{ sourceKey }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(row, rowIndex) in importPreviewRows" :key="`preview-row-${rowIndex}`">
+                      <td>{{ rowIndex + 1 }}</td>
+                      <td v-for="sourceKey in importSourceKeys" :key="`preview-cell-${rowIndex}-${sourceKey}`">
+                        <span :title="formatImportValue(row[sourceKey])">
+                          {{ formatImportValue(row[sourceKey]) }}
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </section>
+
         <section v-if="workspaceTab === 'reports'" class="reports-section">
           <div class="reports-header">
             <div>
@@ -2344,6 +2823,7 @@ ul {
 .table-card {
   position: absolute;
   width: 280px;
+  max-width: 280px;
   border: 1px solid #8ca8b1;
   border-radius: 12px;
   padding: 10px;
@@ -2351,6 +2831,7 @@ ul {
   display: grid;
   gap: 8px;
   box-shadow: 0 6px 14px rgba(38, 74, 85, 0.12);
+  overflow: hidden;
 }
 
 .table-card.active {
@@ -2363,6 +2844,14 @@ ul {
   gap: 8px;
   align-items: center;
   cursor: pointer;
+  min-width: 0;
+}
+
+.table-head strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .table-grip {
@@ -2377,6 +2866,7 @@ ul {
   margin: 0;
   font-size: 0.83rem;
   color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 
 .table-name-input,
@@ -2397,17 +2887,34 @@ ul {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   cursor: grab;
+  min-width: 0;
 }
 
 .column-item div {
   display: grid;
   gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.column-item strong,
+.column-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .column-item span {
   color: var(--text-muted);
   font-size: 0.82rem;
+}
+
+.column-item em {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .column-item:hover {
@@ -2870,6 +3377,185 @@ form {
   font-size: 0.9rem;
 }
 
+/* Import Styles */
+.import-section {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  background: var(--bg-soft);
+  display: grid;
+  gap: 14px;
+}
+
+.import-header p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+}
+
+.import-panel,
+.import-card,
+.import-target {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f7fbfc;
+  padding: 10px;
+}
+
+.import-panel,
+.import-results,
+.import-inputs,
+.import-zones,
+.mapping-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.import-results,
+.import-card,
+.import-preview-card {
+  min-width: 0;
+}
+
+.import-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.flow-step {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  background: #edf4f6;
+}
+
+.flow-step.active {
+  border-color: #2b8f86;
+  color: #1f5a54;
+  background: #e2f3ef;
+}
+
+.flow-step.warning {
+  border-color: #d49f3f;
+  color: #8b621f;
+  background: #fff5df;
+}
+
+.zones-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.import-targets-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.import-target-row {
+  display: grid;
+  grid-template-columns: 180px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.import-target-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+.mapping-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.mapping-hint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  grid-column: 1 / -1;
+}
+
+.mapping-warning,
+.import-warning {
+  color: #8b621f;
+  font-size: 0.84rem;
+}
+
+.success-text {
+  color: #276f45;
+  font-weight: 600;
+}
+
+.import-preview-wrap {
+  width: 100%;
+  max-width: 100%;
+  max-height: 360px;
+  overflow-x: auto;
+  overflow-y: auto;
+}
+
+.import-preview-card {
+  overflow: hidden;
+}
+
+.import-preview-wrap .data-table {
+  width: max-content;
+  min-width: 100%;
+  table-layout: fixed;
+}
+
+.import-preview-wrap .data-table th,
+.import-preview-wrap .data-table td {
+  min-width: 150px;
+  max-width: 240px;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.import-preview-wrap .data-table td span {
+  max-width: none;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  display: block;
+}
+
+.separator-artifacts {
+  display: grid;
+  gap: 8px;
+}
+
+.separator-list {
+  display: grid;
+  gap: 6px;
+  max-height: 190px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.separator-pill {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #eef6f8;
+  color: var(--text-main);
+  padding: 6px 8px;
+  font-size: 0.84rem;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Reports Styles */
 .reports-section {
   margin-top: 8px;
@@ -3043,7 +3729,11 @@ form {
   .report-editor-grid,
   .metric-row,
   .chart-row,
-  .excel-column-row {
+  .excel-column-row,
+  .zones-grid,
+  .import-target-row,
+  .mapping-row,
+  .import-target-grid {
     grid-template-columns: 1fr;
   }
 }
