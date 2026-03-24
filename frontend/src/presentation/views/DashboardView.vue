@@ -48,6 +48,10 @@ const newColumnType = ref<ColumnType>('text')
 const newColumnRequired = ref(false)
 const newColumnEnumOptions = ref('')
 const newColumnListItemType = ref<'text' | 'number' | 'boolean' | 'enum'>('text')
+const newColumnNumberIsId = ref(false)
+const newColumnNumberAutoIncrement = ref(false)
+const newColumnNumberStart = ref(1)
+const newColumnNumberStep = ref(1)
 const newColumnGeoSrid = ref(4326)
 const newColumnGeoAllowHoles = ref(false)
 
@@ -63,12 +67,15 @@ const dragState = ref<{ sourceTableId: number; columnKey: string } | null>(null)
 // Form Builder state
 const formConfigurations = ref<FormConfiguration[]>([])
 const selectedFormId = ref<number | null>(null)
+const formEditorOpen = ref(false)
 const formLoading = ref(false)
 const formError = ref('')
 const formFieldDragIndex = ref<number | null>(null)
 const selectedFormFieldIndex = ref<number | null>(null)
+const formTableSelection = ref<number[]>([])
 const addFieldTableId = ref('')
 const addFieldColumnKey = ref('')
+const newWidgetOption = ref('')
 
 // Data Viewer state
 const tableDataRecords = ref<any[]>([])
@@ -151,6 +158,7 @@ const selectedFormField = computed(() => {
 const addFieldCandidates = computed(() => {
   const tableId = Number(addFieldTableId.value)
   if (!tableId || !selectedForm.value) return []
+  if (!formTableSelection.value.includes(tableId)) return []
 
   const existing = new Set(
     selectedForm.value.fields.map((field) => `${field.table_id ?? activeTable.value?.id ?? 0}:${field.column_key}`)
@@ -362,6 +370,19 @@ const saveTable = async (table: TableStructure) => {
   await loadSchema()
 }
 
+const deleteActiveTable = async () => {
+  if (!authStore.token || !selectedWorkspace.value || !activeTable.value) return
+
+  const shouldDelete = window.confirm(
+    `Удалить таблицу "${activeTable.value.name}"? Это действие удалит связанные данные.`
+  )
+  if (!shouldDelete) return
+
+  await tableSchemaUseCase.deleteTable(authStore.token, selectedWorkspace.value.id, activeTable.value.id)
+  selectedColumnRef.value = null
+  await loadSchema()
+}
+
 const slugify = (value: string): string =>
   value
     .toLowerCase()
@@ -371,6 +392,18 @@ const slugify = (value: string): string =>
     .slice(0, 60)
 
 const buildColumnSettings = (): Record<string, unknown> => {
+  if (newColumnType.value === 'number') {
+    const settings: Record<string, unknown> = {
+      autoIncrement: newColumnNumberAutoIncrement.value,
+      autoIncrementStart: Math.max(1, Number(newColumnNumberStart.value) || 1),
+      autoIncrementStep: Math.max(1, Number(newColumnNumberStep.value) || 1)
+    }
+    if (newColumnNumberIsId.value) {
+      settings.isId = true
+    }
+    return settings
+  }
+
   if (newColumnType.value === 'enum') {
     return {
       options: newColumnEnumOptions.value
@@ -432,6 +465,10 @@ const addColumnToActiveTable = async () => {
   newColumnRequired.value = false
   newColumnEnumOptions.value = ''
   newColumnListItemType.value = 'text'
+  newColumnNumberIsId.value = false
+  newColumnNumberAutoIncrement.value = false
+  newColumnNumberStart.value = 1
+  newColumnNumberStep.value = 1
   newColumnGeoSrid.value = 4326
   newColumnGeoAllowHoles.value = false
 
@@ -445,6 +482,44 @@ const removeColumnFromActiveTable = async (columnKey: string) => {
     selectedColumnRef.value = null
   }
   await saveTable(activeTable.value)
+}
+
+const getSelectedNumberSetting = <T,>(key: string, fallback: T): T => {
+  if (!selectedColumn.value || selectedColumn.value.type !== 'number') return fallback
+  const raw = selectedColumn.value.settings?.[key]
+  if (typeof fallback === 'boolean') {
+    return (Boolean(raw) as T)
+  }
+  if (typeof fallback === 'number') {
+    return ((typeof raw === 'number' ? raw : fallback) as T)
+  }
+  return fallback
+}
+
+const setSelectedNumberSetting = (key: string, value: unknown) => {
+  if (!selectedColumn.value || selectedColumn.value.type !== 'number') return
+  selectedColumn.value.settings = {
+    ...(selectedColumn.value.settings ?? {}),
+    [key]: value
+  }
+}
+
+const onNewColumnNumberIsIdChange = (checked: boolean) => {
+  newColumnNumberIsId.value = checked
+  if (checked) {
+    newColumnNumberAutoIncrement.value = true
+    newColumnRequired.value = true
+  }
+}
+
+const onSelectedColumnIsIdChange = (checked: boolean) => {
+  setSelectedNumberSetting('isId', checked)
+  if (checked) {
+    setSelectedNumberSetting('autoIncrement', true)
+    if (selectedColumn.value) {
+      selectedColumn.value.required = true
+    }
+  }
 }
 
 const startDraggingColumn = (sourceTableId: number, columnKey: string) => {
@@ -496,49 +571,31 @@ const deleteRelation = async (relationId: number) => {
 }
 
 const loadForms = async () => {
-  if (!authStore.token || !selectedWorkspace.value || !activeTable.value) {
+  if (!authStore.token || !selectedWorkspace.value) {
     formConfigurations.value = []
     selectedFormId.value = null
     selectedFormFieldIndex.value = null
+    formTableSelection.value = []
     return
   }
 
   formLoading.value = true
   formError.value = ''
   try {
-    const forms = await formBuilderUseCase.listForms(selectedWorkspace.value.id, activeTable.value.id)
+    formConfigurations.value = await formBuilderUseCase.listForms(selectedWorkspace.value.id)
 
-    let singleForm = forms[0] ?? null
-
-    if (!singleForm) {
-      const defaultFields: FormField[] = activeTable.value.columns.map((column) => ({
-        table_id: activeTable.value?.id,
-        column_key: column.key,
-        column_name: column.name,
-        field_label: column.name,
-        widget_type: mapWidgetTypeFromColumn(column.type),
-        required: column.required,
-        placeholder: '',
-        help_text: '',
-        widget_settings: { ...(column.settings ?? {}) }
-      }))
-
-      singleForm = await formBuilderUseCase.createForm(
-        selectedWorkspace.value.id,
-        activeTable.value.id,
-        `${activeTable.value.name} Form`,
-        '',
-        defaultFields,
-        false
-      )
+    if (formConfigurations.value.length === 0) {
+      selectedFormId.value = null
+      selectedFormFieldIndex.value = null
+      formTableSelection.value = []
+      formEditorOpen.value = false
+      return
     }
 
-    formConfigurations.value = [singleForm]
-    selectedFormId.value = singleForm.id
-    syncMissingFieldsFromWorkspace()
-    if (singleForm.fields.length > 0) {
-      selectedFormFieldIndex.value = 0
-    }
+    const selectedExists = formConfigurations.value.some((form) => form.id === selectedFormId.value)
+    selectedFormId.value = selectedExists ? selectedFormId.value : formConfigurations.value[0].id
+    syncFormTableSelectionFromSelected()
+    selectedFormFieldIndex.value = selectedForm.value?.fields.length ? 0 : null
   } catch (error) {
     formError.value = 'Не удалось загрузить формы'
     console.error(error)
@@ -552,6 +609,51 @@ const selectedForm = computed(() => {
   return formConfigurations.value.find((f) => f.id === selectedFormId.value) ?? null
 })
 
+const getFormUsedTableIds = (form: FormConfiguration): number[] => {
+  const ids = new Set<number>()
+  if (typeof form.table_id === 'number') {
+    ids.add(form.table_id)
+  }
+  for (const field of form.fields) {
+    if (typeof field.table_id === 'number') {
+      ids.add(field.table_id)
+    }
+  }
+  return [...ids]
+}
+
+const getFormUsedTableNames = (form: FormConfiguration): string => {
+  const names = getFormUsedTableIds(form)
+    .map((tableId) => tableStructures.value.find((table) => table.id === tableId)?.name)
+    .filter((name): name is string => Boolean(name))
+
+  if (names.length === 0) return 'Таблицы не выбраны'
+  return names.join(', ')
+}
+
+const syncFormTableSelectionFromSelected = () => {
+  if (!selectedForm.value) {
+    formTableSelection.value = []
+    return
+  }
+
+  const ids = getFormUsedTableIds(selectedForm.value)
+  if (ids.length > 0) {
+    formTableSelection.value = ids
+    return
+  }
+
+  const fallback = activeTable.value?.id ?? tableStructures.value[0]?.id
+  formTableSelection.value = typeof fallback === 'number' ? [fallback] : []
+}
+
+const selectForm = (formId: number) => {
+  selectedFormId.value = formId
+  selectedFormFieldIndex.value = selectedForm.value?.fields.length ? 0 : null
+  syncFormTableSelectionFromSelected()
+  formEditorOpen.value = true
+}
+
 const getWidgetTypeLabel = (type: string): string => {
   const labels: Record<string, string> = {
     text_input: 'Текстовое поле',
@@ -560,6 +662,8 @@ const getWidgetTypeLabel = (type: string): string => {
     date_input: 'Дата',
     datetime_input: 'Дата и время',
     select: 'Выпадающий список',
+    multiselect: 'Множественный выбор',
+    list_input: 'Список значений',
     checkbox: 'Чекбокс',
     radio: 'Радио'
   }
@@ -581,31 +685,75 @@ const getFieldInputType = (widgetType: string): string => {
   return typeMap[widgetType] || 'text'
 }
 
-const mapWidgetTypeFromColumn = (columnType: ColumnType): WidgetType => {
+const mapWidgetTypeFromColumn = (
+  columnType: ColumnType,
+  settings?: Record<string, unknown>
+): WidgetType => {
   if (columnType === 'number') return 'number_input'
   if (columnType === 'date') return 'date_input'
   if (columnType === 'datetime') return 'datetime_input'
   if (columnType === 'enum') return 'select'
   if (columnType === 'boolean') return 'checkbox'
+  if (columnType === 'list') {
+    const itemType = settings?.itemType
+    if (itemType === 'enum') return 'multiselect'
+    return 'list_input'
+  }
   return 'text_input'
 }
 
-const getFieldOptionsText = (field: FormField): string => {
+const supportsWidgetOptions = (field: FormField): boolean =>
+  ['select', 'multiselect', 'checkbox', 'radio'].includes(field.widget_type)
+
+const getFieldOptions = (field: FormField): string[] => {
   const options = field.widget_settings?.options
-  if (!Array.isArray(options)) return ''
-  return options.map((item) => String(item)).join(', ')
+  if (!Array.isArray(options)) return []
+  return options.map((item) => String(item)).filter(Boolean)
 }
 
-const setFieldOptionsText = (field: FormField, value: string) => {
-  const options = value
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-
+const setFieldOptions = (field: FormField, options: string[]) => {
   field.widget_settings = {
     ...(field.widget_settings ?? {}),
     options
   }
+}
+
+const addOptionToSelectedField = () => {
+  if (!selectedFormField.value || !supportsWidgetOptions(selectedFormField.value)) return
+
+  const next = newWidgetOption.value.trim()
+  if (!next) return
+
+  const existing = getFieldOptions(selectedFormField.value)
+  if (existing.includes(next)) {
+    newWidgetOption.value = ''
+    return
+  }
+
+  setFieldOptions(selectedFormField.value, [...existing, next])
+  newWidgetOption.value = ''
+}
+
+const updateFieldOptionAt = (field: FormField, index: number, value: string) => {
+  const normalized = value.trim()
+  const options = [...getFieldOptions(field)]
+  if (index < 0 || index >= options.length) return
+
+  if (!normalized) {
+    options.splice(index, 1)
+    setFieldOptions(field, options)
+    return
+  }
+
+  options[index] = normalized
+  setFieldOptions(field, options)
+}
+
+const removeFieldOptionAt = (field: FormField, index: number) => {
+  const options = [...getFieldOptions(field)]
+  if (index < 0 || index >= options.length) return
+  options.splice(index, 1)
+  setFieldOptions(field, options)
 }
 
 const startFieldDrag = (index: number) => {
@@ -674,13 +822,14 @@ const syncMissingFieldsFromWorkspace = () => {
   )
 
   const missingFields: FormField[] = allWorkspaceColumns.value
+    .filter((item) => formTableSelection.value.includes(item.tableId))
     .filter((item) => !existing.has(`${item.tableId}:${item.column.key}`))
     .map((item) => ({
       table_id: item.tableId,
       column_key: item.column.key,
       column_name: item.column.name,
       field_label: item.column.name,
-      widget_type: mapWidgetTypeFromColumn(item.column.type),
+      widget_type: mapWidgetTypeFromColumn(item.column.type, item.column.settings),
       required: item.column.required,
       placeholder: '',
       help_text: '',
@@ -708,7 +857,7 @@ const addSelectedFieldToForm = () => {
       column_key: column.key,
       column_name: column.name,
       field_label: column.name,
-      widget_type: mapWidgetTypeFromColumn(column.type),
+      widget_type: mapWidgetTypeFromColumn(column.type, column.settings),
       required: column.required,
       placeholder: '',
       help_text: '',
@@ -728,13 +877,77 @@ const copyToClipboard = () => {
   })
 }
 
+const openFormPublicLink = (formId: number) => {
+  window.open(`/form/${formId}`, '_blank')
+}
+
 const goToFormsTab = async () => {
   workspaceTab.value = 'forms'
+  formEditorOpen.value = false
   await loadForms()
 }
 
+const createNewForm = async () => {
+  if (!selectedWorkspace.value) return
+
+  const baseTableId = activeTable.value?.id ?? tableStructures.value[0]?.id
+  if (!baseTableId) {
+    alert('Сначала создайте хотя бы одну таблицу.')
+    return
+  }
+
+  const baseTable = tableStructures.value.find((table) => table.id === baseTableId)
+  const defaultFields: FormField[] = (baseTable?.columns || []).map((column) => ({
+    table_id: baseTableId,
+    column_key: column.key,
+    column_name: column.name,
+    field_label: column.name,
+    widget_type: mapWidgetTypeFromColumn(column.type, column.settings),
+    required: column.required,
+    placeholder: '',
+    help_text: '',
+    widget_settings: { ...(column.settings ?? {}) }
+  }))
+
+  const created = await formBuilderUseCase.createForm(
+    selectedWorkspace.value.id,
+    baseTableId,
+    `Форма ${formConfigurations.value.length + 1}`,
+    '',
+    defaultFields,
+    false
+  )
+
+  await loadForms()
+  selectForm(created.id)
+}
+
+const onFormTablesChange = () => {
+  if (!selectedForm.value) return
+
+  if (formTableSelection.value.length === 0) {
+    const fallback = selectedForm.value.table_id ?? activeTable.value?.id ?? tableStructures.value[0]?.id
+    formTableSelection.value = typeof fallback === 'number' ? [fallback] : []
+  }
+
+  if (!formTableSelection.value.includes(Number(addFieldTableId.value))) {
+    addFieldTableId.value = String(formTableSelection.value[0] ?? '')
+    addFieldColumnKey.value = ''
+  }
+}
+
 const saveSingleForm = async () => {
-  if (!selectedForm.value || !selectedWorkspace.value) return
+  if (!selectedForm.value || !selectedWorkspace.value || formTableSelection.value.length === 0) return
+
+  const primaryTableId = formTableSelection.value[0]
+
+  // Keep form fields mapped to selected tables only.
+  selectedForm.value.fields = selectedForm.value.fields.filter((field) => {
+    const fieldTableId = Number(field.table_id ?? primaryTableId)
+    return formTableSelection.value.includes(fieldTableId)
+  })
+
+  selectedForm.value.table_id = primaryTableId
 
   await formBuilderUseCase.updateForm(
     selectedWorkspace.value.id,
@@ -746,6 +959,19 @@ const saveSingleForm = async () => {
     selectedForm.value.collect_email
   )
 
+  await loadForms()
+}
+
+const deleteForm = async (formId: number) => {
+  if (!selectedWorkspace.value) return
+  if (!window.confirm('Удалить эту форму?')) return
+
+  await formBuilderUseCase.deleteForm(selectedWorkspace.value.id, formId)
+  if (selectedFormId.value === formId) {
+    selectedFormId.value = null
+    selectedFormFieldIndex.value = null
+    formEditorOpen.value = false
+  }
   await loadForms()
 }
 
@@ -1133,7 +1359,7 @@ onBeforeUnmount(() => {
         <div class="workspace-tabs">
           <button class="tab" :class="{ active: workspaceTab === 'details' }" @click="workspaceTab = 'details'">Детали</button>
           <button class="tab" :class="{ active: workspaceTab === 'tables' }" @click="workspaceTab = 'tables'">Таблицы</button>
-          <button class="tab" :class="{ active: workspaceTab === 'forms' }" @click="goToFormsTab">Форма</button>
+          <button class="tab" :class="{ active: workspaceTab === 'forms' }" @click="goToFormsTab">Формы</button>
           <button class="tab" :class="{ active: workspaceTab === 'data' }" @click="goToDataTab">Данные</button>
           <button class="tab" :class="{ active: workspaceTab === 'reports' }" @click="goToReportsTab">Отчеты</button>
         </div>
@@ -1203,7 +1429,10 @@ onBeforeUnmount(() => {
                 <h4>Выделенная таблица</h4>
                 <input v-model="activeTable.name" placeholder="Имя таблицы" />
                 <input v-model="activeTable.description" placeholder="Описание таблицы" />
-                <button class="small" @click="saveTable(activeTable)">Сохранить таблицу</button>
+                <div class="row-actions">
+                  <button class="small" @click="saveTable(activeTable)">Сохранить таблицу</button>
+                  <button class="small danger" @click="deleteActiveTable">Удалить таблицу</button>
+                </div>
               </section>
 
               <section class="object-card" v-if="activeTable">
@@ -1238,6 +1467,36 @@ onBeforeUnmount(() => {
                   <input v-if="newColumnListItemType === 'enum'" v-model="newColumnEnumOptions" placeholder="List enum options" />
                 </div>
 
+                <div v-if="newColumnType === 'number'" class="type-settings">
+                  <label class="checkbox-inline">
+                    <input
+                      :checked="newColumnNumberIsId"
+                      type="checkbox"
+                      @change="onNewColumnNumberIsIdChange(($event.target as HTMLInputElement).checked)"
+                    />
+                    Использовать как ID
+                  </label>
+                  <label class="checkbox-inline">
+                    <input v-model="newColumnNumberAutoIncrement" type="checkbox" /> Автоинкремент
+                  </label>
+                  <label class="setting-label">Стартовое значение</label>
+                  <input
+                    v-model.number="newColumnNumberStart"
+                    type="number"
+                    min="1"
+                    placeholder="Стартовое значение"
+                    :disabled="!newColumnNumberAutoIncrement"
+                  />
+                  <label class="setting-label">Шаг инкремента</label>
+                  <input
+                    v-model.number="newColumnNumberStep"
+                    type="number"
+                    min="1"
+                    placeholder="Шаг"
+                    :disabled="!newColumnNumberAutoIncrement"
+                  />
+                </div>
+
                 <div v-if="newColumnType === 'geoPoint' || newColumnType === 'geoPolygon'" class="type-settings">
                   <input v-model.number="newColumnGeoSrid" type="number" min="1" placeholder="SRID" />
                   <label v-if="newColumnType === 'geoPolygon'" class="checkbox-inline">
@@ -1265,6 +1524,42 @@ onBeforeUnmount(() => {
                   <option value="geoPolygon">geoPolygon</option>
                 </select>
                 <label class="checkbox-inline"><input v-model="selectedColumn.required" type="checkbox" />required</label>
+                <div v-if="selectedColumn.type === 'number'" class="type-settings">
+                  <label class="checkbox-inline">
+                    <input
+                      :checked="getSelectedNumberSetting('isId', false)"
+                      type="checkbox"
+                      @change="onSelectedColumnIsIdChange(($event.target as HTMLInputElement).checked)"
+                    />
+                    Использовать как ID
+                  </label>
+                  <label class="checkbox-inline">
+                    <input
+                      :checked="getSelectedNumberSetting('autoIncrement', false)"
+                      type="checkbox"
+                      @change="setSelectedNumberSetting('autoIncrement', ($event.target as HTMLInputElement).checked)"
+                    />
+                    Автоинкремент
+                  </label>
+                  <label class="setting-label">Стартовое значение</label>
+                  <input
+                    :value="getSelectedNumberSetting('autoIncrementStart', 1)"
+                    type="number"
+                    min="1"
+                    placeholder="Стартовое значение"
+                    :disabled="!getSelectedNumberSetting('autoIncrement', false)"
+                    @input="setSelectedNumberSetting('autoIncrementStart', Math.max(1, Number(($event.target as HTMLInputElement).value) || 1))"
+                  />
+                  <label class="setting-label">Шаг инкремента</label>
+                  <input
+                    :value="getSelectedNumberSetting('autoIncrementStep', 1)"
+                    type="number"
+                    min="1"
+                    placeholder="Шаг"
+                    :disabled="!getSelectedNumberSetting('autoIncrement', false)"
+                    @input="setSelectedNumberSetting('autoIncrementStep', Math.max(1, Number(($event.target as HTMLInputElement).value) || 1))"
+                  />
+                </div>
                 <div class="row-actions">
                   <button class="small" @click="saveSelectedColumn">Сохранить</button>
                   <button class="small danger" @click="removeColumnFromActiveTable(selectedColumn.key)">Удалить</button>
@@ -1315,14 +1610,46 @@ onBeforeUnmount(() => {
 
         <section v-if="workspaceTab === 'forms'" class="forms-section">
           <div class="forms-header">
-            <h3>Конструктор форм</h3>
-            <p>Создавайте формы на основе структур таблиц и собирайте записи от пользователей.</p>
+            <div>
+              <h3>Конструктор форм</h3>
+              <p>Создавайте несколько форм для одной таблицы или для набора таблиц.</p>
+            </div>
+            <button class="small" @click="createNewForm">Новая форма</button>
           </div>
 
           <div v-if="formLoading" class="muted">Загрузка форм...</div>
           <div v-if="formError" class="error">{{ formError }}</div>
 
-          <div v-if="selectedForm" class="form-editor">
+          <div class="reports-grid" v-if="formConfigurations.length > 0">
+            <article
+              v-for="form in formConfigurations"
+              :key="form.id"
+              class="report-tile"
+              :class="{ active: selectedFormId === form.id }"
+            >
+              <header>
+                <h4>{{ form.name }}</h4>
+                <span class="report-type">{{ form.is_published ? 'Публичная' : 'Черновик' }}</span>
+              </header>
+              <p>{{ form.description || 'Без описания' }}</p>
+              <p class="muted">Поля: {{ form.fields.length }}</p>
+              <p class="muted">Таблицы: {{ getFormUsedTableNames(form) }}</p>
+              <div class="report-actions">
+                <button
+                  class="small"
+                  :disabled="!form.is_published"
+                  @click="openFormPublicLink(form.id)"
+                >
+                  Ссылка
+                </button>
+                <button class="small" @click="selectForm(form.id)">Редактировать</button>
+                <button class="small danger" @click="deleteForm(form.id)">Удалить</button>
+              </div>
+            </article>
+          </div>
+          <p v-else-if="!formLoading" class="muted">Пока нет форм. Создайте первую.</p>
+
+          <div v-if="formEditorOpen && selectedForm" class="form-editor">
             <article class="form-preview">
               <header class="form-header">
                 <h4>{{ selectedForm.name }}</h4>
@@ -1367,8 +1694,26 @@ onBeforeUnmount(() => {
                     <option value="">{{ field.placeholder || 'Выберите...' }}</option>
                     <option v-for="opt in field.widget_settings.options" :key="opt" :value="opt">{{ opt }}</option>
                   </select>
+                  <select
+                    v-else-if="field.widget_type === 'multiselect' && field.widget_settings.options"
+                    :id="`field-${field.column_key}`"
+                    multiple
+                    :required="field.required"
+                  >
+                    <option v-for="opt in field.widget_settings.options" :key="`multi-${opt}`" :value="opt">{{ opt }}</option>
+                  </select>
+                  <div v-else-if="field.widget_type === 'list_input'" class="list-input-preview">
+                    <input :placeholder="field.placeholder || 'Добавить элемент списка'" />
+                    <button type="button" class="small">Добавить</button>
+                  </div>
                   <div v-else-if="field.widget_type === 'checkbox'" class="checkbox-wrapper">
-                    <input :id="`field-${field.column_key}`" type="checkbox" :required="field.required" />
+                    <template v-if="getFieldOptions(field).length > 0">
+                      <label v-for="(opt, idx) in getFieldOptions(field)" :key="`preview-checkbox-${idx}-${opt}`">
+                        <input type="checkbox" :name="`field-${field.column_key}`" :value="opt" />
+                        {{ opt }}
+                      </label>
+                    </template>
+                    <input v-else :id="`field-${field.column_key}`" type="checkbox" :required="field.required" />
                   </div>
                   <div v-else-if="field.widget_type === 'radio' && field.widget_settings.options" class="radio-wrapper">
                     <label v-for="opt in field.widget_settings.options" :key="opt">
@@ -1392,6 +1737,14 @@ onBeforeUnmount(() => {
                   <label>Описание</label>
                   <input v-model="selectedForm.description" />
                 </div>
+                <div>
+                  <label>Таблицы формы (можно несколько)</label>
+                  <select v-model="formTableSelection" multiple @change="onFormTablesChange">
+                    <option v-for="table in allTableOptions" :key="`ft-t-${table.id}`" :value="table.id">
+                      {{ table.name }}
+                    </option>
+                  </select>
+                </div>
                 <label class="checkbox-inline">
                   <input v-model="selectedForm.is_published" type="checkbox" /> Опубликована
                 </label>
@@ -1407,7 +1760,11 @@ onBeforeUnmount(() => {
                 <div class="field-settings-row">
                   <select v-model="addFieldTableId">
                     <option value="">Таблица для добавления</option>
-                    <option v-for="table in allTableOptions" :key="`add-t-${table.id}`" :value="String(table.id)">
+                    <option
+                      v-for="table in allTableOptions.filter((item) => formTableSelection.includes(item.id))"
+                      :key="`add-t-${table.id}`"
+                      :value="String(table.id)"
+                    >
                       {{ table.name }}
                     </option>
                   </select>
@@ -1447,23 +1804,37 @@ onBeforeUnmount(() => {
                   <option value="date_input">date_input</option>
                   <option value="datetime_input">datetime_input</option>
                   <option value="select">select</option>
+                  <option value="multiselect">multiselect</option>
+                  <option value="list_input">list_input</option>
                   <option value="checkbox">checkbox</option>
                   <option value="radio">radio</option>
                 </select>
                 <select v-model.number="selectedFormField.table_id">
-                  <option :value="null">Таблица по умолчанию</option>
-                  <option v-for="table in allTableOptions" :key="`sf-t-${table.id}`" :value="table.id">
+                  <option v-for="table in allTableOptions.filter((item) => formTableSelection.includes(item.id))" :key="`sf-t-${table.id}`" :value="table.id">
                     {{ table.name }}
                   </option>
                 </select>
                 <input v-model="selectedFormField.placeholder" placeholder="Placeholder" />
                 <input v-model="selectedFormField.help_text" placeholder="Подсказка" />
-                <input
-                  v-if="selectedFormField.widget_type === 'select' || selectedFormField.widget_type === 'radio'"
-                  :value="getFieldOptionsText(selectedFormField)"
-                  placeholder="Опции через запятую"
-                  @input="setFieldOptionsText(selectedFormField, ($event.target as HTMLInputElement).value)"
-                />
+                <div v-if="supportsWidgetOptions(selectedFormField)" class="options-editor">
+                  <label>Варианты</label>
+                  <div class="option-row" v-for="(opt, optIndex) in getFieldOptions(selectedFormField)" :key="`opt-${optIndex}`">
+                    <input
+                      :value="opt"
+                      placeholder="Вариант"
+                      @input="updateFieldOptionAt(selectedFormField, optIndex, ($event.target as HTMLInputElement).value)"
+                    />
+                    <button class="small danger" @click="removeFieldOptionAt(selectedFormField, optIndex)">Удалить</button>
+                  </div>
+                  <div class="option-add-row">
+                    <input
+                      v-model="newWidgetOption"
+                      placeholder="Новый вариант"
+                      @keydown.enter.prevent="addOptionToSelectedField"
+                    />
+                    <button class="small" @click="addOptionToSelectedField">Добавить вариант</button>
+                  </div>
+                </div>
                 <label class="checkbox-inline">
                   <input v-model="selectedFormField.required" type="checkbox" /> Обязательное
                 </label>
@@ -1479,10 +1850,6 @@ onBeforeUnmount(() => {
                 </div>
               </section>
             </aside>
-          </div>
-
-          <div v-else class="muted" style="text-align: center; padding: 20px;">
-            Выберите таблицу во вкладке "Таблицы", затем откройте вкладку "Форма"
           </div>
         </section>
 
@@ -2084,6 +2451,11 @@ ul {
   color: var(--text-muted);
 }
 
+.setting-label {
+  font-size: 0.84rem;
+  color: var(--text-muted);
+}
+
 .add-column {
   width: fit-content;
 }
@@ -2292,7 +2664,20 @@ form {
   flex-direction: column;
 }
 
+.list-input-preview {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
 .radio-wrapper label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-weight: normal;
+}
+
+.checkbox-wrapper label {
   display: flex;
   gap: 6px;
   align-items: center;
@@ -2379,6 +2764,24 @@ form {
   font-size: 0.85rem;
   color: var(--text-muted);
   word-break: break-all;
+}
+
+.form-config select[multiple] {
+  min-height: 118px;
+  background: #fff;
+}
+
+.options-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.option-row,
+.option-add-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
 }
 
 /* Data Viewer Styles */
@@ -2503,6 +2906,11 @@ form {
   background: #f7fbfc;
   display: grid;
   gap: 8px;
+}
+
+.report-tile.active {
+  border-color: #2b8f86;
+  box-shadow: inset 0 0 0 1px #2b8f86;
 }
 
 .report-tile header {

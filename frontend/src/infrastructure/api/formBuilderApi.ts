@@ -2,15 +2,17 @@ import { httpClient } from "./httpClient";
 import {
   FormConfiguration,
   FormField,
+  PublicFormSubmitResult,
   TableDataRecord,
   TableDataRecordsListResponse,
 } from "../../domain/entities/FormBuilder";
 
 export const formBuilderApi = {
   // Form Configuration API
-  listForms: async (token: string, workspaceId: number, tableId: number) => {
+  listForms: async (token: string, workspaceId: number, tableId?: number) => {
+    const query = typeof tableId === "number" ? `?table_id=${tableId}` : "";
     const response = await httpClient.get<FormConfiguration[]>(
-      `/workspaces/${workspaceId}/forms?table_id=${tableId}`,
+      `/workspaces/${workspaceId}/forms${query}`,
       {
         headers: { Authorization: `Bearer ${token}` },
       }
@@ -116,7 +118,7 @@ export const formBuilderApi = {
     submitterEmail?: string
   ) => {
     // Публичный endpoint без auth
-    const response = await httpClient.post<TableDataRecord>(
+    const response = await httpClient.post<PublicFormSubmitResult>(
       `/workspaces/${workspaceId}/tables/${tableId}/data/submit`,
       {
         data,

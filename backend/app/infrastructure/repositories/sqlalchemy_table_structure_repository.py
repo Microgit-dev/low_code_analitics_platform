@@ -120,6 +120,15 @@ class SQLAlchemyTableStructureRepository(TableStructureRepository):
             updated_at=model.updated_at,
         )
 
+    def delete_table(self, workspace_id: int, owner_id: int, table_id: int) -> bool:
+        model = self._get_table_for_owner(workspace_id, owner_id, table_id)
+        if model is None:
+            return False
+
+        self.db.delete(model)
+        self.db.commit()
+        return True
+
     def move_column(
         self,
         workspace_id: int,

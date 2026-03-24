@@ -34,6 +34,12 @@ export const tableSchemaApi = {
     return data
   },
 
+  async deleteTable(token: string, workspaceId: number, tableId: number): Promise<void> {
+    await httpClient.delete(`/workspaces/${workspaceId}/schema/tables/${tableId}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+  },
+
   async moveColumn(
     token: string,
     workspaceId: number,

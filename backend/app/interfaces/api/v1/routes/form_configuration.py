@@ -36,6 +36,16 @@ from app.interfaces.api.v1.schemas.form_configuration import (
 router = APIRouter()
 
 
+def _is_empty_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() == ""
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) == 0
+    return False
+
+
 def _map_form_field(field: FormField) -> FormFieldSchema:
     return FormFieldSchema(
         table_id=field.table_id,
@@ -124,15 +134,17 @@ def submit_public_form(
     if not form_model or not form_model.is_published:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Form not found or not published")
 
+    submission_data = dict(payload.data)
+
     # Проверка обязательных полей
     missing_required: list[str] = []
     for field in form_model.fields_json:
         key = field.get("column_key")
         if not key:
             continue
-        value = payload.data.get(key)
+        value = submission_data.get(key)
         if field.get("required", True):
-            if value is None or (isinstance(value, str) and value.strip() == ""):
+            if _is_empty_value(value):
                 missing_required.append(key)
 
     if missing_required:
@@ -145,10 +157,10 @@ def submit_public_form(
     table_payloads: dict[int, dict[str, Any]] = defaultdict(dict)
     for field in form_model.fields_json:
         key = field.get("column_key")
-        if not key or key not in payload.data:
+        if not key or key not in submission_data:
             continue
-        value = payload.data.get(key)
-        if value is None or (isinstance(value, str) and value.strip() == ""):
+        value = submission_data.get(key)
+        if _is_empty_value(value):
             continue
 
         table_id = field.get("table_id") or form_model.table_id
@@ -176,11 +188,11 @@ def submit_public_form(
 @router.get("/workspaces/{workspace_id}/forms")
 def list_forms(
     workspace_id: int,
-    table_id: int,
+    table_id: Optional[int] = None,
     current_user=Depends(get_current_user),
     repo: FormConfigurationRepository = Depends(get_form_repo),
 ):
-    """Получить все формы для таблицы"""
+    """Получить формы workspace, с опциональным фильтром по таблице"""
     use_case = ListFormConfigurationsUseCase(repo)
     forms = use_case.execute(workspace_id, table_id)
     return [_map_form_response(form) for form in forms]
