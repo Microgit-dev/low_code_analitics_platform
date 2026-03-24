@@ -14,6 +14,31 @@ class SQLAlchemyTableStructureRepository(TableStructureRepository):
     def __init__(self, db: Session) -> None:
         self.db = db
 
+    def _sanitize_columns_for_schema(self, columns: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+        source = deepcopy(columns or [])
+        normalized: list[dict[str, Any]] = []
+        used_keys: set[str] = set()
+
+        for index, column in enumerate(source):
+            if not isinstance(column, dict):
+                continue
+
+            item = deepcopy(column)
+            raw_key = str(item.get("key") or "").strip()
+            base_key = raw_key[:64] if raw_key else f"column_{index + 1}"
+            candidate = base_key
+            suffix = 2
+            while candidate in used_keys:
+                suffix_text = f"_{suffix}"
+                candidate = f"{base_key[: max(1, 64 - len(suffix_text))]}{suffix_text}"
+                suffix += 1
+
+            item["key"] = candidate
+            used_keys.add(candidate)
+            normalized.append(item)
+
+        return normalized
+
     def _workspace_belongs_to_owner(self, workspace_id: int, owner_id: int) -> bool:
         workspace = (
             self.db.query(WorkspaceModel)
@@ -49,18 +74,30 @@ class SQLAlchemyTableStructureRepository(TableStructureRepository):
             .order_by(TableStructureModel.created_at.desc())
             .all()
         )
-        return [
-            TableStructure(
-                id=model.id,
-                workspace_id=model.workspace_id,
-                name=model.name,
-                description=model.description,
-                columns=deepcopy(model.columns_json or []),
-                created_at=model.created_at,
-                updated_at=model.updated_at,
+        did_update = False
+        entities: list[TableStructure] = []
+        for model in models:
+            safe_columns = self._sanitize_columns_for_schema(model.columns_json or [])
+            if safe_columns != (model.columns_json or []):
+                model.columns_json = deepcopy(safe_columns)
+                did_update = True
+
+            entities.append(
+                TableStructure(
+                    id=model.id,
+                    workspace_id=model.workspace_id,
+                    name=model.name,
+                    description=model.description,
+                    columns=deepcopy(safe_columns),
+                    created_at=model.created_at,
+                    updated_at=model.updated_at,
+                )
             )
-            for model in models
-        ]
+
+        if did_update:
+            self.db.commit()
+
+        return entities
 
     def create_table(
         self,

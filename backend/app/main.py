@@ -17,6 +17,7 @@ from app.infrastructure.db.session import engine
 from app.interfaces.api.v1.routes.auth import router as auth_router
 from app.interfaces.api.v1.routes.deepseek import router as deepseek_router
 from app.interfaces.api.v1.routes.form_configuration import router as form_configuration_router
+from app.interfaces.api.v1.routes.import_parser import router as import_parser_router
 from app.interfaces.api.v1.routes.report_configuration import router as report_configuration_router
 from app.interfaces.api.v1.routes.table_data_record import router as table_data_record_router
 from app.interfaces.api.v1.routes.table_structure import router as table_structure_router
@@ -58,3 +59,4 @@ app.include_router(table_structure_router, prefix="/api/v1")
 app.include_router(form_configuration_router, prefix="/api/v1")
 app.include_router(report_configuration_router, prefix="/api/v1")
 app.include_router(table_data_record_router, prefix="/api/v1")
+app.include_router(import_parser_router, prefix="/api/v1")
