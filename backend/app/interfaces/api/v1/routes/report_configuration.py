@@ -1,10 +1,14 @@
+import logging
 import csv
 from datetime import datetime
 from io import BytesIO, StringIO
+from pathlib import Path
+import re
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
+import zipfile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from sqlalchemy import select
@@ -41,6 +45,9 @@ from app.interfaces.api.v1.schemas.report_configuration import (
 )
 
 router = APIRouter()
+logger = logging.getLogger("uvicorn.error")
+TEMPLATE_FIELD_PATTERN = re.compile(r"\{\{\s*(.*?)\s*\}\}")
+TEMPLATE_AGGREGATION_PATTERN = re.compile(r"^(?P<func>[a-zA-Z_]\w*)\s*\(\s*(?P<key>[^()]+)\s*\)$")
 
 
 def get_report_repo(session: Session = Depends(get_db)) -> ReportConfigurationRepository:
@@ -378,6 +385,72 @@ def _make_unique_name(base_name: str, used_names: set[str], suffix: str = "") ->
     used_names.add(candidate_full)
     return candidate_full
 
+def _normalize_template_key(raw_key: str) -> str:
+    key = raw_key.strip()
+    if (key.startswith("'") and key.endswith("'")) or (key.startswith('"') and key.endswith('"')):
+        key = key[1:-1].strip()
+    return key
+
+
+def _format_template_value(value: float | int) -> str:
+    if isinstance(value, float):
+        normalized = round(value, 2)
+        if normalized.is_integer():
+            return str(int(normalized))
+        return f"{normalized:.2f}".rstrip("0").rstrip(".")
+    return str(value)
+
+
+def _calculate_template_aggregation(rows: list[TableDataRecordModel], func_name: str, key: str) -> float | int:
+    function_name = func_name.lower()
+    normalized_key = _normalize_template_key(key)
+    if not normalized_key:
+        raise ValueError("Ключ в выражении шаблона не может быть пустым")
+
+    if function_name == "count":
+        if normalized_key == "*":
+            return len(rows)
+        return sum(
+            1
+            for row in rows
+            if (row.data_json or {}).get(normalized_key) not in (None, "")
+        )
+
+    numeric_values: list[float] = []
+    for row in rows:
+        number = _to_number((row.data_json or {}).get(normalized_key))
+        if number is not None:
+            numeric_values.append(number)
+
+    if not numeric_values:
+        return 0
+
+    if function_name == "sum":
+        return sum(numeric_values)
+    if function_name == "avg":
+        return sum(numeric_values) / len(numeric_values)
+    if function_name == "min":
+        return min(numeric_values)
+    if function_name == "max":
+        return max(numeric_values)
+
+    raise ValueError(
+        f"Неподдерживаемая функция '{func_name}' в шаблоне. Допустимо: count, sum, avg, min, max."
+    )
+
+
+def _render_template_content(content_xml: str, rows: list[TableDataRecordModel]) -> str:
+    def replace_field(match: re.Match[str]) -> str:
+        expression = match.group(1).strip()
+        parsed = TEMPLATE_AGGREGATION_PATTERN.match(expression)
+        if not parsed:
+            raise ValueError(
+                f"Некорректное выражение шаблона '{{{{ {expression} }}}}'. Ожидается aggregation_func(key)."
+            )
+        value = _calculate_template_aggregation(rows, parsed.group("func"), parsed.group("key"))
+        return _format_template_value(value)
+
+    return TEMPLATE_FIELD_PATTERN.sub(replace_field, content_xml)
 
 @router.get("/reports/{report_id}/dashboard", response_model=PublicDashboardResponse)
 def get_public_dashboard(
@@ -873,4 +946,156 @@ def download_excel_report(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="report_{report.id}.xlsx"'},
+    )
+
+
+@router.post("/workspaces/{workspace_id}/reports/template-calc")
+async def calculate_template_report(
+    workspace_id: int,
+    table_id: int = Query(..., ge=1),
+    template_file: UploadFile = File(...),
+    current_user=Depends(get_current_user),
+    session: Session = Depends(get_db),
+):
+    logger.info(
+        "[template-calc] incoming workspace_id=%s table_id=%s filename=%s file_content_type=%s",
+        workspace_id,
+        table_id,
+        template_file.filename,
+        template_file.content_type,
+    )
+    _assert_workspace_owner(session, workspace_id, current_user.id)
+
+    original_name = template_file.filename or "template.odt"
+    if not original_name.lower().endswith(".odt"):
+        logger.warning(
+            "[template-calc] rejected by extension workspace_id=%s table_id=%s filename=%s",
+            workspace_id,
+            table_id,
+            original_name,
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Разрешены только .odt файлы")
+
+    table = session.execute(
+        select(TableStructureModel).where(
+            TableStructureModel.workspace_id == workspace_id,
+            TableStructureModel.id == table_id,
+        )
+    ).scalar()
+    if not table:
+        logger.warning(
+            "[template-calc] table not found workspace_id=%s table_id=%s",
+            workspace_id,
+            table_id,
+        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found")
+
+    template_bytes = await template_file.read()
+    logger.info(
+        "[template-calc] file loaded workspace_id=%s table_id=%s filename=%s bytes=%s",
+        workspace_id,
+        table_id,
+        original_name,
+        len(template_bytes),
+    )
+    if not template_bytes:
+        logger.warning(
+            "[template-calc] empty file workspace_id=%s table_id=%s filename=%s",
+            workspace_id,
+            table_id,
+            original_name,
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Файл шаблона пустой")
+
+    rows = (
+        session.execute(
+            select(TableDataRecordModel)
+            .where(
+                TableDataRecordModel.workspace_id == workspace_id,
+                TableDataRecordModel.table_id == table_id,
+            )
+            .order_by(TableDataRecordModel.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
+    logger.info(
+        "[template-calc] table rows loaded workspace_id=%s table_id=%s rows=%s",
+        workspace_id,
+        table_id,
+        len(rows),
+    )
+
+    try:
+        source_buffer = BytesIO(template_bytes)
+        with zipfile.ZipFile(source_buffer, mode="r") as source_archive:
+            if "content.xml" not in source_archive.namelist():
+                raise ValueError("Файл шаблона не содержит content.xml")
+
+            content_xml = source_archive.read("content.xml").decode("utf-8")
+            rendered_content = _render_template_content(content_xml, rows).encode("utf-8")
+
+            output = BytesIO()
+            with zipfile.ZipFile(output, mode="w") as target_archive:
+                for archive_entry in source_archive.infolist():
+                    if archive_entry.is_dir():
+                        target_archive.writestr(archive_entry, b"")
+                        continue
+                    if archive_entry.filename == "content.xml":
+                        target_archive.writestr(archive_entry, rendered_content)
+                    else:
+                        target_archive.writestr(
+                            archive_entry,
+                            source_archive.read(archive_entry.filename),
+                        )
+    except zipfile.BadZipFile:
+        logger.warning(
+            "[template-calc] invalid odt archive workspace_id=%s table_id=%s filename=%s",
+            workspace_id,
+            table_id,
+            original_name,
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Некорректный .odt файл")
+    except UnicodeDecodeError:
+        logger.warning(
+            "[template-calc] decode error in content.xml workspace_id=%s table_id=%s filename=%s",
+            workspace_id,
+            table_id,
+            original_name,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Не удалось прочитать content.xml внутри .odt",
+        )
+    except ValueError as error:
+        logger.warning(
+            "[template-calc] template validation error workspace_id=%s table_id=%s filename=%s error=%s",
+            workspace_id,
+            table_id,
+            original_name,
+            str(error),
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error))
+    except Exception:
+        logger.exception(
+            "[template-calc] unexpected error workspace_id=%s table_id=%s filename=%s",
+            workspace_id,
+            table_id,
+            original_name,
+        )
+        raise
+
+    output.seek(0)
+    output_name = f"{Path(original_name).stem}_calculated.odt"
+    logger.info(
+        "[template-calc] success workspace_id=%s table_id=%s source_filename=%s output_filename=%s",
+        workspace_id,
+        table_id,
+        original_name,
+        output_name,
+    )
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.oasis.opendocument.text",
+        headers={"Content-Disposition": f'attachment; filename="{output_name}"'},
     )

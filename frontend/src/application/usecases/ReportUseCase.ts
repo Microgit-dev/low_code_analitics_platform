@@ -55,6 +55,10 @@ export class ReportUseCase {
     return reportApi.downloadExcelReport(this.token, workspaceId, reportId, format);
   }
 
+  async calculateByTemplate(workspaceId: number, tableId: number, file: File): Promise<Blob> {
+    return reportApi.calculateByTemplate(this.token, workspaceId, tableId, file);
+  }
+
   static async getPublicDashboard(reportId: number): Promise<PublicDashboardData> {
     return reportApi.getPublicDashboard(reportId);
   }

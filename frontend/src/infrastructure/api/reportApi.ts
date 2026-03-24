@@ -74,6 +74,20 @@ export const reportApi = {
     return response.data;
   },
 
+  calculateByTemplate: async (token: string, workspaceId: number, tableId: number, file: File) => {
+    const formData = new FormData();
+    formData.append("template_file", file);
+    const response = await httpClient.post<Blob>(
+      `/workspaces/${workspaceId}/reports/template-calc?table_id=${tableId}`,
+      formData,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: "blob",
+      }
+    );
+    return response.data;
+  },
+
   getPublicDashboard: async (reportId: number) => {
     const response = await httpClient.get<PublicDashboardData>(`/reports/${reportId}/dashboard`);
     return response.data;
