@@ -1,6 +1,7 @@
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Optional
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -46,6 +47,7 @@ def _map_form_field(field: FormField) -> FormFieldSchema:
         required=field.required,
         placeholder=field.placeholder,
         help_text=field.help_text,
+        auto_generate_id=field.auto_generate_id,
         widget_settings=field.widget_settings,
     )
 
@@ -68,6 +70,11 @@ def _map_form_response(form: FormConfiguration) -> FormConfigurationResponse:
 
 def get_form_repo(session: Session = Depends(get_db)) -> FormConfigurationRepository:
     return SQLAlchemyFormConfigurationRepository(session)
+
+
+def _generate_auto_id(table_id: int, column_key: str) -> str:
+    # Stable prefix keeps generated ids readable while suffix preserves uniqueness.
+    return f"{column_key}_{table_id}_{uuid4().hex[:10]}"
 
 
 @router.get("/forms/{form_id}")
@@ -99,6 +106,7 @@ def get_public_form(
                 required=f.get("required", True),
                 placeholder=f.get("placeholder"),
                 help_text=f.get("help_text"),
+                auto_generate_id=f.get("auto_generate_id", False),
                 widget_settings=f.get("widget_settings", {}),
             )
             for f in form_model.fields_json
@@ -124,13 +132,26 @@ def submit_public_form(
     if not form_model or not form_model.is_published:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Form not found or not published")
 
+    submission_data = dict(payload.data)
+
+    # Автогенерация id для отмеченных полей, если значение не пришло.
+    for field in form_model.fields_json:
+        key = field.get("column_key")
+        if not key or not field.get("auto_generate_id", False):
+            continue
+
+        value = submission_data.get(key)
+        if value is None or (isinstance(value, str) and value.strip() == ""):
+            table_id = int(field.get("table_id") or form_model.table_id)
+            submission_data[key] = _generate_auto_id(table_id, key)
+
     # Проверка обязательных полей
     missing_required: list[str] = []
     for field in form_model.fields_json:
         key = field.get("column_key")
         if not key:
             continue
-        value = payload.data.get(key)
+        value = submission_data.get(key)
         if field.get("required", True):
             if value is None or (isinstance(value, str) and value.strip() == ""):
                 missing_required.append(key)
@@ -145,9 +166,9 @@ def submit_public_form(
     table_payloads: dict[int, dict[str, Any]] = defaultdict(dict)
     for field in form_model.fields_json:
         key = field.get("column_key")
-        if not key or key not in payload.data:
+        if not key or key not in submission_data:
             continue
-        value = payload.data.get(key)
+        value = submission_data.get(key)
         if value is None or (isinstance(value, str) and value.strip() == ""):
             continue
 
@@ -176,11 +197,11 @@ def submit_public_form(
 @router.get("/workspaces/{workspace_id}/forms")
 def list_forms(
     workspace_id: int,
-    table_id: int,
+    table_id: Optional[int] = None,
     current_user=Depends(get_current_user),
     repo: FormConfigurationRepository = Depends(get_form_repo),
 ):
-    """Получить все формы для таблицы"""
+    """Получить формы workspace, с опциональным фильтром по таблице"""
     use_case = ListFormConfigurationsUseCase(repo)
     forms = use_case.execute(workspace_id, table_id)
     return [_map_form_response(form) for form in forms]

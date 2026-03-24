@@ -17,6 +17,7 @@ export interface FormField {
   required: boolean;
   placeholder?: string;
   help_text?: string;
+  auto_generate_id?: boolean;
   widget_settings: Record<string, unknown>;
 }
 
@@ -50,4 +51,12 @@ export interface TableDataRecordsListResponse {
   skip: number;
   limit: number;
   pages: number;
+}
+
+export interface PublicFormSubmitResult {
+  form_id: number;
+  records: Array<{
+    table_id: number;
+    record_id: number;
+  }>;
 }

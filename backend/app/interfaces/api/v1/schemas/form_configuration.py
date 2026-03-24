@@ -15,6 +15,7 @@ class FormFieldSchema(BaseModel):
     required: bool = True
     placeholder: Optional[str] = None
     help_text: Optional[str] = None
+    auto_generate_id: bool = False
     widget_settings: dict = Field(default_factory=dict)
 
 

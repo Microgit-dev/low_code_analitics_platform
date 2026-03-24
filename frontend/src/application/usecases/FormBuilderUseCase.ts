@@ -2,6 +2,7 @@ import { formBuilderApi } from "../../infrastructure/api/formBuilderApi";
 import {
   FormConfiguration,
   FormField,
+  PublicFormSubmitResult,
   TableDataRecord,
   TableDataRecordsListResponse,
 } from "../../domain/entities/FormBuilder";
@@ -10,7 +11,7 @@ export class FormBuilderUseCase {
   constructor(private token: string) {}
 
   // Form Configuration methods
-  async listForms(workspaceId: number, tableId: number): Promise<FormConfiguration[]> {
+  async listForms(workspaceId: number, tableId?: number): Promise<FormConfiguration[]> {
     return formBuilderApi.listForms(this.token, workspaceId, tableId);
   }
 
@@ -80,7 +81,7 @@ export class FormBuilderUseCase {
     tableId: number,
     data: Record<string, unknown>,
     submitterEmail?: string
-  ): Promise<TableDataRecord> {
+  ): Promise<PublicFormSubmitResult> {
     return formBuilderApi.submitForm(workspaceId, tableId, data, submitterEmail);
   }
 

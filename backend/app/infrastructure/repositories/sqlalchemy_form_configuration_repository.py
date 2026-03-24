@@ -27,11 +27,10 @@ class SQLAlchemyFormConfigurationRepository(FormConfigurationRepository):
         )
         return self.session.execute(stmt).scalar() is not None
 
-    def list_by_table(self, workspace_id: int, table_id: int) -> List[FormConfiguration]:
-        stmt = select(FormConfigurationModel).where(
-            FormConfigurationModel.workspace_id == workspace_id,
-            FormConfigurationModel.table_id == table_id,
-        )
+    def list_by_table(self, workspace_id: int, table_id: Optional[int] = None) -> List[FormConfiguration]:
+        stmt = select(FormConfigurationModel).where(FormConfigurationModel.workspace_id == workspace_id)
+        if table_id is not None:
+            stmt = stmt.where(FormConfigurationModel.table_id == table_id)
         forms = self.session.execute(stmt).scalars().all()
 
         return [
@@ -51,6 +50,7 @@ class SQLAlchemyFormConfigurationRepository(FormConfigurationRepository):
                         required=f.get("required", True),
                         placeholder=f.get("placeholder"),
                         help_text=f.get("help_text"),
+                        auto_generate_id=f.get("auto_generate_id", False),
                         widget_settings=f.get("widget_settings", {}),
                     )
                     for f in form.fields_json
@@ -88,6 +88,7 @@ class SQLAlchemyFormConfigurationRepository(FormConfigurationRepository):
                     required=f.get("required", True),
                     placeholder=f.get("placeholder"),
                     help_text=f.get("help_text"),
+                    auto_generate_id=f.get("auto_generate_id", False),
                     widget_settings=f.get("widget_settings", {}),
                 )
                 for f in form.fields_json
@@ -117,6 +118,7 @@ class SQLAlchemyFormConfigurationRepository(FormConfigurationRepository):
                     "required": f.required,
                     "placeholder": f.placeholder,
                     "help_text": f.help_text,
+                    "auto_generate_id": f.auto_generate_id,
                     "widget_settings": f.widget_settings,
                 }
                 for f in form.fields
@@ -156,6 +158,7 @@ class SQLAlchemyFormConfigurationRepository(FormConfigurationRepository):
                 "required": f.required,
                 "placeholder": f.placeholder,
                 "help_text": f.help_text,
+                "auto_generate_id": f.auto_generate_id,
                 "widget_settings": f.widget_settings,
             }
             for f in form.fields

@@ -63,10 +63,12 @@ const dragState = ref<{ sourceTableId: number; columnKey: string } | null>(null)
 // Form Builder state
 const formConfigurations = ref<FormConfiguration[]>([])
 const selectedFormId = ref<number | null>(null)
+const formEditorOpen = ref(false)
 const formLoading = ref(false)
 const formError = ref('')
 const formFieldDragIndex = ref<number | null>(null)
 const selectedFormFieldIndex = ref<number | null>(null)
+const formTableSelection = ref<number[]>([])
 const addFieldTableId = ref('')
 const addFieldColumnKey = ref('')
 
@@ -151,6 +153,7 @@ const selectedFormField = computed(() => {
 const addFieldCandidates = computed(() => {
   const tableId = Number(addFieldTableId.value)
   if (!tableId || !selectedForm.value) return []
+  if (!formTableSelection.value.includes(tableId)) return []
 
   const existing = new Set(
     selectedForm.value.fields.map((field) => `${field.table_id ?? activeTable.value?.id ?? 0}:${field.column_key}`)
@@ -496,49 +499,31 @@ const deleteRelation = async (relationId: number) => {
 }
 
 const loadForms = async () => {
-  if (!authStore.token || !selectedWorkspace.value || !activeTable.value) {
+  if (!authStore.token || !selectedWorkspace.value) {
     formConfigurations.value = []
     selectedFormId.value = null
     selectedFormFieldIndex.value = null
+    formTableSelection.value = []
     return
   }
 
   formLoading.value = true
   formError.value = ''
   try {
-    const forms = await formBuilderUseCase.listForms(selectedWorkspace.value.id, activeTable.value.id)
+    formConfigurations.value = await formBuilderUseCase.listForms(selectedWorkspace.value.id)
 
-    let singleForm = forms[0] ?? null
-
-    if (!singleForm) {
-      const defaultFields: FormField[] = activeTable.value.columns.map((column) => ({
-        table_id: activeTable.value?.id,
-        column_key: column.key,
-        column_name: column.name,
-        field_label: column.name,
-        widget_type: mapWidgetTypeFromColumn(column.type),
-        required: column.required,
-        placeholder: '',
-        help_text: '',
-        widget_settings: { ...(column.settings ?? {}) }
-      }))
-
-      singleForm = await formBuilderUseCase.createForm(
-        selectedWorkspace.value.id,
-        activeTable.value.id,
-        `${activeTable.value.name} Form`,
-        '',
-        defaultFields,
-        false
-      )
+    if (formConfigurations.value.length === 0) {
+      selectedFormId.value = null
+      selectedFormFieldIndex.value = null
+      formTableSelection.value = []
+      formEditorOpen.value = false
+      return
     }
 
-    formConfigurations.value = [singleForm]
-    selectedFormId.value = singleForm.id
-    syncMissingFieldsFromWorkspace()
-    if (singleForm.fields.length > 0) {
-      selectedFormFieldIndex.value = 0
-    }
+    const selectedExists = formConfigurations.value.some((form) => form.id === selectedFormId.value)
+    selectedFormId.value = selectedExists ? selectedFormId.value : formConfigurations.value[0].id
+    syncFormTableSelectionFromSelected()
+    selectedFormFieldIndex.value = selectedForm.value?.fields.length ? 0 : null
   } catch (error) {
     formError.value = 'Не удалось загрузить формы'
     console.error(error)
@@ -551,6 +536,51 @@ const selectedForm = computed(() => {
   if (!selectedFormId.value) return null
   return formConfigurations.value.find((f) => f.id === selectedFormId.value) ?? null
 })
+
+const getFormUsedTableIds = (form: FormConfiguration): number[] => {
+  const ids = new Set<number>()
+  if (typeof form.table_id === 'number') {
+    ids.add(form.table_id)
+  }
+  for (const field of form.fields) {
+    if (typeof field.table_id === 'number') {
+      ids.add(field.table_id)
+    }
+  }
+  return [...ids]
+}
+
+const getFormUsedTableNames = (form: FormConfiguration): string => {
+  const names = getFormUsedTableIds(form)
+    .map((tableId) => tableStructures.value.find((table) => table.id === tableId)?.name)
+    .filter((name): name is string => Boolean(name))
+
+  if (names.length === 0) return 'Таблицы не выбраны'
+  return names.join(', ')
+}
+
+const syncFormTableSelectionFromSelected = () => {
+  if (!selectedForm.value) {
+    formTableSelection.value = []
+    return
+  }
+
+  const ids = getFormUsedTableIds(selectedForm.value)
+  if (ids.length > 0) {
+    formTableSelection.value = ids
+    return
+  }
+
+  const fallback = activeTable.value?.id ?? tableStructures.value[0]?.id
+  formTableSelection.value = typeof fallback === 'number' ? [fallback] : []
+}
+
+const selectForm = (formId: number) => {
+  selectedFormId.value = formId
+  selectedFormFieldIndex.value = selectedForm.value?.fields.length ? 0 : null
+  syncFormTableSelectionFromSelected()
+  formEditorOpen.value = true
+}
 
 const getWidgetTypeLabel = (type: string): string => {
   const labels: Record<string, string> = {
@@ -674,6 +704,7 @@ const syncMissingFieldsFromWorkspace = () => {
   )
 
   const missingFields: FormField[] = allWorkspaceColumns.value
+    .filter((item) => formTableSelection.value.includes(item.tableId))
     .filter((item) => !existing.has(`${item.tableId}:${item.column.key}`))
     .map((item) => ({
       table_id: item.tableId,
@@ -684,6 +715,7 @@ const syncMissingFieldsFromWorkspace = () => {
       required: item.column.required,
       placeholder: '',
       help_text: '',
+      auto_generate_id: false,
       widget_settings: { ...(item.column.settings ?? {}) }
     }))
 
@@ -712,6 +744,7 @@ const addSelectedFieldToForm = () => {
       required: column.required,
       placeholder: '',
       help_text: '',
+      auto_generate_id: false,
       widget_settings: { ...(column.settings ?? {}) }
     }
   ]
@@ -730,11 +763,72 @@ const copyToClipboard = () => {
 
 const goToFormsTab = async () => {
   workspaceTab.value = 'forms'
+  formEditorOpen.value = false
   await loadForms()
 }
 
+const createNewForm = async () => {
+  if (!selectedWorkspace.value) return
+
+  const baseTableId = activeTable.value?.id ?? tableStructures.value[0]?.id
+  if (!baseTableId) {
+    alert('Сначала создайте хотя бы одну таблицу.')
+    return
+  }
+
+  const baseTable = tableStructures.value.find((table) => table.id === baseTableId)
+  const defaultFields: FormField[] = (baseTable?.columns || []).map((column) => ({
+    table_id: baseTableId,
+    column_key: column.key,
+    column_name: column.name,
+    field_label: column.name,
+    widget_type: mapWidgetTypeFromColumn(column.type),
+    required: column.required,
+    placeholder: '',
+    help_text: '',
+    auto_generate_id: false,
+    widget_settings: { ...(column.settings ?? {}) }
+  }))
+
+  const created = await formBuilderUseCase.createForm(
+    selectedWorkspace.value.id,
+    baseTableId,
+    `Форма ${formConfigurations.value.length + 1}`,
+    '',
+    defaultFields,
+    false
+  )
+
+  await loadForms()
+  selectForm(created.id)
+}
+
+const onFormTablesChange = () => {
+  if (!selectedForm.value) return
+
+  if (formTableSelection.value.length === 0) {
+    const fallback = selectedForm.value.table_id ?? activeTable.value?.id ?? tableStructures.value[0]?.id
+    formTableSelection.value = typeof fallback === 'number' ? [fallback] : []
+  }
+
+  if (!formTableSelection.value.includes(Number(addFieldTableId.value))) {
+    addFieldTableId.value = String(formTableSelection.value[0] ?? '')
+    addFieldColumnKey.value = ''
+  }
+}
+
 const saveSingleForm = async () => {
-  if (!selectedForm.value || !selectedWorkspace.value) return
+  if (!selectedForm.value || !selectedWorkspace.value || formTableSelection.value.length === 0) return
+
+  const primaryTableId = formTableSelection.value[0]
+
+  // Keep form fields mapped to selected tables only.
+  selectedForm.value.fields = selectedForm.value.fields.filter((field) => {
+    const fieldTableId = Number(field.table_id ?? primaryTableId)
+    return formTableSelection.value.includes(fieldTableId)
+  })
+
+  selectedForm.value.table_id = primaryTableId
 
   await formBuilderUseCase.updateForm(
     selectedWorkspace.value.id,
@@ -746,6 +840,19 @@ const saveSingleForm = async () => {
     selectedForm.value.collect_email
   )
 
+  await loadForms()
+}
+
+const deleteForm = async (formId: number) => {
+  if (!selectedWorkspace.value) return
+  if (!window.confirm('Удалить эту форму?')) return
+
+  await formBuilderUseCase.deleteForm(selectedWorkspace.value.id, formId)
+  if (selectedFormId.value === formId) {
+    selectedFormId.value = null
+    selectedFormFieldIndex.value = null
+    formEditorOpen.value = false
+  }
   await loadForms()
 }
 
@@ -1133,7 +1240,7 @@ onBeforeUnmount(() => {
         <div class="workspace-tabs">
           <button class="tab" :class="{ active: workspaceTab === 'details' }" @click="workspaceTab = 'details'">Детали</button>
           <button class="tab" :class="{ active: workspaceTab === 'tables' }" @click="workspaceTab = 'tables'">Таблицы</button>
-          <button class="tab" :class="{ active: workspaceTab === 'forms' }" @click="goToFormsTab">Форма</button>
+          <button class="tab" :class="{ active: workspaceTab === 'forms' }" @click="goToFormsTab">Формы</button>
           <button class="tab" :class="{ active: workspaceTab === 'data' }" @click="goToDataTab">Данные</button>
           <button class="tab" :class="{ active: workspaceTab === 'reports' }" @click="goToReportsTab">Отчеты</button>
         </div>
@@ -1315,14 +1422,39 @@ onBeforeUnmount(() => {
 
         <section v-if="workspaceTab === 'forms'" class="forms-section">
           <div class="forms-header">
-            <h3>Конструктор форм</h3>
-            <p>Создавайте формы на основе структур таблиц и собирайте записи от пользователей.</p>
+            <div>
+              <h3>Конструктор форм</h3>
+              <p>Создавайте несколько форм для одной таблицы или для набора таблиц.</p>
+            </div>
+            <button class="small" @click="createNewForm">Новая форма</button>
           </div>
 
           <div v-if="formLoading" class="muted">Загрузка форм...</div>
           <div v-if="formError" class="error">{{ formError }}</div>
 
-          <div v-if="selectedForm" class="form-editor">
+          <div class="reports-grid" v-if="formConfigurations.length > 0">
+            <article
+              v-for="form in formConfigurations"
+              :key="form.id"
+              class="report-tile"
+              :class="{ active: selectedFormId === form.id }"
+            >
+              <header>
+                <h4>{{ form.name }}</h4>
+                <span class="report-type">{{ form.is_published ? 'Публичная' : 'Черновик' }}</span>
+              </header>
+              <p>{{ form.description || 'Без описания' }}</p>
+              <p class="muted">Поля: {{ form.fields.length }}</p>
+              <p class="muted">Таблицы: {{ getFormUsedTableNames(form) }}</p>
+              <div class="report-actions">
+                <button class="small" @click="selectForm(form.id)">Редактировать</button>
+                <button class="small danger" @click="deleteForm(form.id)">Удалить</button>
+              </div>
+            </article>
+          </div>
+          <p v-else-if="!formLoading" class="muted">Пока нет форм. Создайте первую.</p>
+
+          <div v-if="formEditorOpen && selectedForm" class="form-editor">
             <article class="form-preview">
               <header class="form-header">
                 <h4>{{ selectedForm.name }}</h4>
@@ -1392,6 +1524,14 @@ onBeforeUnmount(() => {
                   <label>Описание</label>
                   <input v-model="selectedForm.description" />
                 </div>
+                <div>
+                  <label>Таблицы формы (можно несколько)</label>
+                  <select v-model="formTableSelection" multiple @change="onFormTablesChange">
+                    <option v-for="table in allTableOptions" :key="`ft-t-${table.id}`" :value="table.id">
+                      {{ table.name }}
+                    </option>
+                  </select>
+                </div>
                 <label class="checkbox-inline">
                   <input v-model="selectedForm.is_published" type="checkbox" /> Опубликована
                 </label>
@@ -1407,7 +1547,11 @@ onBeforeUnmount(() => {
                 <div class="field-settings-row">
                   <select v-model="addFieldTableId">
                     <option value="">Таблица для добавления</option>
-                    <option v-for="table in allTableOptions" :key="`add-t-${table.id}`" :value="String(table.id)">
+                    <option
+                      v-for="table in allTableOptions.filter((item) => formTableSelection.includes(item.id))"
+                      :key="`add-t-${table.id}`"
+                      :value="String(table.id)"
+                    >
                       {{ table.name }}
                     </option>
                   </select>
@@ -1451,8 +1595,7 @@ onBeforeUnmount(() => {
                   <option value="radio">radio</option>
                 </select>
                 <select v-model.number="selectedFormField.table_id">
-                  <option :value="null">Таблица по умолчанию</option>
-                  <option v-for="table in allTableOptions" :key="`sf-t-${table.id}`" :value="table.id">
+                  <option v-for="table in allTableOptions.filter((item) => formTableSelection.includes(item.id))" :key="`sf-t-${table.id}`" :value="table.id">
                     {{ table.name }}
                   </option>
                 </select>
@@ -1467,6 +1610,9 @@ onBeforeUnmount(() => {
                 <label class="checkbox-inline">
                   <input v-model="selectedFormField.required" type="checkbox" /> Обязательное
                 </label>
+                <label class="checkbox-inline">
+                  <input v-model="selectedFormField.auto_generate_id" type="checkbox" /> Автогенерация ID
+                </label>
                 <button class="small danger" @click="removeSelectedFormField">Удалить поле</button>
               </section>
 
@@ -1479,10 +1625,6 @@ onBeforeUnmount(() => {
                 </div>
               </section>
             </aside>
-          </div>
-
-          <div v-else class="muted" style="text-align: center; padding: 20px;">
-            Выберите таблицу во вкладке "Таблицы", затем откройте вкладку "Форма"
           </div>
         </section>
 
@@ -2381,6 +2523,11 @@ form {
   word-break: break-all;
 }
 
+.form-config select[multiple] {
+  min-height: 118px;
+  background: #fff;
+}
+
 /* Data Viewer Styles */
 .data-section {
   margin-top: 8px;
@@ -2503,6 +2650,11 @@ form {
   background: #f7fbfc;
   display: grid;
   gap: 8px;
+}
+
+.report-tile.active {
+  border-color: #2b8f86;
+  box-shadow: inset 0 0 0 1px #2b8f86;
 }
 
 .report-tile header {
