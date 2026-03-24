@@ -50,7 +50,6 @@ class SQLAlchemyFormConfigurationRepository(FormConfigurationRepository):
                         required=f.get("required", True),
                         placeholder=f.get("placeholder"),
                         help_text=f.get("help_text"),
-                        auto_generate_id=f.get("auto_generate_id", False),
                         widget_settings=f.get("widget_settings", {}),
                     )
                     for f in form.fields_json
@@ -88,7 +87,6 @@ class SQLAlchemyFormConfigurationRepository(FormConfigurationRepository):
                     required=f.get("required", True),
                     placeholder=f.get("placeholder"),
                     help_text=f.get("help_text"),
-                    auto_generate_id=f.get("auto_generate_id", False),
                     widget_settings=f.get("widget_settings", {}),
                 )
                 for f in form.fields_json
@@ -118,7 +116,6 @@ class SQLAlchemyFormConfigurationRepository(FormConfigurationRepository):
                     "required": f.required,
                     "placeholder": f.placeholder,
                     "help_text": f.help_text,
-                    "auto_generate_id": f.auto_generate_id,
                     "widget_settings": f.widget_settings,
                 }
                 for f in form.fields
@@ -158,7 +155,6 @@ class SQLAlchemyFormConfigurationRepository(FormConfigurationRepository):
                 "required": f.required,
                 "placeholder": f.placeholder,
                 "help_text": f.help_text,
-                "auto_generate_id": f.auto_generate_id,
                 "widget_settings": f.widget_settings,
             }
             for f in form.fields

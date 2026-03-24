@@ -71,6 +71,7 @@ const selectedFormFieldIndex = ref<number | null>(null)
 const formTableSelection = ref<number[]>([])
 const addFieldTableId = ref('')
 const addFieldColumnKey = ref('')
+const newWidgetOption = ref('')
 
 // Data Viewer state
 const tableDataRecords = ref<any[]>([])
@@ -620,22 +621,58 @@ const mapWidgetTypeFromColumn = (columnType: ColumnType): WidgetType => {
   return 'text_input'
 }
 
-const getFieldOptionsText = (field: FormField): string => {
+const supportsWidgetOptions = (field: FormField): boolean =>
+  ['select', 'checkbox', 'radio'].includes(field.widget_type)
+
+const getFieldOptions = (field: FormField): string[] => {
   const options = field.widget_settings?.options
-  if (!Array.isArray(options)) return ''
-  return options.map((item) => String(item)).join(', ')
+  if (!Array.isArray(options)) return []
+  return options.map((item) => String(item)).filter(Boolean)
 }
 
-const setFieldOptionsText = (field: FormField, value: string) => {
-  const options = value
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean)
-
+const setFieldOptions = (field: FormField, options: string[]) => {
   field.widget_settings = {
     ...(field.widget_settings ?? {}),
     options
   }
+}
+
+const addOptionToSelectedField = () => {
+  if (!selectedFormField.value || !supportsWidgetOptions(selectedFormField.value)) return
+
+  const next = newWidgetOption.value.trim()
+  if (!next) return
+
+  const existing = getFieldOptions(selectedFormField.value)
+  if (existing.includes(next)) {
+    newWidgetOption.value = ''
+    return
+  }
+
+  setFieldOptions(selectedFormField.value, [...existing, next])
+  newWidgetOption.value = ''
+}
+
+const updateFieldOptionAt = (field: FormField, index: number, value: string) => {
+  const normalized = value.trim()
+  const options = [...getFieldOptions(field)]
+  if (index < 0 || index >= options.length) return
+
+  if (!normalized) {
+    options.splice(index, 1)
+    setFieldOptions(field, options)
+    return
+  }
+
+  options[index] = normalized
+  setFieldOptions(field, options)
+}
+
+const removeFieldOptionAt = (field: FormField, index: number) => {
+  const options = [...getFieldOptions(field)]
+  if (index < 0 || index >= options.length) return
+  options.splice(index, 1)
+  setFieldOptions(field, options)
 }
 
 const startFieldDrag = (index: number) => {
@@ -715,7 +752,6 @@ const syncMissingFieldsFromWorkspace = () => {
       required: item.column.required,
       placeholder: '',
       help_text: '',
-      auto_generate_id: false,
       widget_settings: { ...(item.column.settings ?? {}) }
     }))
 
@@ -744,7 +780,6 @@ const addSelectedFieldToForm = () => {
       required: column.required,
       placeholder: '',
       help_text: '',
-      auto_generate_id: false,
       widget_settings: { ...(column.settings ?? {}) }
     }
   ]
@@ -759,6 +794,10 @@ const copyToClipboard = () => {
   navigator.clipboard.writeText(text).then(() => {
     alert('Ссылка скопирована!')
   })
+}
+
+const openFormPublicLink = (formId: number) => {
+  window.open(`/form/${formId}`, '_blank')
 }
 
 const goToFormsTab = async () => {
@@ -786,7 +825,6 @@ const createNewForm = async () => {
     required: column.required,
     placeholder: '',
     help_text: '',
-    auto_generate_id: false,
     widget_settings: { ...(column.settings ?? {}) }
   }))
 
@@ -1447,6 +1485,13 @@ onBeforeUnmount(() => {
               <p class="muted">Поля: {{ form.fields.length }}</p>
               <p class="muted">Таблицы: {{ getFormUsedTableNames(form) }}</p>
               <div class="report-actions">
+                <button
+                  class="small"
+                  :disabled="!form.is_published"
+                  @click="openFormPublicLink(form.id)"
+                >
+                  Ссылка
+                </button>
                 <button class="small" @click="selectForm(form.id)">Редактировать</button>
                 <button class="small danger" @click="deleteForm(form.id)">Удалить</button>
               </div>
@@ -1500,7 +1545,13 @@ onBeforeUnmount(() => {
                     <option v-for="opt in field.widget_settings.options" :key="opt" :value="opt">{{ opt }}</option>
                   </select>
                   <div v-else-if="field.widget_type === 'checkbox'" class="checkbox-wrapper">
-                    <input :id="`field-${field.column_key}`" type="checkbox" :required="field.required" />
+                    <template v-if="getFieldOptions(field).length > 0">
+                      <label v-for="(opt, idx) in getFieldOptions(field)" :key="`preview-checkbox-${idx}-${opt}`">
+                        <input type="checkbox" :name="`field-${field.column_key}`" :value="opt" />
+                        {{ opt }}
+                      </label>
+                    </template>
+                    <input v-else :id="`field-${field.column_key}`" type="checkbox" :required="field.required" />
                   </div>
                   <div v-else-if="field.widget_type === 'radio' && field.widget_settings.options" class="radio-wrapper">
                     <label v-for="opt in field.widget_settings.options" :key="opt">
@@ -1601,17 +1652,27 @@ onBeforeUnmount(() => {
                 </select>
                 <input v-model="selectedFormField.placeholder" placeholder="Placeholder" />
                 <input v-model="selectedFormField.help_text" placeholder="Подсказка" />
-                <input
-                  v-if="selectedFormField.widget_type === 'select' || selectedFormField.widget_type === 'radio'"
-                  :value="getFieldOptionsText(selectedFormField)"
-                  placeholder="Опции через запятую"
-                  @input="setFieldOptionsText(selectedFormField, ($event.target as HTMLInputElement).value)"
-                />
+                <div v-if="supportsWidgetOptions(selectedFormField)" class="options-editor">
+                  <label>Варианты</label>
+                  <div class="option-row" v-for="(opt, optIndex) in getFieldOptions(selectedFormField)" :key="`opt-${optIndex}`">
+                    <input
+                      :value="opt"
+                      placeholder="Вариант"
+                      @input="updateFieldOptionAt(selectedFormField, optIndex, ($event.target as HTMLInputElement).value)"
+                    />
+                    <button class="small danger" @click="removeFieldOptionAt(selectedFormField, optIndex)">Удалить</button>
+                  </div>
+                  <div class="option-add-row">
+                    <input
+                      v-model="newWidgetOption"
+                      placeholder="Новый вариант"
+                      @keydown.enter.prevent="addOptionToSelectedField"
+                    />
+                    <button class="small" @click="addOptionToSelectedField">Добавить вариант</button>
+                  </div>
+                </div>
                 <label class="checkbox-inline">
                   <input v-model="selectedFormField.required" type="checkbox" /> Обязательное
-                </label>
-                <label class="checkbox-inline">
-                  <input v-model="selectedFormField.auto_generate_id" type="checkbox" /> Автогенерация ID
                 </label>
                 <button class="small danger" @click="removeSelectedFormField">Удалить поле</button>
               </section>
@@ -2441,6 +2502,13 @@ form {
   font-weight: normal;
 }
 
+.checkbox-wrapper label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-weight: normal;
+}
+
 .help-text {
   margin: 0;
   font-size: 0.85rem;
@@ -2526,6 +2594,19 @@ form {
 .form-config select[multiple] {
   min-height: 118px;
   background: #fff;
+}
+
+.options-editor {
+  display: grid;
+  gap: 8px;
+}
+
+.option-row,
+.option-add-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
 }
 
 /* Data Viewer Styles */

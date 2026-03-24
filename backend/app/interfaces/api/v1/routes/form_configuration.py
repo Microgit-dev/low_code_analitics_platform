@@ -1,7 +1,6 @@
 from collections import defaultdict
 from datetime import datetime
 from typing import Any, Optional
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -37,6 +36,16 @@ from app.interfaces.api.v1.schemas.form_configuration import (
 router = APIRouter()
 
 
+def _is_empty_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() == ""
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) == 0
+    return False
+
+
 def _map_form_field(field: FormField) -> FormFieldSchema:
     return FormFieldSchema(
         table_id=field.table_id,
@@ -47,7 +56,6 @@ def _map_form_field(field: FormField) -> FormFieldSchema:
         required=field.required,
         placeholder=field.placeholder,
         help_text=field.help_text,
-        auto_generate_id=field.auto_generate_id,
         widget_settings=field.widget_settings,
     )
 
@@ -70,11 +78,6 @@ def _map_form_response(form: FormConfiguration) -> FormConfigurationResponse:
 
 def get_form_repo(session: Session = Depends(get_db)) -> FormConfigurationRepository:
     return SQLAlchemyFormConfigurationRepository(session)
-
-
-def _generate_auto_id(table_id: int, column_key: str) -> str:
-    # Stable prefix keeps generated ids readable while suffix preserves uniqueness.
-    return f"{column_key}_{table_id}_{uuid4().hex[:10]}"
 
 
 @router.get("/forms/{form_id}")
@@ -106,7 +109,6 @@ def get_public_form(
                 required=f.get("required", True),
                 placeholder=f.get("placeholder"),
                 help_text=f.get("help_text"),
-                auto_generate_id=f.get("auto_generate_id", False),
                 widget_settings=f.get("widget_settings", {}),
             )
             for f in form_model.fields_json
@@ -134,17 +136,6 @@ def submit_public_form(
 
     submission_data = dict(payload.data)
 
-    # Автогенерация id для отмеченных полей, если значение не пришло.
-    for field in form_model.fields_json:
-        key = field.get("column_key")
-        if not key or not field.get("auto_generate_id", False):
-            continue
-
-        value = submission_data.get(key)
-        if value is None or (isinstance(value, str) and value.strip() == ""):
-            table_id = int(field.get("table_id") or form_model.table_id)
-            submission_data[key] = _generate_auto_id(table_id, key)
-
     # Проверка обязательных полей
     missing_required: list[str] = []
     for field in form_model.fields_json:
@@ -153,7 +144,7 @@ def submit_public_form(
             continue
         value = submission_data.get(key)
         if field.get("required", True):
-            if value is None or (isinstance(value, str) and value.strip() == ""):
+            if _is_empty_value(value):
                 missing_required.append(key)
 
     if missing_required:
@@ -169,7 +160,7 @@ def submit_public_form(
         if not key or key not in submission_data:
             continue
         value = submission_data.get(key)
-        if value is None or (isinstance(value, str) and value.strip() == ""):
+        if _is_empty_value(value):
             continue
 
         table_id = field.get("table_id") or form_model.table_id

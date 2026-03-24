@@ -17,7 +17,6 @@ export interface FormField {
   required: boolean;
   placeholder?: string;
   help_text?: string;
-  auto_generate_id?: boolean;
   widget_settings: Record<string, unknown>;
 }
 

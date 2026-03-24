@@ -14,7 +14,6 @@ class FormField:
     required: bool = True
     placeholder: Optional[str] = None
     help_text: Optional[str] = None
-    auto_generate_id: bool = False
     widget_settings: dict = field(default_factory=dict)  # Доп. настройки для виджета
 
 

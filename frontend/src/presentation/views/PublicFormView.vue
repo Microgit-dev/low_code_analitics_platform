@@ -26,6 +26,20 @@ const getFieldInputType = (widgetType: string): string => {
   return typeMap[widgetType] || 'text'
 }
 
+const getFieldOptions = (field: FormConfiguration['fields'][number]): string[] => {
+  const options = field.widget_settings?.options
+  if (!Array.isArray(options)) return []
+  return options.map((item) => String(item)).filter(Boolean)
+}
+
+const isFieldFilled = (field: FormConfiguration['fields'][number], value: unknown): boolean => {
+  if (field.widget_type === 'checkbox' && getFieldOptions(field).length > 0) {
+    return Array.isArray(value) && value.length > 0
+  }
+
+  return value !== null && value !== undefined && value !== ''
+}
+
 const getWidgetTypeLabel = (type: string): string => {
   const labels: Record<string, string> = {
     text_input: 'Текстовое поле',
@@ -45,7 +59,7 @@ const isFormValid = computed(() => {
   return form.value.fields.every((field) => {
     if (!field.required) return true
     const value = formData.value[field.column_key]
-    return value !== null && value !== undefined && value !== ''
+    return isFieldFilled(field, value)
   })
 })
 
@@ -55,6 +69,14 @@ const loadForm = async () => {
   try {
     const response = await httpClient.get<FormConfiguration>(`/forms/${formId}`)
     form.value = response.data
+
+    for (const field of form.value.fields) {
+      if (field.widget_type === 'checkbox' && getFieldOptions(field).length > 0) {
+        if (!Array.isArray(formData.value[field.column_key])) {
+          formData.value[field.column_key] = []
+        }
+      }
+    }
   } catch (err) {
     error.value = 'Форма не найдена или не опубликована'
     console.error(err)
@@ -148,7 +170,18 @@ onMounted(() => {
             </select>
 
             <div v-else-if="field.widget_type === 'checkbox'" class="checkbox-wrapper">
+              <template v-if="getFieldOptions(field).length > 0">
+                <label v-for="opt in getFieldOptions(field)" :key="`checkbox-${field.column_key}-${opt}`">
+                  <input
+                    v-model="formData[field.column_key]"
+                    type="checkbox"
+                    :value="opt"
+                  />
+                  {{ opt }}
+                </label>
+              </template>
               <input
+                v-else
                 :id="`field-${field.column_key}`"
                 v-model="formData[field.column_key]"
                 type="checkbox"
