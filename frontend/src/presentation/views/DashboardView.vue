@@ -1719,6 +1719,23 @@ const deleteDataRecord = async (recordId: number) => {
   }
 }
 
+const saveDataRecord = async (payload: { recordId: number; data: Record<string, unknown> }) => {
+  if (!authStore.token || !selectedWorkspace.value || !selectedDataTable.value) return
+
+  try {
+    await formBuilderUseCase.updateTableDataRecord(
+      selectedWorkspace.value.id,
+      selectedDataTable.value.id,
+      payload.recordId,
+      payload.data
+    )
+    await loadTableData()
+  } catch (error) {
+    console.error(error)
+    alert('Ошибка при сохранении записи')
+  }
+}
+
 const formatDataValue = (value: unknown, columnType: ColumnType): string => {
   if (value === null || value === undefined) return '—'
   if (typeof value === 'boolean') return value ? 'Да' : 'Нет'
@@ -2299,6 +2316,7 @@ onBeforeUnmount(() => {
           @data-table-change="onDataTableChange"
           @data-limit-change="onDataLimitChange"
           @delete-record="deleteDataRecord"
+          @save-record="saveDataRecord"
           @go-to-page="goToPage"
         />
 

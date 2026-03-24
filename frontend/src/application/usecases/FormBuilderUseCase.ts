@@ -76,6 +76,19 @@ export class FormBuilderUseCase {
     return formBuilderApi.getTableDataRecord(this.token, workspaceId, tableId, recordId);
   }
 
+  async updateTableDataRecord(
+    workspaceId: number,
+    tableId: number,
+    recordId: number,
+    data: Record<string, unknown>,
+    submitterEmail?: string | null
+  ): Promise<TableDataRecord> {
+    return formBuilderApi.updateTableDataRecord(this.token, workspaceId, tableId, recordId, {
+      data,
+      submitter_email: submitterEmail ?? null,
+    });
+  }
+
   async submitForm(
     workspaceId: number,
     tableId: number,

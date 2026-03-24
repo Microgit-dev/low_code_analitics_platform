@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { ColumnType } from '../../../domain/entities/TableSchema'
 import UiStatusText from '../common/UiStatusText.vue'
 
@@ -48,6 +48,7 @@ const emit = defineEmits<{
   (event: 'data-table-change'): void
   (event: 'data-limit-change'): void
   (event: 'delete-record', recordId: number): void
+  (event: 'save-record', payload: { recordId: number; data: Record<string, unknown> }): void
   (event: 'go-to-page', page: number): void
 }>()
 
@@ -60,6 +61,77 @@ const dataLimitModel = computed({
   get: () => props.dataPagination.limit,
   set: (value: number) => emit('update:dataLimit', value)
 })
+
+const editModalOpen = ref(false)
+const editRecordId = ref<number | null>(null)
+const editValues = ref<Record<string, unknown>>({})
+
+const editableColumns = computed(() => props.selectedDataTable?.columns ?? [])
+
+const isTextareaColumn = (type: ColumnType) => type === 'list' || type === 'geoPoint' || type === 'geoPolygon'
+
+const valueToInput = (value: unknown, type: ColumnType): string | number => {
+  if (value === null || value === undefined) return ''
+  if (type === 'boolean') return Boolean(value) ? 'true' : 'false'
+  if (type === 'list' || type === 'geoPoint' || type === 'geoPolygon') {
+    return typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+  }
+  return typeof value === 'number' ? value : String(value)
+}
+
+const parseInputValue = (raw: string, type: ColumnType): unknown => {
+  const value = raw.trim()
+  if (!value) return null
+
+  if (type === 'number') {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : value
+  }
+
+  if (type === 'boolean') {
+    return value === 'true' || value === '1' || value.toLowerCase() === 'yes'
+  }
+
+  if (type === 'list' || type === 'geoPoint' || type === 'geoPolygon') {
+    try {
+      return JSON.parse(value)
+    } catch {
+      return value
+    }
+  }
+
+  return value
+}
+
+const openEditModal = (record: DataRecord) => {
+  if (!props.selectedDataTable) return
+  const initial: Record<string, unknown> = {}
+  for (const column of props.selectedDataTable.columns) {
+    initial[column.key] = valueToInput(record.data[column.key], column.type)
+  }
+  editValues.value = initial
+  editRecordId.value = record.id
+  editModalOpen.value = true
+}
+
+const closeEditModal = () => {
+  editModalOpen.value = false
+  editRecordId.value = null
+  editValues.value = {}
+}
+
+const saveEditedRecord = () => {
+  if (!props.selectedDataTable || editRecordId.value === null) return
+
+  const parsed: Record<string, unknown> = {}
+  for (const column of props.selectedDataTable.columns) {
+    const raw = String(editValues.value[column.key] ?? '')
+    parsed[column.key] = parseInputValue(raw, column.type)
+  }
+
+  emit('save-record', { recordId: editRecordId.value, data: parsed })
+  closeEditModal()
+}
 </script>
 
 <template>
@@ -108,7 +180,8 @@ const dataLimitModel = computed({
             </td>
             <td>{{ formatDate((record.submitted_at || record.created_at || '') as string) }}</td>
             <td>{{ record.submitter_email || '—' }}</td>
-            <td>
+            <td class="actions-cell">
+              <button class="small" @click="openEditModal(record)">Редактировать</button>
               <button class="small danger" @click="emit('delete-record', record.id)">Удалить</button>
             </td>
           </tr>
@@ -124,6 +197,50 @@ const dataLimitModel = computed({
       <button @click="emit('go-to-page', currentPage - 1)" :disabled="currentPage === 1">← Назад</button>
       <span>Страница {{ currentPage }} из {{ totalPages }}</span>
       <button @click="emit('go-to-page', currentPage + 1)" :disabled="currentPage === totalPages">Вперёд →</button>
+    </div>
+
+    <div v-if="editModalOpen && selectedDataTable" class="edit-modal-overlay" @click.self="closeEditModal">
+      <div class="edit-modal">
+        <header class="edit-modal-header">
+          <h4>Редактирование записи #{{ editRecordId }}</h4>
+          <button class="small" @click="closeEditModal">Закрыть</button>
+        </header>
+
+        <div class="edit-modal-body">
+          <div v-for="column in editableColumns" :key="`edit-${column.key}`" class="edit-field">
+            <label>{{ column.name }} ({{ column.key }})</label>
+
+            <textarea
+              v-if="isTextareaColumn(column.type)"
+              :value="String(editValues[column.key] ?? '')"
+              rows="3"
+              @input="editValues[column.key] = ($event.target as HTMLTextAreaElement).value"
+            />
+
+            <select
+              v-else-if="column.type === 'boolean'"
+              :value="String(editValues[column.key] ?? '')"
+              @change="editValues[column.key] = ($event.target as HTMLSelectElement).value"
+            >
+              <option value="">Пусто</option>
+              <option value="true">Да</option>
+              <option value="false">Нет</option>
+            </select>
+
+            <input
+              v-else
+              :type="column.type === 'number' ? 'number' : (column.type === 'date' ? 'date' : (column.type === 'datetime' ? 'datetime-local' : 'text'))"
+              :value="String(editValues[column.key] ?? '')"
+              @input="editValues[column.key] = ($event.target as HTMLInputElement).value"
+            />
+          </div>
+        </div>
+
+        <footer class="edit-modal-footer">
+          <button class="small" @click="closeEditModal">Отмена</button>
+          <button class="small" @click="saveEditedRecord">Сохранить</button>
+        </footer>
+      </div>
     </div>
   </section>
 </template>

@@ -111,6 +111,26 @@ export const formBuilderApi = {
     return response.data;
   },
 
+  updateTableDataRecord: async (
+    token: string,
+    workspaceId: number,
+    tableId: number,
+    recordId: number,
+    payload: {
+      data: Record<string, unknown>;
+      submitter_email?: string | null;
+    }
+  ) => {
+    const response = await httpClient.put<TableDataRecord>(
+      `/workspaces/${workspaceId}/tables/${tableId}/data/${recordId}`,
+      payload,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+    return response.data;
+  },
+
   submitForm: async (
     workspaceId: number,
     tableId: number,
