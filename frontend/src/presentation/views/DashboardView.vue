@@ -129,6 +129,9 @@ const templateUploading = ref(false)
 const templateError = ref('')
 const templateFileName = ref('')
 const templateFileInput = ref<HTMLInputElement | null>(null)
+const promptModalOpen = ref(false)
+const promptTableId = ref<number | null>(null)
+const promptError = ref('')
 
 const selectedWorkspace = computed(() => {
   if (selectedWorkspaceId.value === null) return null
@@ -1369,6 +1372,7 @@ const goToReportsTab = async () => {
   workspaceTab.value = 'reports'
   reportEditorOpen.value = false
   templateModalOpen.value = false
+  promptModalOpen.value = false
   await loadReports()
 }
 
@@ -1547,6 +1551,7 @@ const resetTemplateModalState = () => {
 }
 
 const openTemplateModal = () => {
+  promptModalOpen.value = false
   templateModalOpen.value = true
   resetTemplateModalState()
   templateTableId.value = activeTable.value?.id ?? tableStructures.value[0]?.id ?? null
@@ -1556,6 +1561,86 @@ const closeTemplateModal = () => {
   if (templateUploading.value) return
   templateModalOpen.value = false
   resetTemplateModalState()
+}
+
+const openPromptModal = () => {
+  templateModalOpen.value = false
+  promptModalOpen.value = true
+  promptError.value = ''
+  promptTableId.value = activeTable.value?.id ?? tableStructures.value[0]?.id ?? null
+}
+
+const closePromptModal = () => {
+  promptModalOpen.value = false
+  promptError.value = ''
+}
+
+const buildConversionPrompt = (table: TableStructure): string => {
+  const columnsDescription = table.columns
+    .map((column) => {
+      const settings = column.settings && Object.keys(column.settings).length > 0
+        ? `; settings: ${JSON.stringify(column.settings)}`
+        : ''
+      return `- key: ${column.key}; name: ${column.name}; type: ${column.type}; required: ${column.required}${settings}`
+    })
+    .join('\n')
+
+  return [
+    'Ты заполняешь пустые поля отчета агрегирующими выражениями.',
+    '',
+    'Контекст таблицы:',
+    `- table_name: ${table.name}`,
+    `- table_id: ${table.id}`,
+    '- columns:',
+    columnsDescription || '- (нет колонок)',
+    '',
+    'Синтаксис, который разрешен:',
+    '- {{ aggregation_func(key) }}',
+    '- {{ aggregation_func(key, condition_expr) }}',
+    '',
+    'Разрешенные aggregation_func:',
+    '- count, sum, avg, min, max',
+    '',
+    'Разрешенные условия:',
+    '- V1: gt, gte, lt, lte, eq, neq, between, is_null, not_null, contains, starts_with, ends_with, and, or, not, where',
+    '- V2: before, after, date_between',
+    '- V3: in, not_in, regex',
+    '',
+    'Правила:',
+    '- Если нужно фильтровать по другой колонке, используй where(field, condition).',
+    '- Для количества строк используй count(*).',
+    '- Для строковых литералов используй кавычки.',
+    '- Возвращай только выражения в {{ ... }} без пояснений.',
+    '',
+    'Примеры:',
+    '- {{ sum(suffer_people, where(status, eq("injured"))) }}',
+    '- {{ sum(suffer_people, where(region_id, eq(5))) }}',
+    '- {{ count(*, where(created_at, date_between("2026-03-01", "2026-03-31"))) }}',
+    '',
+    'Задача:',
+    '- Для каждого пустого поля отчета подбери корректное выражение.',
+  ].join('\n')
+}
+
+const downloadConversionPrompt = () => {
+  const table = tableStructures.value.find((item) => item.id === promptTableId.value)
+  if (!table) {
+    promptError.value = 'Выберите таблицу для генерации промпта.'
+    return
+  }
+
+  const promptText = buildConversionPrompt(table)
+  const blob = new Blob([promptText], { type: 'text/plain;charset=utf-8' })
+  const url = window.URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  const safeName = slugify(table.name) || `table_${table.id}`
+  anchor.href = url
+  anchor.download = `prompt_conversion_${safeName}.txt`
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+  window.URL.revokeObjectURL(url)
+  closePromptModal()
 }
 
 const isOdtFile = (file: File): boolean =>
@@ -2537,6 +2622,7 @@ onBeforeUnmount(() => {
               <p>Создавайте Excel-выгрузки и публичные дашборды с настройками.</p>
             </div>
             <div class="reports-header-actions">
+              <button class="small ghost" @click="openPromptModal">Промпт конвертации</button>
               <button class="small ghost" @click="openTemplateModal">Посчитать по шаблону</button>
               <button class="small" @click="createReport">Новый отчет</button>
             </div>
@@ -2753,6 +2839,30 @@ onBeforeUnmount(() => {
               />
 
               <p v-if="templateError" class="error">{{ templateError }}</p>
+            </article>
+          </div>
+
+          <div v-if="promptModalOpen" class="template-modal-backdrop" @click.self="closePromptModal">
+            <article class="template-modal">
+              <header class="template-modal-header">
+                <h4>Промпт конвертации</h4>
+                <button class="small ghost" @click="closePromptModal">Закрыть</button>
+              </header>
+
+              <p class="muted" v-pre>
+                Выберите таблицу. Скачается `.txt` с инструкцией для LLM, чтобы он заполнял пустые поля отчета выражениями `{{ ... }}`.
+              </p>
+
+              <label>Таблица источника</label>
+              <select v-model.number="promptTableId">
+                <option :value="null">Выберите таблицу</option>
+                <option v-for="table in allTableOptions" :key="`prompt-table-${table.id}`" :value="table.id">
+                  {{ table.name }}
+                </option>
+              </select>
+
+              <button class="small" @click="downloadConversionPrompt">Скачать промпт</button>
+              <p v-if="promptError" class="error">{{ promptError }}</p>
             </article>
           </div>
         </section>

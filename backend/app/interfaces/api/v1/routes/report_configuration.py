@@ -2,7 +2,6 @@ import logging
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-import re
 from typing import Any
 import zipfile
 
@@ -21,6 +20,7 @@ from app.application.use_cases.workspace.manage_reports import (
     ReportConfigurationNotFoundError,
     UpdateReportConfigurationUseCase,
 )
+from app.application.services.template_aggregation import render_template_content
 from app.domain.entities.report_configuration import ReportConfiguration
 from app.domain.repositories.report_configuration_repository import ReportConfigurationRepository
 from app.infrastructure.db.models.table_data_record_model import TableDataRecordModel
@@ -43,8 +43,6 @@ from app.interfaces.api.v1.schemas.report_configuration import (
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
-TEMPLATE_FIELD_PATTERN = re.compile(r"\{\{\s*(.*?)\s*\}\}")
-TEMPLATE_AGGREGATION_PATTERN = re.compile(r"^(?P<func>[a-zA-Z_]\w*)\s*\(\s*(?P<key>[^()]+)\s*\)$")
 
 
 def get_report_repo(session: Session = Depends(get_db)) -> ReportConfigurationRepository:
@@ -149,74 +147,6 @@ def _assert_workspace_owner(session: Session, workspace_id: int, owner_id: int) 
     ).scalar()
     if not workspace:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-
-
-def _normalize_template_key(raw_key: str) -> str:
-    key = raw_key.strip()
-    if (key.startswith("'") and key.endswith("'")) or (key.startswith('"') and key.endswith('"')):
-        key = key[1:-1].strip()
-    return key
-
-
-def _format_template_value(value: float | int) -> str:
-    if isinstance(value, float):
-        normalized = round(value, 2)
-        if normalized.is_integer():
-            return str(int(normalized))
-        return f"{normalized:.2f}".rstrip("0").rstrip(".")
-    return str(value)
-
-
-def _calculate_template_aggregation(rows: list[TableDataRecordModel], func_name: str, key: str) -> float | int:
-    function_name = func_name.lower()
-    normalized_key = _normalize_template_key(key)
-    if not normalized_key:
-        raise ValueError("Ключ в выражении шаблона не может быть пустым")
-
-    if function_name == "count":
-        if normalized_key == "*":
-            return len(rows)
-        return sum(
-            1
-            for row in rows
-            if (row.data_json or {}).get(normalized_key) not in (None, "")
-        )
-
-    numeric_values: list[float] = []
-    for row in rows:
-        number = _to_number((row.data_json or {}).get(normalized_key))
-        if number is not None:
-            numeric_values.append(number)
-
-    if not numeric_values:
-        return 0
-
-    if function_name == "sum":
-        return sum(numeric_values)
-    if function_name == "avg":
-        return sum(numeric_values) / len(numeric_values)
-    if function_name == "min":
-        return min(numeric_values)
-    if function_name == "max":
-        return max(numeric_values)
-
-    raise ValueError(
-        f"Неподдерживаемая функция '{func_name}' в шаблоне. Допустимо: count, sum, avg, min, max."
-    )
-
-
-def _render_template_content(content_xml: str, rows: list[TableDataRecordModel]) -> str:
-    def replace_field(match: re.Match[str]) -> str:
-        expression = match.group(1).strip()
-        parsed = TEMPLATE_AGGREGATION_PATTERN.match(expression)
-        if not parsed:
-            raise ValueError(
-                f"Некорректное выражение шаблона '{{{{ {expression} }}}}'. Ожидается aggregation_func(key)."
-            )
-        value = _calculate_template_aggregation(rows, parsed.group("func"), parsed.group("key"))
-        return _format_template_value(value)
-
-    return TEMPLATE_FIELD_PATTERN.sub(replace_field, content_xml)
 
 
 @router.get("/reports/{report_id}/dashboard", response_model=PublicDashboardResponse)
@@ -611,6 +541,7 @@ async def calculate_template_report(
         table_id,
         len(rows),
     )
+    rows_data = [(row.data_json or {}) for row in rows]
 
     try:
         source_buffer = BytesIO(template_bytes)
@@ -619,7 +550,7 @@ async def calculate_template_report(
                 raise ValueError("Файл шаблона не содержит content.xml")
 
             content_xml = source_archive.read("content.xml").decode("utf-8")
-            rendered_content = _render_template_content(content_xml, rows).encode("utf-8")
+            rendered_content = render_template_content(content_xml, rows_data).encode("utf-8")
 
             output = BytesIO()
             with zipfile.ZipFile(output, mode="w") as target_archive:

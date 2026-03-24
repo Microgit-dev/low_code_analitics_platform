@@ -1,0 +1,258 @@
+Aggregation Functions for ODT Template Processing (V1 + V2 + V3)
+=================================================================
+
+Status
+------
+This document reflects the current implemented behavior in the backend template engine.
+
+Data Source
+-----------
+All aggregations are evaluated over records from:
+- table_data_records.data_json
+
+Placeholder Syntax
+------------------
+Base:
+- {{ aggregation_func(key) }}
+
+With condition:
+- {{ aggregation_func(key, condition_expr) }}
+
+Examples:
+- {{ count(*) }}
+- {{ count(name) }}
+- {{ sum(count) }}
+- {{ sum(count, gt(6)) }}
+- {{ count(*, where(name, contains("hahah"))) }}
+
+Formal Grammar (Simplified)
+---------------------------
+expression := function_call
+function_call := IDENTIFIER "(" [arg ("," arg)*] ")"
+arg := function_call | IDENTIFIER | NUMBER | STRING | "*"
+
+Notes:
+- Nested function calls are allowed only as condition expressions.
+- Aggregation function itself must be the top-level function call.
+
+Aggregation Functions
+---------------------
+Supported:
+- count
+- sum
+- avg
+- min
+- max
+
+Signatures:
+- count(*)
+- count(key)
+- count(*, condition)
+- count(key, condition)
+- sum(key)
+- sum(key, condition)
+- avg(key)
+- avg(key, condition)
+- min(key)
+- min(key, condition)
+- max(key)
+- max(key, condition)
+
+Rules:
+- count(*) is only valid for count.
+- sum/avg/min/max require a concrete field key (not *).
+- Aggregation accepts 1 or 2 arguments only.
+
+How Conditions Are Applied
+--------------------------
+Without where(...):
+- Condition is evaluated against the aggregation key's current value.
+- Example: sum(count, gt(6)) applies gt(6) to each row's value of data_json["count"].
+
+With where(field, ...):
+- Condition is evaluated against another field's value.
+- Example: sum(count, where(name, contains("hahah")))
+  sums "count" only for rows where "name" contains "hahah".
+
+Important for count(*):
+- Prefer count(*, where(field, condition)).
+- count(*, gt(1)) is usually not meaningful because count(*) has no field value context.
+
+Type Conversion Rules
+---------------------
+Numeric conversion (sum/avg/min/max and numeric comparisons):
+- int/float -> used directly
+- bool -> true=1.0, false=0.0
+- numeric string ("12", "7.5") -> parsed to float
+- non-numeric string/object/array/null -> ignored in numeric aggregation
+
+Date conversion (before/after/date_between):
+Accepted forms:
+- YYYY-MM-DD
+- YYYY-MM-DDTHH:MM:SS
+- YYYY-MM-DDTHH:MM:SSZ
+If parsing fails, date condition returns false for that value.
+
+Output Formatting
+-----------------
+Aggregation result is inserted as text:
+- float is rounded to 2 decimals
+- trailing zeros are removed
+- integer-like float rendered as integer
+
+Examples:
+- 12.00 -> 12
+- 12.30 -> 12.3
+- 12.345 -> 12.35
+
+Condition Language
+------------------
+
+V1
+--
+Comparison:
+- gt(x)
+- gte(x)
+- lt(x)
+- lte(x)
+- eq(x)
+- neq(x)
+- between(a, b)
+
+Null checks:
+- is_null()
+- not_null()
+
+String:
+- contains("text")
+- starts_with("prefix")
+- ends_with("suffix")
+
+Logic:
+- and(cond1, cond2, ...)
+- or(cond1, cond2, ...)
+- not(cond)
+
+Field redirect:
+- where(field, condition)
+
+V2
+--
+Date operators:
+- before("date_or_datetime")
+- after("date_or_datetime")
+- date_between("start", "end")
+
+V3
+--
+Set and pattern operators:
+- in(v1, v2, ...)
+- not_in(v1, v2, ...)
+- regex("pattern")
+
+Regex notes:
+- Python regex syntax
+- invalid regex raises validation error
+
+Examples by Version
+-------------------
+V1:
+- {{ sum(count, gt(6)) }}
+- {{ avg(count, and(gt(6), lt(10000))) }}
+- {{ count(name, not_null()) }}
+- {{ count(*, where(name, contains("hahah"))) }}
+
+V2:
+- {{ count(*, where(created_at, after("2026-03-22"))) }}
+- {{ sum(count, where(created_at, date_between("2026-03-23", "2026-03-24"))) }}
+
+V3:
+- {{ count(category, in("alpha", "beta")) }}
+- {{ count(category, not_in("alpha", "beta")) }}
+- {{ count(name, regex("^jjj")) }}
+
+Extended Usage Examples (with Expected Results)
+-----------------------------------------------
+The examples below are based on this sample data:
+- {"name":"jjj hahah write","count":8188,"category":"alpha","created_at":"2026-03-20T10:00:00"}
+- {"name":"other","count":3,"category":"beta","created_at":"2026-03-23T09:30:00"}
+- {"name":"abc hahah","count":"7","category":"gamma","created_at":"2026-03-24"}
+- {"name":null,"count":12,"category":"alpha","created_at":"2026-03-25T00:00:00"}
+- {"count":true,"category":"delta","created_at":"invalid-date"}
+
+Core aggregations:
+- {{ count(*) }} -> 5
+- {{ count(name) }} -> 3
+- {{ sum(count) }} -> 8211
+- {{ avg(count) }} -> 1642.2
+- {{ min(count) }} -> 1
+- {{ max(count) }} -> 8188
+
+V1 comparison and logic:
+- {{ sum(count, gt(6)) }} -> 8207
+- {{ sum(count, and(gt(6), lt(100))) }} -> 19
+- {{ count(*, where(count, between(2, 12))) }} -> 3
+- {{ count(*, where(category, eq("alpha"))) }} -> 2
+- {{ count(*, where(category, neq("alpha"))) }} -> 3
+- {{ sum(count, or(gt(8000), lt(2))) }} -> 8189
+
+V1 string and null checks:
+- {{ count(*, where(name, contains("hahah"))) }} -> 2
+- {{ count(*, where(name, starts_with("abc"))) }} -> 1
+- {{ count(*, where(name, ends_with("write"))) }} -> 1
+- {{ count(*, where(name, not_null())) }} -> 3
+- {{ count(*, where(name, is_null())) }} -> 2
+- {{ sum(count, where(name, contains("hahah"))) }} -> 8195
+
+V1 nested conditions:
+- {{ count(name, where(name, starts_with("jjj"))) }} -> 1
+- {{ count(name, not(where(name, contains("hahah")))) }} -> 1
+- {{ sum(count, and(where(category, eq("alpha")), gt(10))) }} -> 8200
+
+V2 date filters:
+- {{ count(*, where(created_at, after("2026-03-22"))) }} -> 3
+- {{ count(*, where(created_at, before("2026-03-21"))) }} -> 1
+- {{ count(*, where(created_at, date_between("2026-03-23", "2026-03-24"))) }} -> 2
+- {{ sum(count, where(created_at, date_between("2026-03-23", "2026-03-24"))) }} -> 10
+
+V3 set and regex:
+- {{ count(category, in("alpha", "beta")) }} -> 3
+- {{ count(category, not_in("alpha", "beta")) }} -> 2
+- {{ count(name, regex("^jjj")) }} -> 1
+- {{ count(name, regex("hahah$")) }} -> 1
+
+Recommended templates:
+- Total rows with business filter:
+  {{ count(*, where(status, eq("active"))) }}
+- Sum by category:
+  {{ sum(amount, and(gt(0), where(category, in("A", "B")))) }}
+- Recent period:
+  {{ sum(amount, where(created_at, date_between("2026-03-01", "2026-03-31"))) }}
+
+Specific cross-column sum example (requested):
+- Sum values from column `suffer_people` only for rows with specific value in another column:
+  {{ sum(suffer_people, where(status, eq("injured"))) }}
+- Numeric value in another column:
+  {{ sum(suffer_people, where(region_id, eq(5))) }}
+
+Common Validation Errors
+------------------------
+Unsupported aggregation:
+- {{ median(count) }}
+
+Wrong argument count:
+- {{ sum() }}
+
+Invalid condition signature:
+- {{ sum(count, gt()) }}
+
+Invalid regex:
+- {{ count(name, regex("[")) }}
+
+Best Practices for LLM/Agents
+-----------------------------
+- Use explicit where(...) when filtering by a field different from aggregation key.
+- Use count(*) for row totals.
+- Use quoted strings for text literals.
+- Keep each {{ ... }} expression in a single contiguous text segment in ODT.
+- Prefer simple readable conditions over deeply nested logic.
