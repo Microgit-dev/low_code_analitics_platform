@@ -370,6 +370,19 @@ const saveTable = async (table: TableStructure) => {
   await loadSchema()
 }
 
+const deleteActiveTable = async () => {
+  if (!authStore.token || !selectedWorkspace.value || !activeTable.value) return
+
+  const shouldDelete = window.confirm(
+    `Удалить таблицу "${activeTable.value.name}"? Это действие удалит связанные данные.`
+  )
+  if (!shouldDelete) return
+
+  await tableSchemaUseCase.deleteTable(authStore.token, selectedWorkspace.value.id, activeTable.value.id)
+  selectedColumnRef.value = null
+  await loadSchema()
+}
+
 const slugify = (value: string): string =>
   value
     .toLowerCase()
@@ -649,6 +662,8 @@ const getWidgetTypeLabel = (type: string): string => {
     date_input: 'Дата',
     datetime_input: 'Дата и время',
     select: 'Выпадающий список',
+    multiselect: 'Множественный выбор',
+    list_input: 'Список значений',
     checkbox: 'Чекбокс',
     radio: 'Радио'
   }
@@ -670,17 +685,25 @@ const getFieldInputType = (widgetType: string): string => {
   return typeMap[widgetType] || 'text'
 }
 
-const mapWidgetTypeFromColumn = (columnType: ColumnType): WidgetType => {
+const mapWidgetTypeFromColumn = (
+  columnType: ColumnType,
+  settings?: Record<string, unknown>
+): WidgetType => {
   if (columnType === 'number') return 'number_input'
   if (columnType === 'date') return 'date_input'
   if (columnType === 'datetime') return 'datetime_input'
   if (columnType === 'enum') return 'select'
   if (columnType === 'boolean') return 'checkbox'
+  if (columnType === 'list') {
+    const itemType = settings?.itemType
+    if (itemType === 'enum') return 'multiselect'
+    return 'list_input'
+  }
   return 'text_input'
 }
 
 const supportsWidgetOptions = (field: FormField): boolean =>
-  ['select', 'checkbox', 'radio'].includes(field.widget_type)
+  ['select', 'multiselect', 'checkbox', 'radio'].includes(field.widget_type)
 
 const getFieldOptions = (field: FormField): string[] => {
   const options = field.widget_settings?.options
@@ -806,7 +829,7 @@ const syncMissingFieldsFromWorkspace = () => {
       column_key: item.column.key,
       column_name: item.column.name,
       field_label: item.column.name,
-      widget_type: mapWidgetTypeFromColumn(item.column.type),
+      widget_type: mapWidgetTypeFromColumn(item.column.type, item.column.settings),
       required: item.column.required,
       placeholder: '',
       help_text: '',
@@ -834,7 +857,7 @@ const addSelectedFieldToForm = () => {
       column_key: column.key,
       column_name: column.name,
       field_label: column.name,
-      widget_type: mapWidgetTypeFromColumn(column.type),
+      widget_type: mapWidgetTypeFromColumn(column.type, column.settings),
       required: column.required,
       placeholder: '',
       help_text: '',
@@ -879,7 +902,7 @@ const createNewForm = async () => {
     column_key: column.key,
     column_name: column.name,
     field_label: column.name,
-    widget_type: mapWidgetTypeFromColumn(column.type),
+    widget_type: mapWidgetTypeFromColumn(column.type, column.settings),
     required: column.required,
     placeholder: '',
     help_text: '',
@@ -1406,7 +1429,10 @@ onBeforeUnmount(() => {
                 <h4>Выделенная таблица</h4>
                 <input v-model="activeTable.name" placeholder="Имя таблицы" />
                 <input v-model="activeTable.description" placeholder="Описание таблицы" />
-                <button class="small" @click="saveTable(activeTable)">Сохранить таблицу</button>
+                <div class="row-actions">
+                  <button class="small" @click="saveTable(activeTable)">Сохранить таблицу</button>
+                  <button class="small danger" @click="deleteActiveTable">Удалить таблицу</button>
+                </div>
               </section>
 
               <section class="object-card" v-if="activeTable">
@@ -1668,6 +1694,18 @@ onBeforeUnmount(() => {
                     <option value="">{{ field.placeholder || 'Выберите...' }}</option>
                     <option v-for="opt in field.widget_settings.options" :key="opt" :value="opt">{{ opt }}</option>
                   </select>
+                  <select
+                    v-else-if="field.widget_type === 'multiselect' && field.widget_settings.options"
+                    :id="`field-${field.column_key}`"
+                    multiple
+                    :required="field.required"
+                  >
+                    <option v-for="opt in field.widget_settings.options" :key="`multi-${opt}`" :value="opt">{{ opt }}</option>
+                  </select>
+                  <div v-else-if="field.widget_type === 'list_input'" class="list-input-preview">
+                    <input :placeholder="field.placeholder || 'Добавить элемент списка'" />
+                    <button type="button" class="small">Добавить</button>
+                  </div>
                   <div v-else-if="field.widget_type === 'checkbox'" class="checkbox-wrapper">
                     <template v-if="getFieldOptions(field).length > 0">
                       <label v-for="(opt, idx) in getFieldOptions(field)" :key="`preview-checkbox-${idx}-${opt}`">
@@ -1766,6 +1804,8 @@ onBeforeUnmount(() => {
                   <option value="date_input">date_input</option>
                   <option value="datetime_input">datetime_input</option>
                   <option value="select">select</option>
+                  <option value="multiselect">multiselect</option>
+                  <option value="list_input">list_input</option>
                   <option value="checkbox">checkbox</option>
                   <option value="radio">radio</option>
                 </select>
@@ -2622,6 +2662,12 @@ form {
   display: flex;
   gap: 8px;
   flex-direction: column;
+}
+
+.list-input-preview {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
 }
 
 .radio-wrapper label {

@@ -5,6 +5,8 @@ export type WidgetType =
   | "date_input"
   | "datetime_input"
   | "select"
+  | "multiselect"
+  | "list_input"
   | "checkbox"
   | "radio";
 

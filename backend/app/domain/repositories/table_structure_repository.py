@@ -33,6 +33,10 @@ class TableStructureRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def delete_table(self, workspace_id: int, owner_id: int, table_id: int) -> bool:
+        raise NotImplementedError
+
+    @abstractmethod
     def move_column(
         self,
         workspace_id: int,
