@@ -1372,96 +1372,39 @@ const goToReportsTab = async () => {
   await loadReports()
 }
 
-const createReport = () => {
-  reportEditorOpen.value = true
-  resetReportEditor()
+const createReport = (type: ReportType) => {
+  if (!selectedWorkspace.value) return
+  if (type === 'dashboard') {
+    router.push({
+      name: 'report-create',
+      params: { workspaceId: selectedWorkspace.value.id },
+      query: { type: 'dashboard' }
+    })
+    return
+  }
+  router.push({
+    name: 'table-report-create',
+    params: { workspaceId: selectedWorkspace.value.id }
+  })
 }
 
 const editReport = (report: ReportConfiguration) => {
-  selectedReportId.value = report.id
-  reportName.value = report.name
-  reportDescription.value = report.description || ''
-  reportType.value = report.report_type
-  reportIsPublished.value = report.is_published
-
-  const settings = report.settings || {}
-  reportTableId.value = Number(settings.table_id) || activeTable.value?.id || tableStructures.value[0]?.id || null
-
-  syncReportColumnsWithSelectedTable()
-  if (report.report_type === 'excel_export') {
-    const configuredColumns = Array.isArray(settings.columns) ? settings.columns : []
-    if (configuredColumns.length > 0) {
-      const enabled = new Map(
-        configuredColumns
-          .filter((item): item is { key: string; label?: string } => !!item && typeof item === 'object' && 'key' in item)
-          .map((item) => [item.key, item.label])
-      )
-      reportExcelColumns.value = reportExcelColumns.value.map((column) => ({
-        ...column,
-        enabled: enabled.has(column.key),
-        label: String(enabled.get(column.key) || column.label)
-      }))
-    }
-  }
-
+  if (!selectedWorkspace.value) return
   if (report.report_type === 'dashboard') {
-    reportRecentLimit.value = Number(settings.recent_limit) || 10
-    const metrics = Array.isArray(settings.metrics) ? settings.metrics : []
-    reportMetrics.value = metrics
-      .filter((metric): metric is DashboardMetricConfig => !!metric && typeof metric === 'object')
-      .map((metric) => ({
-        label: String(metric.label || 'Метрика'),
-        aggregation: (metric.aggregation as DashboardMetricConfig['aggregation']) || 'count',
-        field_key: metric.field_key ? String(metric.field_key) : undefined
-      }))
-
-    if (reportMetrics.value.length === 0) {
-      reportMetrics.value = [{ label: 'Количество записей', aggregation: 'count' }]
-    }
-
-    const charts = Array.isArray(settings.charts) ? settings.charts : []
-    reportCharts.value = charts
-      .filter((chart): chart is DashboardChartConfig => !!chart && typeof chart === 'object')
-      .map((chart) => ({
-        title: String(chart.title || 'График'),
-        chart_type: 'bar',
-        group_by_key: String(chart.group_by_key || ''),
-        aggregation: chart.aggregation || 'count',
-        value_key: chart.value_key ? String(chart.value_key) : undefined,
-        limit: Number(chart.limit) || 10
-      }))
+    router.push({
+      name: 'report-detail',
+      params: { workspaceId: selectedWorkspace.value.id, reportId: report.id }
+    })
+    return
   }
-
-  reportEditorOpen.value = true
+  router.push({
+    name: 'table-report-detail',
+    params: { workspaceId: selectedWorkspace.value.id, reportId: report.id }
+  })
 }
 
 const onReportTableChange = () => {
   syncReportColumnsWithSelectedTable()
-}
-
-const addDashboardMetric = () => {
-  reportMetrics.value.push({ label: 'Новая метрика', aggregation: 'count' })
-}
-
-const addDashboardChart = () => {
-  reportCharts.value.push({
-    title: 'Новый график',
-    chart_type: 'bar',
-    group_by_key: '',
-    aggregation: 'count',
-    limit: 10
-  })
-}
-
-const removeDashboardMetric = (index: number) => {
-  reportMetrics.value.splice(index, 1)
-  if (reportMetrics.value.length === 0) {
-    reportMetrics.value.push({ label: 'Количество записей', aggregation: 'count' })
-  }
-}
-
-const removeDashboardChart = (index: number) => {
-  reportCharts.value.splice(index, 1)
 }
 
 const saveReport = async () => {
@@ -1525,14 +1468,22 @@ const openReportPublicLink = (reportId: number) => {
   window.open(`/report/${reportId}`, '_blank')
 }
 
-const downloadReport = async (reportId: number) => {
+const openTableReportView = (reportId: number) => {
+  if (!selectedWorkspace.value) return
+  router.push({
+    name: 'table-report-view',
+    params: { workspaceId: selectedWorkspace.value.id, reportId }
+  })
+}
+
+const downloadReport = async (reportId: number, format: 'xlsx' | 'csv' = 'xlsx') => {
   if (!selectedWorkspace.value) return
 
-  const blob = await reportUseCase.downloadExcelReport(selectedWorkspace.value.id, reportId)
+  const blob = await reportUseCase.downloadExcelReport(selectedWorkspace.value.id, reportId, format)
   const url = window.URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `report_${reportId}.xlsx`
+  anchor.download = format === 'xlsx' ? `report_${reportId}.xlsx` : `report_${reportId}.zip`
   document.body.appendChild(anchor)
   anchor.click()
   document.body.removeChild(anchor)
@@ -2536,9 +2487,10 @@ onBeforeUnmount(() => {
               <h3>Отчеты</h3>
               <p>Создавайте Excel-выгрузки и публичные дашборды с настройками.</p>
             </div>
-            <div class="reports-header-actions">
+            <div class="report-create-actions">
               <button class="small ghost" @click="openTemplateModal">Посчитать по шаблону</button>
-              <button class="small" @click="createReport">Новый отчет</button>
+              <button class="small" @click="createReport('excel_export')">Табличный экспорт</button>
+              <button class="small" @click="createReport('dashboard')">Дашборд</button>
             </div>
           </div>
 
@@ -2557,9 +2509,23 @@ onBeforeUnmount(() => {
                 <button
                   v-if="report.report_type === 'excel_export'"
                   class="small"
-                  @click="downloadReport(report.id)"
+                  @click="openTableReportView(report.id)"
                 >
-                  Скачать
+                  Открыть
+                </button>
+                <button
+                  v-if="report.report_type === 'excel_export'"
+                  class="small"
+                  @click="downloadReport(report.id, 'csv')"
+                >
+                  CSV
+                </button>
+                <button
+                  v-if="report.report_type === 'excel_export'"
+                  class="small"
+                  @click="downloadReport(report.id, 'xlsx')"
+                >
+                  Excel
                 </button>
                 <button
                   v-else
@@ -2587,13 +2553,6 @@ onBeforeUnmount(() => {
                 <input v-model="reportName" placeholder="Например: Продажи за неделю" />
               </div>
               <div>
-                <label>Тип отчета</label>
-                <select v-model="reportType">
-                  <option value="excel_export">Excel выгрузка</option>
-                  <option value="dashboard">Публичный дашборд</option>
-                </select>
-              </div>
-              <div>
                 <label>Таблица источника</label>
                 <select v-model.number="reportTableId" @change="onReportTableChange">
                   <option :value="null">Выберите таблицу</option>
@@ -2612,7 +2571,7 @@ onBeforeUnmount(() => {
               <input v-model="reportIsPublished" type="checkbox" /> Опубликовать
             </label>
 
-            <section v-if="reportType === 'excel_export'" class="report-settings">
+            <section class="report-settings">
               <h5>Структура Excel</h5>
               <p class="muted">Выберите столбцы и подписи в выгрузке.</p>
               <div class="excel-columns" v-if="reportExcelColumns.length > 0">
@@ -2624,83 +2583,6 @@ onBeforeUnmount(() => {
                 </div>
               </div>
               <p v-else class="muted">Сначала выберите таблицу.</p>
-            </section>
-
-            <section v-else class="report-settings">
-              <h5>Настройки дашборда</h5>
-              <div class="report-editor-grid compact">
-                <div>
-                  <label>Количество последних записей</label>
-                  <input v-model.number="reportRecentLimit" type="number" min="1" max="100" />
-                </div>
-              </div>
-
-              <div class="metrics-settings">
-                <div class="metrics-header">
-                  <strong>Метрики</strong>
-                  <button class="small" @click="addDashboardMetric">Добавить метрику</button>
-                </div>
-                <div v-for="(metric, index) in reportMetrics" :key="`m-${index}`" class="metric-row">
-                  <input v-model="metric.label" placeholder="Название метрики" />
-                  <select v-model="metric.aggregation">
-                    <option value="count">count</option>
-                    <option value="sum">sum</option>
-                    <option value="avg">avg</option>
-                    <option value="min">min</option>
-                    <option value="max">max</option>
-                  </select>
-                  <select v-model="metric.field_key" :disabled="metric.aggregation === 'count'">
-                    <option value="">Поле</option>
-                    <option
-                      v-for="column in selectedReportTable?.columns || []"
-                      :key="`mc-${column.key}`"
-                      :value="column.key"
-                    >
-                      {{ column.name }}
-                    </option>
-                  </select>
-                  <button class="small danger" @click="removeDashboardMetric(index)">Удалить</button>
-                </div>
-              </div>
-
-              <div class="metrics-settings">
-                <div class="metrics-header">
-                  <strong>Графики (bar)</strong>
-                  <button class="small" @click="addDashboardChart">Добавить график</button>
-                </div>
-                <div v-for="(chart, index) in reportCharts" :key="`c-${index}`" class="chart-row">
-                  <input v-model="chart.title" placeholder="Название графика" />
-                  <select v-model="chart.group_by_key">
-                    <option value="">Группировать по полю</option>
-                    <option
-                      v-for="column in selectedReportTable?.columns || []"
-                      :key="`cg-${column.key}`"
-                      :value="column.key"
-                    >
-                      {{ column.name }}
-                    </option>
-                  </select>
-                  <select v-model="chart.aggregation">
-                    <option value="count">count</option>
-                    <option value="sum">sum</option>
-                    <option value="avg">avg</option>
-                    <option value="min">min</option>
-                    <option value="max">max</option>
-                  </select>
-                  <select v-model="chart.value_key" :disabled="chart.aggregation === 'count'">
-                    <option value="">Поле значения</option>
-                    <option
-                      v-for="column in selectedReportTable?.columns || []"
-                      :key="`cv-${column.key}`"
-                      :value="column.key"
-                    >
-                      {{ column.name }}
-                    </option>
-                  </select>
-                  <input v-model.number="chart.limit" type="number" min="1" max="30" placeholder="Top N" />
-                  <button class="small danger" @click="removeDashboardChart(index)">Удалить</button>
-                </div>
-              </div>
             </section>
 
             <div class="report-editor-actions">
@@ -3763,11 +3645,10 @@ form {
   color: var(--text-muted);
 }
 
-.reports-header-actions {
+.report-create-actions {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  justify-content: flex-end;
 }
 
 .reports-grid {
