@@ -7,6 +7,7 @@ import DashboardView from '../views/DashboardView.vue'
 import PublicFormView from '../views/PublicFormView.vue'
 import PublicDashboardView from '../views/PublicDashboardView.vue'
 import ReportDetailView from '../views/ReportDetailView.vue'
+import DashboardDetailView from '../views/DashboardDetailView.vue'
 import TableReportDetailView from '../views/TableReportDetailView.vue'
 import TableReportView from '../views/TableReportView.vue'
 import { getStoredToken } from '../../infrastructure/auth/tokenStorage'
@@ -28,6 +29,18 @@ export const router = createRouter({
       path: '/workspaces/:workspaceId/reports/:reportId',
       name: 'report-detail',
       component: ReportDetailView,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/workspaces/:workspaceId/dashboards/create',
+      name: 'dashboard-create',
+      component: DashboardDetailView,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/workspaces/:workspaceId/dashboards/:reportId',
+      name: 'dashboard-detail',
+      component: DashboardDetailView,
       meta: { requiresAuth: true }
     },
     {

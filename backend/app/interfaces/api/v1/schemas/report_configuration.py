@@ -4,7 +4,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-ReportType = Literal["excel_export", "dashboard"]
+ReportType = Literal["table_export", "dashboard"]
 
 
 class ReportConfigurationCreateRequest(BaseModel):
@@ -54,10 +54,14 @@ class DashboardChartResponse(BaseModel):
 
 class PublicDashboardWidgetResponse(BaseModel):
     id: str
-    type: Literal["text", "metric", "table", "chart", "map"]
+    type: Literal["text", "metric", "table", "chart", "gauge", "map"]
     title: str
     description: str | None = None
     width: Literal["half", "full"] = "full"
+    grid_x: int | None = None
+    grid_y: int | None = None
+    grid_width: int | None = None
+    grid_height: int | None = None
     color: str | None = None
     content: str | None = None
     value: float | int | None = None

@@ -720,6 +720,90 @@ form {
   align-items: center;
 }
 
+.report-create-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 33, 39, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  z-index: 30;
+}
+
+.report-create-modal {
+  width: min(960px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  background: #f8fcfc;
+  display: grid;
+  gap: 12px;
+}
+
+.report-create-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-create-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.report-create-full {
+  grid-column: 1 / -1;
+}
+
+.report-create-section {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  background: #f3f9fa;
+  display: grid;
+  gap: 8px;
+}
+
+.report-create-section h5 {
+  margin: 0;
+}
+
+.wizard-datasets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 8px;
+}
+
+.wizard-dataset-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 8px;
+  background: #fff;
+  display: grid;
+  gap: 8px;
+}
+
+.wizard-columns-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 6px;
+}
+
+.wizard-column-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 0.88rem;
+}
+
 .metrics-settings {
   display: grid;
   gap: 8px;
@@ -763,6 +847,7 @@ form {
   }
 
   .report-editor-grid,
+  .report-create-grid,
   .metric-row,
   .chart-row,
   .excel-column-row {

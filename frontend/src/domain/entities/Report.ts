@@ -1,12 +1,21 @@
-export type ReportType = "excel_export" | "dashboard";
+export type ReportType = "table_export" | "dashboard";
 
 export type MetricAggregation = "count" | "sum" | "avg" | "min" | "max";
 export type WidgetMetricAggregation = MetricAggregation;
-export type DashboardWidgetType = "text" | "metric" | "table" | "chart" | "map";
+export type DashboardWidgetType = "text" | "metric" | "table" | "chart" | "gauge" | "map";
 
 export interface ExcelReportColumn {
   key: string;
   label: string;
+  header_group?: string | null;
+  aggregation?: MetricAggregation | null;
+}
+
+export interface AggregatedColumn {
+  key: string;
+  label: string;
+  aggregation: MetricAggregation;
+  source_field?: string | null;
 }
 
 export interface TableStructureOption {
@@ -79,6 +88,8 @@ export interface TableReportDataset {
   sheet_name: string;
   table_id: number | null;
   columns: ExcelReportColumn[];
+  aggregated_columns?: AggregatedColumn[];
+  group_by_columns?: string[];
   sorting: Array<{ field: string; direction: "asc" | "desc" }>;
   filters: Array<Record<string, unknown>>;
 }
@@ -133,10 +144,14 @@ export interface PublicDashboardChart {
 
 export interface PublicDashboardWidget {
   id: string;
-  type: "text" | "metric" | "table" | "chart" | "map";
+  type: "text" | "metric" | "table" | "chart" | "gauge" | "map";
   title: string;
   description?: string | null;
   width: "half" | "full";
+  grid_x?: number | null;
+  grid_y?: number | null;
+  grid_width?: number | null;
+  grid_height?: number | null;
   color?: string | null;
   content?: string | null;
   value?: number | null;
