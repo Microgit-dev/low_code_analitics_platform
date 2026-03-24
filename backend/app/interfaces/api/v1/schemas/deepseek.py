@@ -42,3 +42,36 @@ class DeepSeekPromptTemplateResponse(PromptTemplateRenderResponse):
     request_id: str | None = None
     content: str
     usage: DeepSeekUsageResponse | None = None
+
+
+class AITemplateFieldResponse(BaseModel):
+    name: str
+    type: str
+    required: bool
+    description: str
+
+
+class AITemplateDefinitionResponse(BaseModel):
+    template_id: str
+    name: str
+    description: str
+    input_fields: list[AITemplateFieldResponse]
+    default_model: str | None = None
+
+
+class AITemplateExecuteRequest(BaseModel):
+    input: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+    model: str | None = Field(default=None, max_length=100)
+    temperature: float | None = Field(default=None, ge=0, le=2)
+    max_tokens: int | None = Field(default=None, ge=1, le=8192)
+
+
+class AITemplateExecuteResponse(BaseModel):
+    template_id: str
+    template_name: str
+    normalized_input: dict[str, str | int | float | bool | None]
+    model: str
+    finish_reason: str | None = None
+    request_id: str | None = None
+    content: str
+    usage: DeepSeekUsageResponse | None = None
