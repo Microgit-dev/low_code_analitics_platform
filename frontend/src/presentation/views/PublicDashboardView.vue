@@ -9,7 +9,7 @@ import { use } from 'echarts/core'
 import maplibregl from 'maplibre-gl'
 
 import { ReportUseCase } from '../../application/usecases/ReportUseCase'
-import type { PublicDashboardChart, PublicDashboardData, PublicDashboardWidget } from '../../domain/entities/Report'
+import type { PublicDashboardChart, PublicDashboardChartPoint, PublicDashboardData, PublicDashboardWidget } from '../../domain/entities/Report'
 
 use([CanvasRenderer, BarChart, GridComponent, TooltipComponent])
 
@@ -72,6 +72,60 @@ const mapPoints = computed(() => {
 })
 
 const hasWidgetLayout = computed(() => Boolean(dashboard.value?.widgets?.length))
+
+const hasPositionedWidgetLayout = computed(() =>
+  Boolean(
+    dashboard.value?.widgets?.some(
+      (widget) =>
+        typeof widget.grid_x === 'number' &&
+        typeof widget.grid_y === 'number' &&
+        typeof widget.grid_width === 'number' &&
+        typeof widget.grid_height === 'number'
+    )
+  )
+)
+
+const widgetGridColumns = computed(() => {
+  if (!dashboard.value) return 12
+  if (!hasPositionedWidgetLayout.value) return 12
+  const maxCol = dashboard.value.widgets.reduce((maxValue, widget) => {
+    if (typeof widget.grid_x !== 'number' || typeof widget.grid_width !== 'number') return maxValue
+    return Math.max(maxValue, widget.grid_x + widget.grid_width)
+  }, 12)
+  return Math.max(4, Math.min(24, maxCol))
+})
+
+const widgetGridRows = computed(() => {
+  if (!dashboard.value) return 8
+  if (!hasPositionedWidgetLayout.value) {
+    return Math.max(8, dashboard.value.widgets.length * 2)
+  }
+  const maxRow = dashboard.value.widgets.reduce((maxValue, widget) => {
+    if (typeof widget.grid_y !== 'number' || typeof widget.grid_height !== 'number') return maxValue
+    return Math.max(maxValue, widget.grid_y + widget.grid_height)
+  }, 8)
+  return Math.max(8, maxRow)
+})
+
+function widgetLayoutStyle(widget: PublicDashboardWidget) {
+  if (
+    hasPositionedWidgetLayout.value &&
+    typeof widget.grid_x === 'number' &&
+    typeof widget.grid_y === 'number' &&
+    typeof widget.grid_width === 'number' &&
+    typeof widget.grid_height === 'number'
+  ) {
+    return {
+      gridColumn: `${widget.grid_x + 1} / span ${Math.max(1, widget.grid_width)}`,
+      gridRow: `${widget.grid_y + 1} / span ${Math.max(1, widget.grid_height)}`,
+    }
+  }
+
+  return {
+    gridColumn: widget.width === 'half' ? 'span 1' : '1 / -1',
+    gridRow: 'auto',
+  }
+}
 
 function compareRecords(
   left: PublicDashboardData['recent_records'][number],
@@ -151,12 +205,43 @@ function chartOption(chart: PublicDashboardChart) {
 }
 
 function widgetChartOption(widget: PublicDashboardWidget) {
+  const points = resolveWidgetChartPoints(widget)
   return chartOption({
     title: widget.title,
     chart_type: 'bar',
     color: widget.color || '#1c8c83',
-    points: widget.points || [],
+    points,
   })
+}
+
+function resolveWidgetChartPoints(widget: PublicDashboardWidget): PublicDashboardChartPoint[] {
+  const directPoints = widget.points || []
+  if (directPoints.length > 0) return directPoints
+  if (!dashboard.value) return []
+
+  const sameTitle = dashboard.value.charts.find((chart) => chart.title === widget.title && chart.points.length > 0)
+  if (sameTitle) return sameTitle.points
+
+  const firstNonEmpty = dashboard.value.charts.find((chart) => chart.points.length > 0)
+  return firstNonEmpty?.points || []
+}
+
+function resolveWidgetGaugeValue(widget: PublicDashboardWidget): number | null {
+  if (typeof widget.value === 'number' && Number.isFinite(widget.value)) {
+    return widget.value
+  }
+  if (!dashboard.value) return null
+
+  const sameTitleMetric = dashboard.value.metrics.find((metric) => metric.label === widget.title)
+  if (sameTitleMetric) return sameTitleMetric.value
+  return dashboard.value.metrics[0]?.value ?? null
+}
+
+function resolveWidgetGaugePercent(widget: PublicDashboardWidget): number {
+  const raw = resolveWidgetGaugeValue(widget)
+  if (raw === null) return 0
+  const normalized = raw > 1 && raw <= 100 ? raw : raw <= 1 ? raw * 100 : raw
+  return Math.max(0, Math.min(100, Math.round(normalized)))
 }
 
 function getWidgetTableSearch(widgetId: string) {
@@ -482,12 +567,21 @@ onMounted(loadDashboard)
           </div>
         </header>
 
-        <section v-if="hasWidgetLayout" class="widget-grid">
+        <section
+          v-if="hasWidgetLayout"
+          class="widget-grid"
+          :class="{ 'widget-grid--positioned': hasPositionedWidgetLayout }"
+          :style="{
+            gridTemplateColumns: `repeat(${hasPositionedWidgetLayout ? widgetGridColumns : 2}, minmax(0, 1fr))`,
+            gridTemplateRows: hasPositionedWidgetLayout ? `repeat(${widgetGridRows}, minmax(80px, auto))` : 'none',
+          }"
+        >
           <article
             v-for="widget in dashboard.widgets"
             :key="widget.id"
             class="widget-shell"
-            :class="{ 'widget-shell--full': widget.width !== 'half' }"
+            :class="{ 'widget-shell--full': !hasPositionedWidgetLayout && widget.width !== 'half' }"
+            :style="widgetLayoutStyle(widget)"
           >
             <header class="widget-header" v-if="widget.description">
               <p v-if="widget.description" class="widget-description">{{ widget.description }}</p>
@@ -502,9 +596,19 @@ onMounted(loadDashboard)
             </div>
 
             <ChartCard
-              v-else-if="widget.type === 'chart' && (widget.points?.length || 0) > 0"
+              v-else-if="widget.type === 'chart' && resolveWidgetChartPoints(widget).length > 0"
               :option="widgetChartOption(widget)"
             />
+
+            <div v-else-if="widget.type === 'gauge'" class="widget-gauge">
+              <div
+                class="gauge-ring"
+                :style="{ '--gauge-fill': String(resolveWidgetGaugePercent(widget)) }"
+              >
+                <span>{{ resolveWidgetGaugePercent(widget) }}%</span>
+              </div>
+              <strong>{{ resolveWidgetGaugeValue(widget) !== null ? formatMetricValue(resolveWidgetGaugeValue(widget) as number) : '—' }}</strong>
+            </div>
 
             <MapCard
               v-else-if="widget.type === 'map' && (widget.map_points?.length || 0) > 0"
@@ -774,6 +878,11 @@ onMounted(loadDashboard)
   gap: 28px 20px;
 }
 
+.widget-grid--positioned {
+  grid-auto-flow: dense;
+  align-items: stretch;
+}
+
 .chart-card,
 .records-block,
 .map-block,
@@ -789,6 +898,14 @@ onMounted(loadDashboard)
   background: transparent;
   box-shadow: none;
   backdrop-filter: none;
+}
+
+.widget-grid--positioned .widget-shell {
+  padding: 16px;
+  border: 1px solid rgba(56, 92, 105, 0.14);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.84);
+  box-shadow: 0 18px 36px rgba(39, 73, 80, 0.08);
 }
 
 .widget-shell--full {
@@ -823,6 +940,45 @@ onMounted(loadDashboard)
   font-weight: 800;
   line-height: 1;
   padding-top: 6px;
+}
+
+.widget-gauge {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+}
+
+.gauge-ring {
+  --gauge-fill: 0;
+  width: 126px;
+  height: 126px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(#1c8c83 calc(var(--gauge-fill) * 3.6deg), #e3ecec 0deg);
+  position: relative;
+}
+
+.gauge-ring::after {
+  content: '';
+  position: absolute;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.gauge-ring span {
+  position: relative;
+  z-index: 1;
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #275562;
+}
+
+.widget-gauge strong {
+  color: #284e5c;
+  font-size: 1.1rem;
 }
 
 .widget-table-block {

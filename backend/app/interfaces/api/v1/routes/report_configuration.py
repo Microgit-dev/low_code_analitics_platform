@@ -326,11 +326,13 @@ def _normalize_table_report_settings(settings: dict[str, Any]) -> list[dict[str,
 
 def _build_widget_metric_value(widget: dict[str, Any], rows: list[TableDataRecordModel]) -> float | int | None:
     query = widget.get("query") if isinstance(widget.get("query"), dict) else {}
-    aggregation = str(query.get("aggregation") or "count")
+    aggregation = str(query.get("aggregation") or widget.get("aggregation") or "count")
     if aggregation == "count":
         return len(rows)
 
     field_key = query.get("field_key")
+    if not isinstance(field_key, str) or not field_key:
+        field_key = widget.get("fieldKey")
     if not isinstance(field_key, str) or not field_key:
         return None
 
@@ -723,6 +725,13 @@ def get_public_dashboard(
             widget_table_id = source.get("table_id") if isinstance(source.get("table_id"), int) else table_id
             widget_rows = get_rows_for_table(widget_table_id) if isinstance(widget_table_id, int) else rows
             width = presentation.get("width")
+            grid_x = widget.get("gridX") if isinstance(widget.get("gridX"), int) else None
+            grid_y = widget.get("gridY") if isinstance(widget.get("gridY"), int) else None
+            grid_width = widget.get("gridWidth") if isinstance(widget.get("gridWidth"), int) else None
+            grid_height = widget.get("gridHeight") if isinstance(widget.get("gridHeight"), int) else None
+            if width not in ("half", "full") and isinstance(grid_width, int) and grid_width > 0:
+                width = "half" if grid_width <= 6 else "full"
+            normalized_width = "half" if width == "half" else "full"
             color = presentation.get("color") if isinstance(presentation.get("color"), str) else None
 
             if widget_type == "metric":
@@ -732,7 +741,29 @@ def get_public_dashboard(
                         type="metric",
                         title=title,
                         description=description,
-                        width="half" if width == "half" else "full",
+                        width=normalized_width,
+                        grid_x=grid_x,
+                        grid_y=grid_y,
+                        grid_width=grid_width,
+                        grid_height=grid_height,
+                        color=color,
+                        value=_build_widget_metric_value(widget, widget_rows),
+                    )
+                )
+                continue
+
+            if widget_type == "gauge":
+                widgets.append(
+                    PublicDashboardWidgetResponse(
+                        id=widget_id,
+                        type="gauge",
+                        title=title,
+                        description=description,
+                        width=normalized_width,
+                        grid_x=grid_x,
+                        grid_y=grid_y,
+                        grid_width=grid_width,
+                        grid_height=grid_height,
                         color=color,
                         value=_build_widget_metric_value(widget, widget_rows),
                     )
@@ -741,8 +772,14 @@ def get_public_dashboard(
 
             if widget_type == "chart":
                 group_by_key = query.get("group_by_key")
+                if not isinstance(group_by_key, str) or not group_by_key:
+                    group_by_key = widget.get("groupByKey")
                 aggregation = str(query.get("aggregation") or "count")
+                if not query.get("aggregation") and isinstance(widget.get("aggregation"), str):
+                    aggregation = str(widget.get("aggregation") or "count")
                 value_key = query.get("field_key")
+                if not isinstance(value_key, str) or not value_key:
+                    value_key = widget.get("fieldKey")
                 limit_raw = query.get("limit")
                 limit = limit_raw if isinstance(limit_raw, int) and limit_raw > 0 else 10
                 points = []
@@ -760,7 +797,11 @@ def get_public_dashboard(
                         type="chart",
                         title=title,
                         description=description,
-                        width="half" if width == "half" else "full",
+                        width=normalized_width,
+                        grid_x=grid_x,
+                        grid_y=grid_y,
+                        grid_width=grid_width,
+                        grid_height=grid_height,
                         color=color,
                         points=points,
                     )
@@ -769,6 +810,8 @@ def get_public_dashboard(
 
             if widget_type == "table":
                 config_columns = config.get("columns")
+                if not isinstance(config_columns, list):
+                    config_columns = config.get("table_columns")
                 column_keys = [str(item) for item in config_columns if isinstance(item, (str, int, float))] if isinstance(config_columns, list) else []
                 table_model = session.execute(
                     select(TableStructureModel).where(
@@ -800,7 +843,11 @@ def get_public_dashboard(
                         type="table",
                         title=title,
                         description=description,
-                        width="half" if width == "half" else "full",
+                        width=normalized_width,
+                        grid_x=grid_x,
+                        grid_y=grid_y,
+                        grid_width=grid_width,
+                        grid_height=grid_height,
                         columns=selected_columns,
                         rows=table_rows,
                         page_size=page_size,
@@ -816,7 +863,11 @@ def get_public_dashboard(
                         type="map",
                         title=title,
                         description=description,
-                        width="half" if width == "half" else "full",
+                        width=normalized_width,
+                        grid_x=grid_x,
+                        grid_y=grid_y,
+                        grid_width=grid_width,
+                        grid_height=grid_height,
                         map_points=_build_widget_map_points(widget, widget_rows),
                     )
                 )
@@ -829,7 +880,11 @@ def get_public_dashboard(
                         type="text",
                         title=title,
                         description=description,
-                        width="half" if width == "half" else "full",
+                        width=normalized_width,
+                        grid_x=grid_x,
+                        grid_y=grid_y,
+                        grid_width=grid_width,
+                        grid_height=grid_height,
                         content=str(config.get("content") or ""),
                     )
                 )

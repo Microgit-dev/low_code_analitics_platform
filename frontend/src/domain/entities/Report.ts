@@ -2,7 +2,7 @@ export type ReportType = "table_export" | "dashboard";
 
 export type MetricAggregation = "count" | "sum" | "avg" | "min" | "max";
 export type WidgetMetricAggregation = MetricAggregation;
-export type DashboardWidgetType = "text" | "metric" | "table" | "chart" | "map";
+export type DashboardWidgetType = "text" | "metric" | "table" | "chart" | "gauge" | "map";
 
 export interface ExcelReportColumn {
   key: string;
@@ -144,10 +144,14 @@ export interface PublicDashboardChart {
 
 export interface PublicDashboardWidget {
   id: string;
-  type: "text" | "metric" | "table" | "chart" | "map";
+  type: "text" | "metric" | "table" | "chart" | "gauge" | "map";
   title: string;
   description?: string | null;
   width: "half" | "full";
+  grid_x?: number | null;
+  grid_y?: number | null;
+  grid_width?: number | null;
+  grid_height?: number | null;
   color?: string | null;
   content?: string | null;
   value?: number | null;

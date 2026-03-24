@@ -1381,50 +1381,11 @@ const createReportFromModal = async () => {
 
   try {
     if (reportCreateKind.value === 'dashboard') {
-      const primaryTable = reportCreateSelectedTables.value[0]
-
-      const settings: Record<string, unknown> = {
-        table_id: primaryTable.id,
-        selected_table_ids: reportCreateSelectedTables.value.map((table) => table.id),
-        metrics: [{ label: 'Количество записей', aggregation: 'count', field_key: null }],
-        charts: [],
-        recent_limit: 10,
-        widgets: [
-          {
-            id: `metric_${Date.now()}`,
-            type: 'metric',
-            title: 'Количество записей',
-            source: { table_id: primaryTable.id },
-            query: { aggregation: 'count', field_key: null, group_by_key: null, limit: 8 },
-            presentation: { color: '#156f69', width: 'half' },
-            config: {}
-          },
-          {
-            id: `table_${Date.now()}`,
-            type: 'table',
-            title: 'Последние записи',
-            source: { table_id: primaryTable.id },
-            query: { limit: 10 },
-            presentation: { width: 'full' },
-            config: { columns: primaryTable.columns.map((column) => column.key) }
-          }
-        ]
-      }
-
-      const created = await reportUseCase.createReport(
-        selectedWorkspace.value.id,
-        reportTitle,
-        reportDesc,
-        'dashboard',
-        settings,
-        reportIsPublished.value
-      )
-
+      // Redirect to new dashboard editor
       reportCreateModalOpen.value = false
-      await loadReports()
       await router.push({
-        name: 'report-detail',
-        params: { workspaceId: selectedWorkspace.value.id, reportId: created.id }
+        name: 'dashboard-create',
+        params: { workspaceId: selectedWorkspace.value.id }
       })
     } else {
       const datasets = reportCreateSelectedTables.value
@@ -1531,7 +1492,7 @@ const editReport = (report: ReportConfiguration) => {
   if (!selectedWorkspace.value) return
   if (report.report_type === 'dashboard') {
     router.push({
-      name: 'report-detail',
+      name: 'dashboard-detail',
       params: { workspaceId: selectedWorkspace.value.id, reportId: report.id }
     })
     return
