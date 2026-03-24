@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "change-me"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
+    deepseek_api_base_url: str = "https://api.deepseek.com"
+    deepseek_api_key: str = ""
+    deepseek_default_model: str = "deepseek-chat"
+    deepseek_timeout_seconds: int = 60
 
 
 settings = Settings()
