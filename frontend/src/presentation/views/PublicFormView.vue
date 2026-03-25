@@ -452,7 +452,8 @@ form {
 .form-actions button {
   flex: 1;
   background: linear-gradient(140deg, #1e63d8, #2b7df4);
-  color: var(--text-main);
+  color: #ffffff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.18);
   border: none;
   padding: 12px 16px;
   border-radius: 12px;
