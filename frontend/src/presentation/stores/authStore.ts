@@ -61,6 +61,23 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
+    async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+      if (!this.token) {
+        throw new Error('Not authenticated')
+      }
+
+      this.loading = true
+      this.error = ''
+      try {
+        await authUseCase.changePassword(this.token, currentPassword, newPassword)
+      } catch (error: unknown) {
+        this.error = 'Не удалось изменить пароль'
+        throw error
+      } finally {
+        this.loading = false
+      }
+    },
+
     setToken(token: string): void {
       this.token = token
       setStoredToken(token)

@@ -27,3 +27,14 @@ class SQLAlchemyUserRepository(UserRepository):
         if not model:
             return None
         return User(id=model.id, email=model.email, password_hash=model.password_hash, created_at=model.created_at)
+
+    def update_password_hash(self, user_id: int, password_hash: str) -> User | None:
+        model = self.db.query(UserModel).filter(UserModel.id == user_id).first()
+        if not model:
+            return None
+
+        model.password_hash = password_hash
+        self.db.add(model)
+        self.db.commit()
+        self.db.refresh(model)
+        return User(id=model.id, email=model.email, password_hash=model.password_hash, created_at=model.created_at)

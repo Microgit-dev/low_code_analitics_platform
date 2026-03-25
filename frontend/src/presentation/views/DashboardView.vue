@@ -19,9 +19,12 @@ import UiStatusText from '../components/common/UiStatusText.vue'
 import DashboardDataSection from '../components/dashboard/DashboardDataSection.vue'
 import DashboardImportSection from '../components/dashboard/DashboardImportSection.vue'
 import DashboardSidebar from '../components/dashboard/DashboardSidebar.vue'
+import DashboardTopBar from '../components/dashboard/DashboardTopBar.vue'
 import DashboardTemplateModal from '../components/dashboard/DashboardTemplateModal.vue'
 import DashboardTileActions from '../components/dashboard/DashboardTileActions.vue'
 import DashboardTileCard from '../components/dashboard/DashboardTileCard.vue'
+import DashboardUserModal from '../components/dashboard/DashboardUserModal.vue'
+import DashboardWorkspaceModal from '../components/dashboard/DashboardWorkspaceModal.vue'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -46,6 +49,9 @@ const workspaceTab = ref<WorkspaceTab>('tables')
 const workspaceName = ref('')
 const workspaceDescription = ref('')
 const selectedWorkspaceId = ref<number | null>(null)
+const createWorkspaceModalOpen = ref(false)
+const userModalOpen = ref(false)
+const passwordChangeError = ref('')
 const editWorkspaceName = ref('')
 const editWorkspaceDescription = ref('')
 const savingWorkspaceDetails = ref(false)
@@ -149,6 +155,40 @@ const selectedWorkspace = computed(() => {
   if (selectedWorkspaceId.value === null) return null
   return workspaces.value.find((workspace) => workspace.id === selectedWorkspaceId.value) ?? null
 })
+
+const nextWorkspaceName = computed(() => `WorkSpace ${workspaces.value.length + 1}`)
+
+const workspaceStats = computed(() => {
+  const tableCount = tableStructures.value.length
+  const columnCount = tableStructures.value.reduce((total, table) => total + table.columns.length, 0)
+  const formCount = formConfigurations.value.length
+  const reportCount = reports.value.length
+  const relationCount = relations.value.length
+  return {
+    tableCount,
+    columnCount,
+    formCount,
+    reportCount,
+    relationCount,
+    avgColumnsPerTable: tableCount > 0 ? Math.round((columnCount / tableCount) * 10) / 10 : 0
+  }
+})
+
+const statsMaxColumns = computed(() => {
+  const max = Math.max(...tableStructures.value.map((table) => table.columns.length), 0)
+  return max || 1
+})
+
+const tableColumnStats = computed(() =>
+  tableStructures.value
+    .map((table) => ({
+      id: table.id,
+      name: table.name,
+      columns: table.columns.length,
+      widthPercent: Math.max(8, Math.round((table.columns.length / statsMaxColumns.value) * 100))
+    }))
+    .slice(0, 8)
+)
 
 const canSaveWorkspaceDetails = computed(() => {
   const workspace = selectedWorkspace.value
@@ -329,14 +369,30 @@ const loadSchema = async () => {
   }
 }
 
-const createWorkspace = async () => {
-  if (!authStore.token || !workspaceName.value.trim()) return
+const createWorkspace = async (): Promise<boolean> => {
+  if (!authStore.token || !workspaceName.value.trim()) return false
 
   await workspaceUseCase.create(authStore.token, workspaceName.value.trim(), workspaceDescription.value.trim())
   workspaceName.value = ''
   workspaceDescription.value = ''
   await loadWorkspaces()
   await loadSchema()
+  return true
+}
+
+const openCreateWorkspaceModal = () => {
+  createWorkspaceModalOpen.value = true
+}
+
+const closeCreateWorkspaceModal = () => {
+  createWorkspaceModalOpen.value = false
+}
+
+const createWorkspaceAndClose = async () => {
+  const created = await createWorkspace()
+  if (created) {
+    closeCreateWorkspaceModal()
+  }
 }
 
 const saveWorkspaceDetails = async () => {
@@ -390,6 +446,83 @@ const selectWorkspace = async (workspaceId: number) => {
   importError.value = ''
   importSuccess.value = ''
   await loadSchema()
+}
+
+const deleteWorkspaceById = async (workspaceId: number) => {
+  if (!authStore.token || deleting.value) return
+  const workspace = workspaces.value.find((item) => item.id === workspaceId)
+  if (!workspace) return
+
+  const shouldDelete = window.confirm(
+    `Удалить workspace \"${workspace.name}\"? Это действие нельзя отменить.`
+  )
+  if (!shouldDelete) return
+
+  deleting.value = true
+  try {
+    await workspaceUseCase.delete(authStore.token, workspaceId)
+    await loadWorkspaces()
+    await loadSchema()
+  } finally {
+    deleting.value = false
+  }
+}
+
+const onSidebarNavClick = async (tab: 'tables' | 'forms' | 'data' | 'reports') => {
+  if (tab === 'tables') {
+    workspaceTab.value = 'tables'
+    return
+  }
+
+  if (tab === 'forms') {
+    await goToFormsTab()
+    return
+  }
+
+  if (tab === 'data') {
+    await goToDataTab()
+    return
+  }
+
+  await goToReportsTab()
+}
+
+const onTopBarCreateWorkspace = async (payload: { name: string; description: string }) => {
+  workspaceName.value = payload.name
+  workspaceDescription.value = payload.description
+  await createWorkspaceAndClose()
+}
+
+const goToDetailsTab = async () => {
+  workspaceTab.value = 'details'
+  if (selectedWorkspace.value) {
+    await Promise.all([loadForms(), loadReports()])
+  }
+}
+
+const openUserModal = () => {
+  passwordChangeError.value = ''
+  userModalOpen.value = true
+}
+
+const closeUserModal = () => {
+  userModalOpen.value = false
+}
+
+const changePassword = async (payload: { currentPassword: string; newPassword: string }) => {
+  passwordChangeError.value = ''
+  try {
+    await authStore.changePassword(payload.currentPassword, payload.newPassword)
+  } catch (error: any) {
+    passwordChangeError.value = error?.response?.data?.detail || authStore.error || 'Не удалось сменить пароль.'
+  }
+}
+
+const onTopBarCreateTable = async () => {
+  if (!newTableName.value.trim()) {
+    newTableName.value = `Таблица ${tableStructures.value.length + 1}`
+  }
+  await createTable()
 }
 
 const selectTable = (tableId: number) => {
@@ -1830,33 +1963,35 @@ onBeforeUnmount(() => {
   <main class="dashboard">
     <DashboardSidebar
       :auth-email="authStore.me?.email"
-      :workspace-name="workspaceName"
-      :workspace-description="workspaceDescription"
-      :workspaces="workspaces"
-      :loading="loading"
-      :selected-workspace-id="selectedWorkspaceId"
-      @update:workspace-name="workspaceName = $event"
-      @update:workspace-description="workspaceDescription = $event"
-      @create-workspace="createWorkspace"
-      @select-workspace="selectWorkspace"
+      :active-tab="workspaceTab"
+      @nav-click="onSidebarNavClick"
+      @open-profile="openUserModal"
       @logout="logout"
     />
 
     <section class="content">
       <article v-if="selectedWorkspace" class="workspace-content">
-        <header>
-          <h2>{{ selectedWorkspace.name }}</h2>
-          <p>{{ selectedWorkspace.description || 'Описание пока не добавлено' }}</p>
-        </header>
+        <DashboardTopBar
+          :workspaces="workspaces"
+          :active-workspace-id="selectedWorkspaceId"
+          :active-tab="workspaceTab"
+          @select-workspace="selectWorkspace"
+          @open-modal="openCreateWorkspaceModal"
+          @delete-workspace="deleteWorkspaceById"
+          @go-details="goToDetailsTab"
+          @go-import="goToImportTab"
+          @refresh-workspaces="loadWorkspaces"
+          @create-table="onTopBarCreateTable"
+          @create-form="createNewForm"
+          @create-report="createReport"
+        />
 
-        <div class="workspace-tabs">
-          <button class="tab" :class="{ active: workspaceTab === 'details' }" @click="workspaceTab = 'details'">Детали</button>
-          <button class="tab" :class="{ active: workspaceTab === 'tables' }" @click="workspaceTab = 'tables'">Таблицы</button>
-          <button class="tab" :class="{ active: workspaceTab === 'forms' }" @click="goToFormsTab">Формы</button>
-          <button class="tab" :class="{ active: workspaceTab === 'data' }" @click="goToDataTab">Данные</button>
-          <button class="tab" :class="{ active: workspaceTab === 'import' }" @click="goToImportTab">Импорт</button>
-          <button class="tab" :class="{ active: workspaceTab === 'reports' }" @click="goToReportsTab">Отчеты</button>
-        </div>
+        <header class="workspace-header">
+          <div class="workspace-title-group">
+            <h2>{{ selectedWorkspace.name }}</h2>
+            <p>{{ selectedWorkspace.description || 'Описание пока не добавлено' }}</p>
+          </div>
+        </header>
 
         <DashboardTileActions v-if="workspaceTab === 'details'" class="actions-row">
           <button class="danger" :disabled="deleting" @click="deleteWorkspace">
@@ -2569,6 +2704,50 @@ onBeforeUnmount(() => {
         </section>
 
         <section class="info-grid" v-if="workspaceTab === 'details'">
+          <section class="info-card workspace-stats-card">
+            <h3>Статистика workspace</h3>
+            <div class="stats-kpi-grid">
+              <article class="stats-kpi">
+                <span>Таблиц</span>
+                <strong>{{ workspaceStats.tableCount }}</strong>
+              </article>
+              <article class="stats-kpi">
+                <span>Колонок</span>
+                <strong>{{ workspaceStats.columnCount }}</strong>
+              </article>
+              <article class="stats-kpi">
+                <span>Форм</span>
+                <strong>{{ workspaceStats.formCount }}</strong>
+              </article>
+              <article class="stats-kpi">
+                <span>Отчетов</span>
+                <strong>{{ workspaceStats.reportCount }}</strong>
+              </article>
+              <article class="stats-kpi">
+                <span>Связей</span>
+                <strong>{{ workspaceStats.relationCount }}</strong>
+              </article>
+              <article class="stats-kpi">
+                <span>Ср. колонок/таблица</span>
+                <strong>{{ workspaceStats.avgColumnsPerTable }}</strong>
+              </article>
+            </div>
+
+            <div class="stats-bars">
+              <h4>Насыщенность таблиц полями</h4>
+              <div v-if="tableColumnStats.length" class="stats-bar-list">
+                <div v-for="item in tableColumnStats" :key="item.id" class="stats-bar-row">
+                  <span class="stats-bar-label" :title="item.name">{{ item.name }}</span>
+                  <div class="stats-bar-track">
+                    <div class="stats-bar-fill" :style="{ width: `${item.widthPercent}%` }" />
+                  </div>
+                  <strong class="stats-bar-value">{{ item.columns }}</strong>
+                </div>
+              </div>
+              <p v-else class="muted">Таблицы еще не созданы.</p>
+            </div>
+          </section>
+
           <section class="info-card">
             <h3>Редактировать workspace</h3>
             <div class="workspace-edit-form">
@@ -2601,6 +2780,23 @@ onBeforeUnmount(() => {
           </section>
         </section>
       </article>
+
+      <DashboardWorkspaceModal
+        v-if="createWorkspaceModalOpen"
+        :default-name="nextWorkspaceName"
+        @create="onTopBarCreateWorkspace"
+        @close="closeCreateWorkspaceModal"
+      />
+
+      <DashboardUserModal
+        v-if="userModalOpen"
+        :email="authStore.me?.email || 'unknown@local'"
+        :user-id="authStore.me?.id ?? null"
+        :loading="authStore.loading"
+        :error="passwordChangeError"
+        @close="closeUserModal"
+        @change-password="changePassword"
+      />
 
       <article v-else class="empty-content">
         <h2>Выберите workspace</h2>

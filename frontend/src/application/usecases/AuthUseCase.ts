@@ -13,4 +13,8 @@ export class AuthUseCase {
   async me(token: string): Promise<User> {
     return authApi.me(token)
   }
+
+  async changePassword(token: string, currentPassword: string, newPassword: string): Promise<void> {
+    return authApi.changePassword(token, currentPassword, newPassword)
+  }
 }

@@ -15,3 +15,7 @@ class UserRepository(ABC):
     @abstractmethod
     def get_by_id(self, user_id: int) -> User | None:
         raise NotImplementedError
+
+    @abstractmethod
+    def update_password_hash(self, user_id: int, password_hash: str) -> User | None:
+        raise NotImplementedError

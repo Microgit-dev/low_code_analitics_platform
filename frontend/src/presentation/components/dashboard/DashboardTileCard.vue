@@ -25,24 +25,25 @@ defineProps<{
 
 <style scoped>
 .dashboard-tile-card {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 12px;
-  background: var(--bg-panel);
+  border: 1.5px solid #d3dee2;
+  border-radius: 14px;
+  padding: 14px;
+  background: #ffffff;
   display: grid;
-  gap: 8px;
-  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  gap: 10px;
+  transition: transform 0.16s ease, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .dashboard-tile-card:hover {
-  background: var(--bg-soft);
-  border-color: var(--accent-soft);
+  background: #f8fcfd;
+  border-color: #8eacb1;
+  transform: translateY(-1px);
 }
 
 .dashboard-tile-card.active {
-  background: var(--bg-soft);
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  background: #f5fafb;
+  border-color: #8eacb1;
+  box-shadow: 0 4px 16px rgba(142, 172, 177, 0.2);
 }
 
 .dashboard-tile-card-header {
