@@ -835,17 +835,17 @@ onMounted(loadPage)
 .builder-page {
   min-height: 100vh;
   padding: 28px;
-  background: linear-gradient(180deg, #f7fbfb 0%, #eef4f5 100%);
+  background: linear-gradient(180deg, #f8faff 0%, #eff4fc 100%);
   display: grid;
   gap: 18px;
 }
 
 .surface-card {
-  border: 1px solid rgba(66, 92, 99, 0.14);
+  border: 1px solid var(--line);
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.94);
   padding: 18px;
-  box-shadow: 0 18px 52px rgba(34, 60, 67, 0.08);
+  box-shadow: var(--shadow-soft);
 }
 
 .topbar,
@@ -875,7 +875,7 @@ onMounted(loadPage)
 .panel-head p,
 .muted {
   margin: 4px 0 0;
-  color: #667b84;
+  color: var(--text-muted);
 }
 
 .ghost-link,
@@ -895,8 +895,8 @@ onMounted(loadPage)
 }
 
 .primary-btn {
-  background: #156f69;
-  color: #fff;
+  background: var(--accent);
+  color: var(--text-main);
   padding: 10px 16px;
 }
 
@@ -920,7 +920,7 @@ onMounted(loadPage)
 .toolbar-label {
   min-width: 130px;
   font-weight: 600;
-  color: #213f48;
+  color: var(--text-main);
 }
 
 .widget-tabs,
@@ -930,14 +930,14 @@ onMounted(loadPage)
 
 .widget-tab,
 .add-widget-btn {
-  background: #f1f6f7;
-  color: #1d3640;
+  background: #f2f6ff;
+  color: var(--text-main);
   padding: 10px 14px;
 }
 
 .widget-tab.active {
-  background: #156f69;
-  color: #fff;
+  background: var(--accent);
+  color: var(--text-main);
 }
 
 .editor-layout {
@@ -980,7 +980,7 @@ onMounted(loadPage)
 .metric-preview {
   font-size: 2.4rem;
   font-weight: 700;
-  color: #124d58;
+  color: #1e63d8;
 }
 
 .table-preview {
@@ -998,17 +998,17 @@ onMounted(loadPage)
 .table-head-row {
   text-transform: uppercase;
   font-size: 0.8rem;
-  color: #687d85;
+  color: var(--text-muted);
 }
 
 input,
 select,
 textarea {
   width: 100%;
-  border: 1px solid rgba(66, 92, 99, 0.16);
+  border: 1px solid var(--line);
   border-radius: 12px;
   padding: 10px 12px;
-  background: #fff;
+  background: var(--bg-panel);
   font: inherit;
 }
 
@@ -1017,7 +1017,7 @@ input[type='checkbox'] {
 }
 
 .error {
-  color: #b84357;
+  color: var(--danger);
 }
 
 @media (max-width: 1100px) {

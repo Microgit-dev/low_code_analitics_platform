@@ -13,5 +13,15 @@ class WorkspaceRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def update_by_owner(
+        self,
+        workspace_id: int,
+        owner_id: int,
+        name: str,
+        description: str | None,
+    ) -> Workspace | None:
+        raise NotImplementedError
+
+    @abstractmethod
     def delete_by_owner(self, workspace_id: int, owner_id: int) -> bool:
         raise NotImplementedError

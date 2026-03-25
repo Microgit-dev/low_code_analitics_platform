@@ -44,6 +44,36 @@ class SQLAlchemyWorkspaceRepository(WorkspaceRepository):
             for model in models
         ]
 
+    def update_by_owner(
+        self,
+        workspace_id: int,
+        owner_id: int,
+        name: str,
+        description: str | None,
+    ) -> Workspace | None:
+        model = (
+            self.db.query(WorkspaceModel)
+            .filter(WorkspaceModel.id == workspace_id, WorkspaceModel.owner_id == owner_id)
+            .first()
+        )
+
+        if model is None:
+            return None
+
+        model.name = name
+        model.description = description
+
+        self.db.commit()
+        self.db.refresh(model)
+
+        return Workspace(
+            id=model.id,
+            owner_id=model.owner_id,
+            name=model.name,
+            description=model.description,
+            created_at=model.created_at,
+        )
+
     def delete_by_owner(self, workspace_id: int, owner_id: int) -> bool:
         model = (
             self.db.query(WorkspaceModel)

@@ -221,7 +221,7 @@ onMounted(() => {
               <ul v-if="Array.isArray(formData[field.column_key]) && formData[field.column_key].length > 0" class="list-editor-items">
                 <li v-for="(item, idx) in formData[field.column_key]" :key="`li-${field.column_key}-${idx}`">
                   <span>{{ item }}</span>
-                  <button type="button" class="small-btn danger-btn" @click="removeListItem(field.column_key, idx)">Удалить</button>
+                  <button type="button" class="small-btn danger-btn" @click="removeListItem(field.column_key, Number(idx))">Удалить</button>
                 </li>
               </ul>
             </div>
@@ -280,7 +280,10 @@ onMounted(() => {
 .public-form-page {
   min-height: 100vh;
   padding: 20px;
-  background: linear-gradient(135deg, #e8f4f6 0%, #f0f7f9 100%);
+  background:
+    radial-gradient(circle at 12% 18%, rgba(89, 123, 229, 0.16), transparent 34%),
+    radial-gradient(circle at 88% 12%, rgba(54, 191, 175, 0.12), transparent 30%),
+    linear-gradient(140deg, #f8faff 0%, #eff4fc 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -288,15 +291,15 @@ onMounted(() => {
 
 .form-container {
   width: 100%;
-  max-width: 600px;
+  max-width: 620px;
 }
 
 .form-card {
-  background: #fff;
-  border: 1px solid #b4c6cd;
-  border-radius: 16px;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: 18px;
   padding: 32px;
-  box-shadow: 0 8px 24px rgba(38, 74, 85, 0.08);
+  box-shadow: var(--shadow-soft);
 }
 
 .form-header {
@@ -307,12 +310,12 @@ onMounted(() => {
 .form-header h1 {
   margin: 0 0 8px;
   font-size: 1.8rem;
-  color: #2f5f78;
+  color: var(--text-main);
 }
 
 .form-header p {
   margin: 0;
-  color: #7a8c92;
+  color: var(--text-muted);
   line-height: 1.5;
 }
 
@@ -329,11 +332,11 @@ form {
 .form-field label {
   font-weight: 600;
   font-size: 0.95rem;
-  color: #2f5f78;
+  color: var(--text-main);
 }
 
 .required {
-  color: #b94b59;
+  color: var(--danger);
 }
 
 .form-field input[type='text'],
@@ -344,12 +347,12 @@ form {
 .form-field textarea,
 .form-field select {
   width: 100%;
-  border: 1px solid #b4c6cd;
-  background: #fafbfc;
+  border: 1px solid var(--line);
+  background: #f8faff;
   padding: 11px 13px;
-  border-radius: 8px;
+  border-radius: 12px;
   font: inherit;
-  color: #2f5f78;
+  color: var(--text-main);
   font-size: 0.95rem;
 }
 
@@ -362,9 +365,9 @@ form {
 .form-field textarea:focus,
 .form-field select:focus {
   outline: none;
-  border-color: #2e8d78;
-  background: #fff;
-  box-shadow: 0 0 0 3px rgba(46, 141, 120, 0.1);
+  border-color: var(--accent-soft);
+  background: var(--bg-panel);
+  box-shadow: 0 0 0 3px rgba(30, 99, 216, 0.16);
 }
 
 .checkbox-wrapper,
@@ -398,25 +401,25 @@ form {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border: 1px solid #d4e0e3;
-  background: #f7fbfc;
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  border-radius: 10px;
   padding: 7px 10px;
 }
 
 .small-btn {
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 7px 10px;
   font-size: 0.84rem;
   font-weight: 600;
-  background: #2f5f78;
-  color: #fff;
+  background: linear-gradient(140deg, #1e63d8, #2b7df4);
+  color: var(--text-main);
   cursor: pointer;
 }
 
 .danger-btn {
-  background: #b94b59;
+  background: linear-gradient(140deg, #d93c56, #c72e48);
 }
 
 .checkbox-wrapper input,
@@ -430,13 +433,13 @@ form {
   align-items: center;
   gap: 6px;
   font-weight: normal;
-  color: #2f5f78;
+  color: var(--text-main);
 }
 
 .help-text {
   margin: 0;
   font-size: 0.85rem;
-  color: #7a8c92;
+  color: var(--text-muted);
   font-style: italic;
 }
 
@@ -448,11 +451,11 @@ form {
 
 .form-actions button {
   flex: 1;
-  background: linear-gradient(135deg, #2f5f78, #2e8d78);
-  color: #e8fbff;
+  background: linear-gradient(140deg, #1e63d8, #2b7df4);
+  color: var(--text-main);
   border: none;
   padding: 12px 16px;
-  border-radius: 8px;
+  border-radius: 12px;
   font-weight: 700;
   font-size: 1rem;
   cursor: pointer;
@@ -461,12 +464,12 @@ form {
 
 .form-actions button:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(46, 141, 120, 0.3);
+  box-shadow: 0 6px 14px rgba(30, 99, 216, 0.24);
 }
 
 .form-actions button:disabled {
-  background: #d9e3e5;
-  color: #7a8c92;
+  background: #dfe7f4;
+  color: #7a8ead;
   cursor: not-allowed;
 }
 
@@ -475,31 +478,31 @@ form {
 .success {
   text-align: center;
   padding: 40px 20px;
-  background: #fff;
-  border: 1px solid #b4c6cd;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
   border-radius: 16px;
 }
 
 .error {
-  color: #b94b59;
-  background: #fef5f6;
-  border-color: #f0c1c8;
+  color: var(--danger);
+  background: #fff7f9;
+  border-color: #f0c9d1;
 }
 
 .success {
-  background: #f0f9f7;
-  border-color: #c9e8e3;
+  background: #f2f8ff;
+  border-color: #cfdcf3;
 }
 
 .success h2 {
   margin: 0 0 8px;
-  color: #2e8d78;
+  color: #1e63d8;
   font-size: 1.6rem;
 }
 
 .success p {
   margin: 0;
-  color: #7a8c92;
+  color: var(--text-muted);
 }
 
 @media (max-width: 600px) {

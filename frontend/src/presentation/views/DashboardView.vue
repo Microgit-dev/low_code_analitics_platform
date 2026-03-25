@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { FormBuilderUseCase } from '../../application/usecases/FormBuilderUseCase'
@@ -46,6 +46,9 @@ const workspaceTab = ref<WorkspaceTab>('tables')
 const workspaceName = ref('')
 const workspaceDescription = ref('')
 const selectedWorkspaceId = ref<number | null>(null)
+const editWorkspaceName = ref('')
+const editWorkspaceDescription = ref('')
+const savingWorkspaceDetails = ref(false)
 
 const tableStructures = ref<TableStructure[]>([])
 const relations = ref<TableRelation[]>([])
@@ -145,6 +148,17 @@ const templateFileName = ref('')
 const selectedWorkspace = computed(() => {
   if (selectedWorkspaceId.value === null) return null
   return workspaces.value.find((workspace) => workspace.id === selectedWorkspaceId.value) ?? null
+})
+
+const canSaveWorkspaceDetails = computed(() => {
+  const workspace = selectedWorkspace.value
+  if (!workspace || savingWorkspaceDetails.value) return false
+
+  const nextName = editWorkspaceName.value.trim()
+  const nextDescription = editWorkspaceDescription.value.trim()
+  const currentDescription = workspace.description ?? ''
+
+  return nextName.length >= 2 && (nextName !== workspace.name || nextDescription !== currentDescription)
 })
 
 const activeTable = computed(() => {
@@ -323,6 +337,30 @@ const createWorkspace = async () => {
   workspaceDescription.value = ''
   await loadWorkspaces()
   await loadSchema()
+}
+
+const saveWorkspaceDetails = async () => {
+  if (!authStore.token || !selectedWorkspace.value || !canSaveWorkspaceDetails.value) return
+
+  savingWorkspaceDetails.value = true
+  try {
+    const updatedWorkspace = await workspaceUseCase.update(
+      authStore.token,
+      selectedWorkspace.value.id,
+      editWorkspaceName.value.trim(),
+      editWorkspaceDescription.value.trim() || undefined
+    )
+
+    const targetIndex = workspaces.value.findIndex((workspace) => workspace.id === updatedWorkspace.id)
+    if (targetIndex !== -1) {
+      workspaces.value[targetIndex] = updatedWorkspace
+    }
+
+    editWorkspaceName.value = updatedWorkspace.name
+    editWorkspaceDescription.value = updatedWorkspace.description ?? ''
+  } finally {
+    savingWorkspaceDetails.value = false
+  }
 }
 
 const deleteWorkspace = async () => {
@@ -1767,6 +1805,21 @@ onMounted(async () => {
   await loadSchema()
 })
 
+watch(
+  () => selectedWorkspace.value,
+  (workspace) => {
+    if (!workspace) {
+      editWorkspaceName.value = ''
+      editWorkspaceDescription.value = ''
+      return
+    }
+
+    editWorkspaceName.value = workspace.name
+    editWorkspaceDescription.value = workspace.description ?? ''
+  },
+  { immediate: true }
+)
+
 onBeforeUnmount(() => {
   window.removeEventListener('pointermove', onCanvasPointerMove)
   window.removeEventListener('pointerup', stopTableDrag)
@@ -2516,6 +2569,19 @@ onBeforeUnmount(() => {
         </section>
 
         <section class="info-grid" v-if="workspaceTab === 'details'">
+          <section class="info-card">
+            <h3>Редактировать workspace</h3>
+            <div class="workspace-edit-form">
+              <input v-model="editWorkspaceName" type="text" placeholder="Название" maxlength="255" />
+              <textarea v-model="editWorkspaceDescription" rows="4" placeholder="Описание (опционально)" maxlength="2000" />
+              <DashboardTileActions>
+                <button class="small" :disabled="!canSaveWorkspaceDetails" @click="saveWorkspaceDetails">
+                  {{ savingWorkspaceDetails ? 'Сохраняем...' : 'Сохранить изменения' }}
+                </button>
+              </DashboardTileActions>
+            </div>
+          </section>
+
           <section class="info-card">
             <h3>Детали workspace</h3>
             <dl>

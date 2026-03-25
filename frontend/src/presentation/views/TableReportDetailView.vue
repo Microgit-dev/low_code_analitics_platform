@@ -539,7 +539,7 @@ onMounted(loadEditor)
 <style scoped>
 .table-report-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f5f9f8 0%, #eef4f5 100%);
+  background: linear-gradient(135deg, #f8faff 0%, #eff4fc 100%);
   padding: 24px;
 }
 
@@ -563,19 +563,19 @@ onMounted(loadEditor)
   border: none;
   font-size: 1rem;
   cursor: pointer;
-  color: #156f69;
+  color: #1e63d8;
   padding: 0;
 }
 
 .header-bar h1 {
   margin: 0;
   font-size: 1.75rem;
-  color: #1a1a1a;
+  color: var(--text-main);
 }
 
 .header-bar p {
   margin: 4px 0 0 0;
-  color: #6c8189;
+  color: var(--text-muted);
   font-size: 0.9rem;
 }
 
@@ -600,12 +600,12 @@ onMounted(loadEditor)
 }
 
 .btn-primary {
-  background: #156f69;
+  background: linear-gradient(140deg, #1e63d8, #2b7df4);
   color: white;
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: #0f4a47;
+  background: linear-gradient(140deg, #1b58bf, #256fd9);
 }
 
 .btn-primary:disabled {
@@ -614,23 +614,23 @@ onMounted(loadEditor)
 }
 
 .btn-secondary {
-  background: #e8f1f0;
-  color: #156f69;
+  background: #edf3ff;
+  color: #2d4f86;
 }
 
 .btn-secondary:hover {
-  background: #d8e8e6;
+  background: #e1ebff;
 }
 
 .btn-sm {
   padding: 4px 10px;
   font-size: 0.8rem;
-  background: #e8f1f0;
-  color: #156f69;
+  background: #edf3ff;
+  color: #2d4f86;
 }
 
 .btn-sm:hover:not(:disabled) {
-  background: #d8e8e6;
+  background: #e1ebff;
 }
 
 .btn-sm:disabled {
@@ -639,22 +639,22 @@ onMounted(loadEditor)
 }
 
 .btn-sm.danger {
-  background: #f0e8ea;
-  color: #b63b53;
+  background: #f9e7ec;
+  color: var(--danger);
 }
 
 .btn-sm.danger:hover {
-  background: #e8d8df;
+  background: #f4d7df;
 }
 
 /* Cards */
 .card {
-  background: white;
-  border: 1px solid rgba(64, 90, 97, 0.12);
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
   border-radius: 16px;
   padding: 20px;
   margin-bottom: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-soft);
 }
 
 .card-header {
@@ -663,7 +663,7 @@ onMounted(loadEditor)
   align-items: center;
   margin-bottom: 16px;
   padding-bottom: 12px;
-  border-bottom: 1px solid rgba(64, 90, 97, 0.08);
+  border-bottom: 1px solid var(--line);
 }
 
 .card-header h3 {
@@ -684,25 +684,25 @@ onMounted(loadEditor)
   display: block;
   margin-bottom: 6px;
   font-weight: 500;
-  color: #1a1a1a;
+  color: var(--text-main);
   font-size: 0.9rem;
 }
 
 .input-text {
   width: 100%;
-  border: 1px solid rgba(64, 90, 97, 0.16);
-  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
   padding: 10px 12px;
   font-size: 0.9rem;
   font-family: inherit;
-  background: white;
+  background: #f8faff;
   transition: border-color 0.2s;
 }
 
 .input-text:focus {
   outline: none;
-  border-color: #156f69;
-  box-shadow: 0 0 0 2px rgba(22, 111, 105, 0.1);
+  border-color: var(--accent-soft);
+  box-shadow: 0 0 0 3px rgba(30, 99, 216, 0.16);
 }
 
 .checkbox-label {
@@ -767,8 +767,8 @@ onMounted(loadEditor)
 }
 
 .dataset-item {
-  background: #f5f9f8;
-  border: 1px solid rgba(64, 90, 97, 0.2);
+  background: #f5f8ff;
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 12px 14px;
   cursor: pointer;
@@ -781,14 +781,14 @@ onMounted(loadEditor)
 }
 
 .dataset-item:hover {
-  border-color: rgba(22, 111, 105, 0.4);
-  background: #eef4f5;
+  border-color: #99b5eb;
+  background: #edf3ff;
 }
 
 .dataset-item.active {
-  background: #156f69;
+  background: linear-gradient(140deg, #1e63d8, #2b7df4);
   color: white;
-  border-color: #156f69;
+  border-color: #1e63d8;
 }
 
 .dataset-title {
@@ -798,7 +798,7 @@ onMounted(loadEditor)
 
 .dataset-table {
   font-size: 0.8rem;
-  color: #6c8189;
+  color: var(--text-muted);
 }
 
 .dataset-item.active .dataset-table {
@@ -849,28 +849,28 @@ onMounted(loadEditor)
   gap: 8px;
   align-items: center;
   padding: 10px;
-  background: #f9fbfb;
+  background: #f9fbff;
   border-radius: 8px;
-  border: 1px solid rgba(64, 90, 97, 0.1);
+  border: 1px solid var(--line);
   transition: all 0.2s;
   cursor: move;
 }
 
 .column-row:hover {
-  border-color: rgba(22, 111, 105, 0.3);
-  background: #f0f7f6;
+  border-color: #9eb5df;
+  background: #f4f8ff;
 }
 
 .column-row.dragging {
   opacity: 0.5;
-  background: rgba(22, 111, 105, 0.1);
+  background: rgba(30, 99, 216, 0.12);
 }
 
 .column-row.drag-over {
-  border-color: #156f69;
+  border-color: #1e63d8;
   border-width: 2px;
-  background: rgba(22, 111, 105, 0.08);
-  box-shadow: 0 0 8px rgba(22, 111, 105, 0.2);
+  background: rgba(30, 99, 216, 0.1);
+  box-shadow: 0 0 8px rgba(30, 99, 216, 0.22);
 }
 
 .column-info {
@@ -886,10 +886,10 @@ onMounted(loadEditor)
   justify-content: center;
   width: 24px;
   height: 24px;
-  background: #e8f1f0;
+  background: #edf3ff;
   border-radius: 4px;
   font-size: 0.75rem;
-  color: #156f69;
+  color: #1e63d8;
   font-weight: 600;
 }
 
@@ -898,7 +898,7 @@ onMounted(loadEditor)
   align-items: center;
   justify-content: center;
   cursor: grab;
-  color: #6c8189;
+  color: var(--text-muted);
   font-size: 1.2rem;
   user-select: none;
 }
@@ -910,7 +910,7 @@ onMounted(loadEditor)
 .column-key {
   font-family: monospace;
   font-size: 0.8rem;
-  color: #6c8189;
+  color: var(--text-muted);
 }
 
 .column-label {
@@ -936,16 +936,16 @@ onMounted(loadEditor)
   align-items: center;
   gap: 10px;
   padding: 10px;
-  background: #f9fbfb;
+  background: #f9fbff;
   border-radius: 8px;
-  border: 1px solid rgba(64, 90, 97, 0.1);
+  border: 1px solid var(--line);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .available-item:hover {
-  background: #eef4f5;
-  border-color: rgba(64, 90, 97, 0.2);
+  background: #eef3ff;
+  border-color: #bfd0ed;
 }
 
 .available-item input[type='checkbox'] {
@@ -956,14 +956,14 @@ onMounted(loadEditor)
 .column-name {
   font-weight: 500;
   flex: 1;
-  color: #1a1a1a;
+  color: var(--text-main);
 }
 
 .column-type {
   font-family: monospace;
   font-size: 0.75rem;
-  color: #6c8189;
-  background: white;
+  color: var(--text-muted);
+  background: var(--bg-panel);
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -987,41 +987,41 @@ onMounted(loadEditor)
 .preview-table td {
   padding: 10px 12px;
   text-align: left;
-  border-bottom: 1px solid rgba(64, 90, 97, 0.1);
+  border-bottom: 1px solid var(--line);
   font-size: 0.9rem;
 }
 
 .preview-table th {
-  background: #f5f9f8;
+  background: #f2f6ff;
   font-weight: 500;
-  color: #1a1a1a;
+  color: var(--text-main);
 }
 
 .preview-table td {
-  color: #333;
+  color: var(--text-main);
 }
 
 .preview-table tbody tr:hover {
-  background: #f5f9f8;
+  background: #f5f8ff;
 }
 
 /* Utility */
 .muted {
-  color: #6c8189;
+  color: var(--text-muted);
   font-size: 0.9rem;
 }
 
 .muted-text {
-  color: #6c8189;
+  color: var(--text-muted);
   text-align: center;
   padding: 20px;
   font-size: 0.9rem;
 }
 
 .error-message {
-  color: #b63b53;
-  border-color: rgba(182, 59, 83, 0.2);
-  background: rgba(182, 59, 83, 0.05);
+  color: var(--danger);
+  border-color: rgba(193, 56, 79, 0.25);
+  background: rgba(193, 56, 79, 0.08);
 }
 
 /* Responsive */

@@ -1,7 +1,7 @@
 .import-section {
   margin-top: 8px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 18px;
   padding: 14px;
   background: var(--bg-soft);
   display: grid;
@@ -20,9 +20,9 @@ h4 {
 
 button {
   border: none;
-  background: var(--accent);
-  color: #e8fbff;
-  border-radius: 10px;
+  background: linear-gradient(140deg, #1e63d8, #2b7df4);
+  color: #fff;
+  border-radius: 12px;
   padding: 10px 16px;
   font-weight: 700;
 }
@@ -33,21 +33,21 @@ button.small {
 }
 
 button.ghost {
-  background: #d9e3e5;
-  color: #1f353b;
+  background: var(--bg-soft);
+  color: var(--text-main);
 }
 
 button.danger {
-  background: var(--danger);
+  background: linear-gradient(140deg, #d93c56, #c72e48);
   color: #fff;
 }
 
 input,
 select {
   border: 1px solid var(--line);
-  background: #edf4f5;
+  background: var(--bg-soft);
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: 12px;
   color: var(--text-main);
   font: inherit;
 }
@@ -56,8 +56,8 @@ select {
 .import-card,
 .import-target {
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #f7fbfc;
+  border-radius: 12px;
+  background: var(--bg-panel);
   padding: 10px;
 }
 
@@ -88,19 +88,19 @@ select {
   padding: 4px 10px;
   font-size: 0.82rem;
   color: var(--text-muted);
-  background: #edf4f6;
+  background: var(--bg-soft);
 }
 
 .flow-step.active {
-  border-color: #2b8f86;
-  color: #1f5a54;
-  background: #e2f3ef;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-soft);
 }
 
 .flow-step.warning {
-  border-color: #d49f3f;
-  color: #8b621f;
-  background: #fff5df;
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-soft);
 }
 
 .zones-grid {
@@ -163,8 +163,8 @@ select {
 .data-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #fafbfc;
+  border-radius: 12px;
+  background: var(--bg-soft);
 }
 
 .data-table {
@@ -174,7 +174,7 @@ select {
 }
 
 .data-table thead {
-  background: #f0f4f5;
+  background: var(--bg-soft);
   border-bottom: 1px solid var(--line);
 }
 
@@ -244,7 +244,7 @@ select {
 .separator-pill {
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #eef6f8;
+  background: var(--bg-soft);
   color: var(--text-main);
   padding: 6px 8px;
   font-size: 0.84rem;
