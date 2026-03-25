@@ -58,6 +58,7 @@ const workspaceName = ref('')
 const workspaceDescription = ref('')
 const selectedWorkspaceId = ref<number | null>(null)
 const createWorkspaceModalOpen = ref(false)
+const workspaceCreateError = ref('')
 const userModalOpen = ref(false)
 const passwordChangeError = ref('')
 const editWorkspaceName = ref('')
@@ -516,22 +517,36 @@ const loadSchema = async () => {
   }
 }
 
-const createWorkspace = async (): Promise<boolean> => {
-  if (!authStore.token || !workspaceName.value.trim()) return false
+const createWorkspace = async (): Promise<Workspace | null> => {
+  if (!authStore.token || !workspaceName.value.trim()) return null
 
-  await workspaceUseCase.create(authStore.token, workspaceName.value.trim(), workspaceDescription.value.trim())
-  workspaceName.value = ''
-  workspaceDescription.value = ''
-  await loadWorkspaces()
-  await loadSchema()
-  return true
+  workspaceCreateError.value = ''
+  try {
+    const createdWorkspace = await workspaceUseCase.create(
+      authStore.token,
+      workspaceName.value.trim(),
+      workspaceDescription.value.trim()
+    )
+    workspaceName.value = ''
+    workspaceDescription.value = ''
+    await loadWorkspaces()
+    selectedWorkspaceId.value = createdWorkspace.id
+    workspaceTab.value = 'tables'
+    await loadSchema()
+    return createdWorkspace
+  } catch (error: any) {
+    workspaceCreateError.value = error?.response?.data?.detail || 'Не удалось создать workspace'
+    return null
+  }
 }
 
 const openCreateWorkspaceModal = () => {
+  workspaceCreateError.value = ''
   createWorkspaceModalOpen.value = true
 }
 
 const closeCreateWorkspaceModal = () => {
+  workspaceCreateError.value = ''
   createWorkspaceModalOpen.value = false
 }
 
@@ -638,6 +653,9 @@ const onTopBarCreateWorkspace = async (payload: { name: string; description: str
   workspaceName.value = payload.name
   workspaceDescription.value = payload.description
   await createWorkspaceAndClose()
+  if (workspaceCreateError.value) {
+    alert(workspaceCreateError.value)
+  }
 }
 
 const goToDetailsTab = async () => {
