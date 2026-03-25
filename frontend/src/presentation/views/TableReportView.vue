@@ -347,12 +347,12 @@ onMounted(loadPage)
 </template>
 
 <style scoped>
-.table-report-view-page { min-height: 100vh; padding: 28px; background: linear-gradient(180deg, #f8faff 0%, #eff4fc 100%); display: grid; gap: 18px; }
+.table-report-view-page { min-height: 100vh; padding: 28px; background: linear-gradient(180deg, var(--public-page-bg-start) 0%, var(--public-page-bg-end) 100%); display: grid; gap: 18px; }
 .surface-card {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.95);
+  background: var(--public-card-bg);
   padding: 18px;
   box-shadow: var(--shadow-soft);
 }
@@ -360,10 +360,10 @@ onMounted(loadPage)
 .topbar, .section-head { justify-content:space-between; }
 .topbar h1, .section-head h3 { margin:0; }
 .ghost-link, .primary-btn, .secondary-btn, .dataset-tab { border:none; cursor:pointer; }
-.ghost-link { background:transparent; padding:0; color:#1e63d8; }
+.ghost-link { background:transparent; padding:0; color:var(--public-accent); }
 .primary-btn, .secondary-btn { border-radius:12px; padding:10px 16px; }
-.primary-btn { background: linear-gradient(140deg, #1e63d8, #2b7df4); color: var(--text-main); }
-.secondary-btn { background:#edf3ff; color:#2d4f86; }
+.primary-btn { background: linear-gradient(140deg, var(--public-accent), var(--public-accent-strong)); color: #ffffff; }
+.secondary-btn { background: color-mix(in srgb, var(--public-accent) 10%, #ffffff); color: var(--public-accent-soft-text); }
 .dataset-tabs { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px; }
 .dataset-tab { background: var(--bg-soft); border:1px solid var(--line); border-radius:16px; padding:12px 14px; display:grid; gap:4px; text-align:left; }
 .dataset-tab.active { background: linear-gradient(140deg, #1e63d8, #2b7df4); color: var(--text-main); }
@@ -409,15 +409,15 @@ onMounted(loadPage)
   position: sticky;
   top: 0;
   z-index: 2;
-  background: #f2f6ff;
+  background: var(--public-table-head-bg);
 }
 .data-table thead tr.filter-row th {
   top: 46px;
   z-index: 1;
-  background: #f8faff;
+  background: var(--public-table-filter-bg);
 }
 .data-table tbody tr:hover td {
-  background:#f5f8ff;
+  background: var(--public-hover-bg);
 }
 .sortable { cursor:pointer; user-select:none; }
 .filter-row th { padding-top:10px; padding-bottom:10px; }

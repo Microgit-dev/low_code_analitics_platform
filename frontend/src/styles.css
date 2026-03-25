@@ -36,6 +36,25 @@
   --button-auth: linear-gradient(140deg, #1e63d8, #2b7df4);
   --shadow-soft: 0 10px 24px rgba(26, 44, 74, 0.1);
   --shadow-strong: 0 24px 48px rgba(26, 44, 74, 0.15);
+  --public-accent: var(--accent);
+  --public-accent-strong: var(--accent-soft);
+  --public-accent-soft-text: var(--text-main);
+  --public-page-bg-start: var(--bg);
+  --public-page-bg-end: var(--bg-soft);
+  --public-page-glow-a: color-mix(in srgb, var(--accent) 18%, transparent);
+  --public-page-glow-b: color-mix(in srgb, var(--accent-soft) 14%, transparent);
+  --public-card-bg: color-mix(in srgb, var(--bg-panel) 94%, transparent);
+  --public-card-border: var(--line);
+  --public-input-bg: var(--bg-panel);
+  --public-input-focus-ring: color-mix(in srgb, var(--accent) 18%, transparent);
+  --public-table-head-bg: color-mix(in srgb, var(--bg-soft) 90%, #ffffff 10%);
+  --public-table-filter-bg: color-mix(in srgb, var(--bg-soft) 70%, #ffffff 30%);
+  --public-hover-bg: var(--bg-hover);
+  --public-danger-bg: color-mix(in srgb, var(--danger) 12%, #ffffff 88%);
+  --public-danger-border: color-mix(in srgb, var(--danger) 30%, transparent);
+  --public-success-bg: color-mix(in srgb, var(--ok) 12%, #ffffff 88%);
+  --public-success-border: color-mix(in srgb, var(--ok) 30%, transparent);
+  --public-success-text: var(--ok);
   font-family: 'Montserrat', 'Segoe UI', sans-serif;
 }
 
@@ -75,6 +94,25 @@
   --button-auth: linear-gradient(140deg, #36cdbd, #63ebd9);
   --shadow-soft: 0 14px 30px rgba(0, 0, 0, 0.46);
   --shadow-strong: 0 28px 56px rgba(0, 0, 0, 0.56);
+  --public-accent: var(--accent);
+  --public-accent-strong: var(--accent-soft);
+  --public-accent-soft-text: var(--text-main);
+  --public-page-bg-start: var(--bg);
+  --public-page-bg-end: var(--bg-soft);
+  --public-page-glow-a: color-mix(in srgb, var(--accent) 14%, transparent);
+  --public-page-glow-b: color-mix(in srgb, var(--accent-soft) 10%, transparent);
+  --public-card-bg: color-mix(in srgb, var(--bg-panel) 92%, transparent);
+  --public-card-border: var(--line);
+  --public-input-bg: var(--bg-input);
+  --public-input-focus-ring: color-mix(in srgb, var(--accent) 22%, transparent);
+  --public-table-head-bg: color-mix(in srgb, var(--bg-soft) 82%, var(--bg-panel) 18%);
+  --public-table-filter-bg: color-mix(in srgb, var(--bg-soft) 72%, var(--bg-panel) 28%);
+  --public-hover-bg: var(--bg-hover);
+  --public-danger-bg: color-mix(in srgb, var(--danger) 14%, transparent);
+  --public-danger-border: color-mix(in srgb, var(--danger) 34%, transparent);
+  --public-success-bg: color-mix(in srgb, var(--ok) 14%, transparent);
+  --public-success-border: color-mix(in srgb, var(--ok) 34%, transparent);
+  --public-success-text: var(--ok);
 }
 
 * {

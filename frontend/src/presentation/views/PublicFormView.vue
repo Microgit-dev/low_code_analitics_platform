@@ -281,9 +281,9 @@ onMounted(() => {
   min-height: 100vh;
   padding: 20px;
   background:
-    radial-gradient(circle at 12% 18%, rgba(89, 123, 229, 0.16), transparent 34%),
-    radial-gradient(circle at 88% 12%, rgba(54, 191, 175, 0.12), transparent 30%),
-    linear-gradient(140deg, #f8faff 0%, #eff4fc 100%);
+    radial-gradient(circle at 12% 18%, var(--public-page-glow-a), transparent 34%),
+    radial-gradient(circle at 88% 12%, var(--public-page-glow-b), transparent 30%),
+    linear-gradient(140deg, var(--public-page-bg-start) 0%, var(--public-page-bg-end) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -348,7 +348,7 @@ form {
 .form-field select {
   width: 100%;
   border: 1px solid var(--line);
-  background: #f8faff;
+  background: var(--public-input-bg);
   padding: 11px 13px;
   border-radius: 12px;
   font: inherit;
@@ -367,7 +367,7 @@ form {
   outline: none;
   border-color: var(--accent-soft);
   background: var(--bg-panel);
-  box-shadow: 0 0 0 3px rgba(30, 99, 216, 0.16);
+  box-shadow: 0 0 0 3px var(--public-input-focus-ring);
 }
 
 .checkbox-wrapper,
@@ -413,8 +413,8 @@ form {
   padding: 7px 10px;
   font-size: 0.84rem;
   font-weight: 600;
-  background: linear-gradient(140deg, #1e63d8, #2b7df4);
-  color: var(--text-main);
+  background: linear-gradient(140deg, var(--public-accent), var(--public-accent-strong));
+  color: #ffffff;
   cursor: pointer;
 }
 
@@ -451,7 +451,7 @@ form {
 
 .form-actions button {
   flex: 1;
-  background: linear-gradient(140deg, #1e63d8, #2b7df4);
+  background: linear-gradient(140deg, var(--public-accent), var(--public-accent-strong));
   color: #ffffff;
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.18);
   border: none;
@@ -465,7 +465,7 @@ form {
 
 .form-actions button:hover:not(:disabled) {
   transform: translateY(-2px);
-  box-shadow: 0 6px 14px rgba(30, 99, 216, 0.24);
+  box-shadow: 0 6px 14px color-mix(in srgb, var(--public-accent) 24%, transparent);
 }
 
 .form-actions button:disabled {
@@ -486,18 +486,18 @@ form {
 
 .error {
   color: var(--danger);
-  background: #fff7f9;
-  border-color: #f0c9d1;
+  background: var(--public-danger-bg);
+  border-color: var(--public-danger-border);
 }
 
 .success {
-  background: #f2f8ff;
-  border-color: #cfdcf3;
+  background: var(--public-success-bg);
+  border-color: var(--public-success-border);
 }
 
 .success h2 {
   margin: 0 0 8px;
-  color: #1e63d8;
+  color: var(--public-success-text);
   font-size: 1.6rem;
 }
 

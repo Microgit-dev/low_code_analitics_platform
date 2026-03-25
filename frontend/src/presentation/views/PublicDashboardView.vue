@@ -30,6 +30,12 @@ const widgetTableSortKey = ref<Record<string, string>>({})
 const widgetTableSortDirection = ref<Record<string, 'asc' | 'desc'>>({})
 const widgetTablePage = ref<Record<string, number>>({})
 
+function cssVar(name: string, fallback: string): string {
+  if (typeof window === 'undefined') return fallback
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return value || fallback
+}
+
 const columnKeys = computed(() => {
   if (!dashboard.value || dashboard.value.recent_records.length === 0) return []
   const keys = new Set<string>()
@@ -170,7 +176,9 @@ function setColumnFilter(key: string, value: string) {
 }
 
 function chartOption(chart: PublicDashboardChart) {
-  const baseColor = chart.color || '#1e63d8'
+  const baseColor = chart.color || cssVar('--public-accent', '#4f8f94')
+  const axisColor = cssVar('--text-muted', '#5c7281')
+  const splitLineColor = cssVar('--line', 'rgba(80, 98, 106, 0.10)')
   return {
     color: [baseColor],
     grid: { left: 24, right: 18, top: 20, bottom: 46, containLabel: true },
@@ -179,7 +187,7 @@ function chartOption(chart: PublicDashboardChart) {
       type: 'category',
       data: chart.points.map((point) => point.label),
       axisLabel: {
-        color: '#5c7281',
+        color: axisColor,
         interval: 0,
         rotate: chart.points.length > 5 ? 18 : 0,
       },
@@ -187,8 +195,8 @@ function chartOption(chart: PublicDashboardChart) {
     },
     yAxis: {
       type: 'value',
-      axisLabel: { color: '#5c7281' },
-      splitLine: { lineStyle: { color: 'rgba(80, 98, 106, 0.10)' } },
+      axisLabel: { color: axisColor },
+      splitLine: { lineStyle: { color: splitLineColor } },
     },
     series: [
       {
@@ -209,7 +217,7 @@ function widgetChartOption(widget: PublicDashboardWidget) {
   return chartOption({
     title: widget.title,
     chart_type: 'bar',
-    color: widget.color || '#1e63d8',
+    color: widget.color || cssVar('--public-accent', '#4f8f94'),
     points,
   })
 }
@@ -467,7 +475,7 @@ const MapCard = defineComponent({
       markerObjects = []
       markerObjects = props.points.map(
         (point) =>
-          new maplibregl.Marker({ color: '#1e63d8' })
+          new maplibregl.Marker({ color: cssVar('--public-accent', '#4f8f94') })
             .setLngLat([point.lng, point.lat])
             .setPopup(new maplibregl.Popup({ offset: 12 }).setText(point.label))
             .addTo(map)
@@ -591,7 +599,7 @@ onMounted(loadDashboard)
               {{ widget.content || 'Пустой текстовый блок' }}
             </div>
 
-            <div v-else-if="widget.type === 'metric'" class="widget-metric" :style="{ color: widget.color || '#1e63d8' }">
+            <div v-else-if="widget.type === 'metric'" class="widget-metric" :style="{ color: widget.color || cssVar('--public-accent', '#4f8f94') }">
               {{ widget.value !== null && widget.value !== undefined ? formatMetricValue(widget.value) : '—' }}
             </div>
 
@@ -770,9 +778,9 @@ onMounted(loadDashboard)
   min-height: 100vh;
   padding: 24px;
   background:
-    radial-gradient(circle at top left, rgba(89, 123, 229, 0.15), transparent 28%),
-    radial-gradient(circle at bottom right, rgba(54, 191, 175, 0.12), transparent 24%),
-    linear-gradient(180deg, #f6f8fc 0%, #edf1f8 100%);
+    radial-gradient(circle at top left, var(--public-page-glow-a), transparent 28%),
+    radial-gradient(circle at bottom right, var(--public-page-glow-b), transparent 24%),
+    linear-gradient(180deg, var(--public-page-bg-start) 0%, var(--public-page-bg-end) 100%);
 }
 
 .dashboard-shell {
@@ -809,8 +817,8 @@ onMounted(loadDashboard)
   margin-bottom: 10px;
   padding: 6px 12px;
   border-radius: 999px;
-  background: rgba(30, 99, 216, 0.12);
-  color: #355f9b;
+  background: color-mix(in srgb, var(--public-accent) 12%, transparent);
+  color: var(--public-accent-soft-text);
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -861,7 +869,7 @@ onMounted(loadDashboard)
 }
 
 .metric-card strong {
-  color: #1e63d8;
+  color: var(--public-accent);
   font-size: clamp(2rem, 4vw, 3rem);
   line-height: 1;
 }
@@ -955,7 +963,7 @@ onMounted(loadDashboard)
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: conic-gradient(#1e63d8 calc(var(--gauge-fill) * 3.6deg), #e3ebfb 0deg);
+  background: conic-gradient(var(--public-accent) calc(var(--gauge-fill) * 3.6deg), #e3ebfb 0deg);
   position: relative;
 }
 
@@ -973,7 +981,7 @@ onMounted(loadDashboard)
   z-index: 1;
   font-size: 1.25rem;
   font-weight: 800;
-  color: #1e63d8;
+  color: var(--public-accent);
 }
 
 .widget-gauge strong {
@@ -1020,7 +1028,7 @@ onMounted(loadDashboard)
 .page-btn {
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: rgba(245, 248, 255, 0.95);
+  background: var(--public-input-bg);
   padding: 8px 12px;
   cursor: pointer;
   color: var(--text-main);
@@ -1037,7 +1045,7 @@ onMounted(loadDashboard)
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 10px 12px;
-  background: rgba(245, 248, 255, 0.95);
+  background: var(--public-input-bg);
   font: inherit;
   color: var(--text-main);
 }
@@ -1066,7 +1074,7 @@ onMounted(loadDashboard)
 }
 
 .records-table th {
-  background: rgba(242, 246, 255, 0.95);
+  background: var(--public-table-head-bg);
   font-size: 0.82rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -1115,6 +1123,8 @@ onMounted(loadDashboard)
 
 .error-state {
   color: var(--danger);
+  background: var(--public-danger-bg);
+  border-color: var(--public-danger-border);
 }
 
 @media (max-width: 920px) {
