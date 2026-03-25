@@ -37,6 +37,13 @@ const reportUseCase = new ReportUseCase(authStore.token || '')
 type WorkspaceTab = 'details' | 'tables' | 'forms' | 'data' | 'import' | 'reports'
 type TablePosition = { x: number; y: number }
 type ImportTargetUi = ImportTargetConfig & { localId: number }
+type ImportPreviewColumn = {
+  id: string
+  sourceKey: string
+  outputKey: string
+  outputName: string
+  outputType: string
+}
 type ReportCreationKind = 'dashboard' | 'table_export'
 
 const workspaces = ref<Workspace[]>([])
@@ -121,6 +128,7 @@ const importDataRowEnd = ref<number | null>(null)
 const importListDelimiters = ref(',;|\\n')
 const importTargets = ref<ImportTargetUi[]>([])
 const importTargetSeq = ref(1)
+const importPreviewTargetLocalId = ref<number | null>(null)
 const importShowAllSeparators = ref(false)
 const importRequiresRescan = ref(false)
 const IMPORT_KEY_MAX_LENGTH = 64
@@ -227,7 +235,83 @@ const selectedReportTable = computed(() => {
 })
 
 const importSourceKeys = computed(() => importScanResult.value?.detected_columns.map((col) => col.source_key) ?? [])
-const importPreviewRows = computed(() => (importScanResult.value?.preview_rows ?? []).slice(0, 30))
+const importPreviewTarget = computed(() => {
+  if (importTargets.value.length === 0) return null
+  return (
+    importTargets.value.find((target) => target.localId === importPreviewTargetLocalId.value) ??
+    importTargets.value[0]
+  )
+})
+const importPreviewTargetOptions = computed(() =>
+  importTargets.value.map((target, index) => ({
+    localId: target.localId,
+    label:
+      target.mode === 'existing'
+        ? `Цель ${index + 1}: существующая таблица`
+        : `Цель ${index + 1}: новая таблица ${target.table_name?.trim() ? `(${target.table_name.trim()})` : ''}`.trim()
+  }))
+)
+const importPreviewColumns = computed<ImportPreviewColumn[]>(() => {
+  if (!importScanResult.value || !importPreviewTarget.value) return []
+
+  const target = importPreviewTarget.value
+  const columns: ImportPreviewColumn[] = []
+
+  if (target.mode === 'existing') {
+    const table = tableStructures.value.find((item) => item.id === target.table_id)
+    if (!table) return []
+
+    importSourceKeys.value.forEach((sourceKey, index) => {
+      const mappedKey = target.column_mappings[sourceKey]
+      if (!mappedKey) return
+
+      const targetColumn = table.columns.find((column) => column.key === mappedKey)
+      if (!targetColumn) return
+
+      columns.push({
+        id: `${sourceKey}:${mappedKey}:${index}`,
+        sourceKey,
+        outputKey: targetColumn.key,
+        outputName: targetColumn.name,
+        outputType: targetColumn.type
+      })
+    })
+
+    return columns
+  }
+
+  importSourceKeys.value.forEach((sourceKey, index) => {
+    const mappedValue = target.column_mappings[sourceKey]
+    if (!mappedValue) return
+
+    const normalizedKey = normalizeImportKey(mappedValue)
+    if (!normalizedKey) return
+
+    const detected = importScanResult.value?.detected_columns.find((column) => column.source_key === sourceKey)
+    const outputType = normalizeImportColumnType(target.column_types?.[sourceKey] || detected?.suggested_type)
+
+    columns.push({
+      id: `${sourceKey}:${normalizedKey}:${index}`,
+      sourceKey,
+      outputKey: normalizedKey,
+      outputName: detected?.suggested_name || sourceKey,
+      outputType
+    })
+  })
+
+  return columns
+})
+const importPreviewRows = computed<Record<string, string>[]>(() => {
+  if (!importScanResult.value || importPreviewColumns.value.length === 0) return []
+
+  return (importScanResult.value.preview_rows ?? []).slice(0, 30).map((sourceRow) => {
+    const row: Record<string, string> = {}
+    importPreviewColumns.value.forEach((column) => {
+      row[column.id] = formatImportValueByType(sourceRow[column.sourceKey], column.outputType)
+    })
+    return row
+  })
+})
 const importDetectedSeparators = computed(() => importScanResult.value?.artifacts.detected_sections ?? [])
 const importVisibleSeparators = computed(() =>
   importShowAllSeparators.value ? importDetectedSeparators.value : importDetectedSeparators.value.slice(0, 3)
@@ -1267,6 +1351,23 @@ const normalizeImportKey = (value: string): string =>
     .replace(/^_+|_+$/g, '')
     .slice(0, IMPORT_KEY_MAX_LENGTH) || 'column'
 
+const IMPORT_COLUMN_TYPES = new Set([
+  'text',
+  'number',
+  'boolean',
+  'date',
+  'datetime',
+  'enum',
+  'list',
+  'geoPoint',
+  'geoPolygon'
+])
+
+const normalizeImportColumnType = (value: string | null | undefined): string => {
+  const prepared = String(value || '').trim()
+  return IMPORT_COLUMN_TYPES.has(prepared) ? prepared : 'text'
+}
+
 const formatMappedKeyPreview = (value: string | null | undefined): string => {
   const normalized = normalizeImportKey(String(value || ''))
   return normalized || 'column'
@@ -1287,13 +1388,24 @@ const syncImportTargetMappings = (target: ImportTargetUi) => {
   if (!importScanResult.value) return
 
   const nextMappings: Record<string, string | null> = {}
+  const nextColumnTypes: Record<string, string | null> = {}
   if (target.mode === 'new') {
     for (const detected of importScanResult.value.detected_columns) {
+      const hasSourceKey = Object.prototype.hasOwnProperty.call(target.column_mappings, detected.source_key)
       const current = target.column_mappings[detected.source_key]
+      if (hasSourceKey && current === null) {
+        nextMappings[detected.source_key] = null
+        nextColumnTypes[detected.source_key] = null
+        continue
+      }
+
       nextMappings[detected.source_key] =
         typeof current === 'string' && current.trim().length > 0
           ? normalizeImportKey(current)
           : normalizeImportKey(detected.suggested_key || detected.source_key)
+
+      const existingType = target.column_types?.[detected.source_key]
+      nextColumnTypes[detected.source_key] = normalizeImportColumnType(existingType || detected.suggested_type)
     }
   } else {
     const columns = getImportTargetColumns(target)
@@ -1311,6 +1423,7 @@ const syncImportTargetMappings = (target: ImportTargetUi) => {
   }
 
   target.column_mappings = nextMappings
+  target.column_types = nextColumnTypes
 }
 
 const addImportTarget = () => {
@@ -1322,6 +1435,7 @@ const addImportTarget = () => {
     table_name: '',
     table_description: '',
     column_mappings: {},
+    column_types: {},
     map_section_to_field: false,
     section_field_name: 'Раздел'
   }
@@ -1330,10 +1444,16 @@ const addImportTarget = () => {
     syncImportTargetMappings(target)
   }
   importTargets.value.push(target)
+  if (importPreviewTargetLocalId.value === null) {
+    importPreviewTargetLocalId.value = target.localId
+  }
 }
 
 const removeImportTarget = (localId: number) => {
   importTargets.value = importTargets.value.filter((target) => target.localId !== localId)
+  if (importPreviewTargetLocalId.value === localId) {
+    importPreviewTargetLocalId.value = importTargets.value[0]?.localId ?? null
+  }
 }
 
 const onImportTargetModeChange = (target: ImportTargetUi) => {
@@ -1359,6 +1479,7 @@ const onImportFileChange = (event: Event) => {
   importError.value = ''
   importSuccess.value = ''
   importScanResult.value = null
+  importPreviewTargetLocalId.value = null
   importShowAllSeparators.value = false
   importRequiresRescan.value = false
 }
@@ -1403,11 +1524,23 @@ const scanImport = async () => {
     } else {
       importTargets.value.forEach(syncImportTargetMappings)
     }
+
+    if (!importPreviewTarget.value) {
+      importPreviewTargetLocalId.value = importTargets.value[0]?.localId ?? null
+    }
   } catch (error) {
     importError.value = 'Не удалось просканировать файл'
     console.error(error)
   } finally {
     importLoading.value = false
+  }
+}
+
+const refreshImportPreview = async () => {
+  if (!importScanResult.value || !importFile.value) return
+  await scanImport()
+  if (!importError.value) {
+    importSuccess.value = 'Превью таблицы обновлено'
   }
 }
 
@@ -1434,6 +1567,14 @@ const buildImportApplyConfig = (): ImportApplyConfig => {
       column_mappings: Object.fromEntries(
         Object.entries(target.column_mappings).map(([source, mapped]) => [source, mapped && mapped.trim() ? mapped.trim() : null])
       ),
+      column_types: target.mode === 'new'
+        ? Object.fromEntries(
+            Object.entries(target.column_types || {}).map(([source, selectedType]) => [
+              source,
+              target.column_mappings[source] ? normalizeImportColumnType(selectedType) : null
+            ])
+          )
+        : {},
       map_section_to_field: Boolean(target.map_section_to_field),
       section_field_name: (target.section_field_name || 'Раздел').trim() || 'Раздел'
     }))
@@ -1487,6 +1628,134 @@ const formatImportValue = (value: unknown): string => {
   if (Array.isArray(value)) return value.join(', ')
   if (typeof value === 'object') return JSON.stringify(value)
   return String(value)
+}
+
+const parseImportDateCandidate = (value: unknown): Date | null => {
+  const excelBase = new Date(Date.UTC(1899, 11, 30))
+
+  const fromExcelSerial = (numeric: number): Date | null => {
+    if (!Number.isFinite(numeric) || numeric < 0) return null
+    const date = new Date(excelBase.getTime() + numeric * 24 * 60 * 60 * 1000)
+    return Number.isNaN(date.getTime()) ? null : date
+  }
+
+  const fromUnix = (numeric: number): Date | null => {
+    if (!Number.isFinite(numeric)) return null
+    if (numeric > 1_000_000_000_000) {
+      const msDate = new Date(numeric)
+      return Number.isNaN(msDate.getTime()) ? null : msDate
+    }
+    if (numeric > 1_000_000_000) {
+      const secDate = new Date(numeric * 1000)
+      return Number.isNaN(secDate.getTime()) ? null : secDate
+    }
+    return null
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const unixDate = fromUnix(value)
+    if (unixDate) return unixDate
+
+    const excelDate = fromExcelSerial(value)
+    if (excelDate) return excelDate
+
+    return null
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+
+    const ruDateTime = trimmed.match(
+      /^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+    )
+    if (ruDateTime) {
+      const [, day, month, year, hour = '0', minute = '0', second = '0'] = ruDateTime
+      const parsed = new Date(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour),
+        Number(minute),
+        Number(second)
+      )
+      return Number.isNaN(parsed.getTime()) ? null : parsed
+    }
+
+    const timeOnly = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/)
+    if (timeOnly) {
+      const now = new Date()
+      const [, hour, minute, second = '0'] = timeOnly
+      const parsed = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+        Number(hour),
+        Number(minute),
+        Number(second)
+      )
+      return Number.isNaN(parsed.getTime()) ? null : parsed
+    }
+
+    const numberLike = /^\d+(?:[\.,]\d+)?$/.test(trimmed)
+    if (numberLike) {
+      const numeric = Number(trimmed.replace(',', '.'))
+      if (Number.isFinite(numeric)) {
+        const unixDate = fromUnix(numeric)
+        if (unixDate) return unixDate
+
+        const excelDate = fromExcelSerial(numeric)
+        if (excelDate) return excelDate
+      }
+    }
+
+    const parsed = new Date(trimmed)
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  }
+
+  return null
+}
+
+const formatImportValueByType = (value: unknown, targetType: string): string => {
+  if (value === null || value === undefined || value === '') return '—'
+
+  if (targetType === 'number') {
+    const numeric = typeof value === 'number' ? value : Number(String(value).replace(',', '.'))
+    return Number.isFinite(numeric) ? String(numeric) : '—'
+  }
+
+  if (targetType === 'boolean') {
+    if (typeof value === 'boolean') return value ? 'Да' : 'Нет'
+    const lowered = String(value).trim().toLowerCase()
+    if (['true', '1', 'yes', 'да'].includes(lowered)) return 'Да'
+    if (['false', '0', 'no', 'нет'].includes(lowered)) return 'Нет'
+    return '—'
+  }
+
+  if (targetType === 'date' || targetType === 'datetime') {
+    const parsed = parseImportDateCandidate(value)
+    if (!parsed) return '—'
+
+    if (targetType === 'date') {
+      return new Intl.DateTimeFormat('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      }).format(parsed)
+    }
+
+    return new Intl.DateTimeFormat('ru-RU', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    }).format(parsed)
+  }
+
+  return formatImportValue(value)
 }
 
 const onDataTableChange = async () => {
@@ -1907,23 +2176,74 @@ const saveDataRecord = async (payload: { recordId: number; data: Record<string, 
   }
 }
 
-const formatDataValue = (value: unknown, columnType: ColumnType): string => {
-  if (value === null || value === undefined) return '—'
-  if (typeof value === 'boolean') return value ? 'Да' : 'Нет'
-  if (typeof value === 'object') return JSON.stringify(value).substring(0, 50) + '...'
-  return String(value).substring(0, 80)
+const normalizeDateValue = (input: unknown): Date | null => {
+  if (input instanceof Date) {
+    return Number.isNaN(input.getTime()) ? null : input
+  }
+
+  if (typeof input === 'number' && Number.isFinite(input)) {
+    const millis = input < 1_000_000_000_000 ? input * 1000 : input
+    const date = new Date(millis)
+    return Number.isNaN(date.getTime()) ? null : date
+  }
+
+  if (typeof input === 'string') {
+    const trimmed = input.trim()
+    if (!trimmed) return null
+
+    if (/^\d+$/.test(trimmed)) {
+      const numeric = Number(trimmed)
+      if (Number.isFinite(numeric)) {
+        const millis = numeric < 1_000_000_000_000 ? numeric * 1000 : numeric
+        const dateFromNumeric = new Date(millis)
+        if (!Number.isNaN(dateFromNumeric.getTime())) {
+          return dateFromNumeric
+        }
+      }
+    }
+
+    const dateFromString = new Date(trimmed)
+    return Number.isNaN(dateFromString.getTime()) ? null : dateFromString
+  }
+
+  return null
 }
 
-const formatDate = (value: string): string => {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('ru-RU', {
+const formatDateOnly = (date: Date): string =>
+  new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric'
+  }).format(date)
+
+const formatDateTime = (date: Date): string =>
+  new Intl.DateTimeFormat('ru-RU', {
     day: '2-digit',
     month: 'long',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit'
   }).format(date)
+
+const formatDataValue = (value: unknown, columnType: ColumnType): string => {
+  if (value === null || value === undefined) return '—'
+
+  if (columnType === 'date' || columnType === 'datetime') {
+    const parsedDate = normalizeDateValue(value)
+    if (parsedDate) {
+      return columnType === 'date' ? formatDateOnly(parsedDate) : formatDateTime(parsedDate)
+    }
+  }
+
+  if (typeof value === 'boolean') return value ? 'Да' : 'Нет'
+  if (typeof value === 'object') return JSON.stringify(value).substring(0, 50) + '...'
+  return String(value).substring(0, 80)
+}
+
+const formatDate = (value: unknown): string => {
+  const date = normalizeDateValue(value)
+  if (!date) return typeof value === 'string' ? value : String(value ?? '')
+  return formatDateTime(date)
 }
 
 const logout = () => {
@@ -2524,7 +2844,10 @@ onBeforeUnmount(() => {
           :import-targets="importTargets"
           :all-table-options="allTableOptions"
           :import-source-keys="importSourceKeys"
+          :import-preview-columns="importPreviewColumns"
           :import-preview-rows="importPreviewRows"
+          :import-preview-target-local-id="importPreviewTargetLocalId"
+          :import-preview-target-options="importPreviewTargetOptions"
           :import-detected-separators="importDetectedSeparators"
           :import-visible-separators="importVisibleSeparators"
           :import-show-all-separators="importShowAllSeparators"
@@ -2534,7 +2857,6 @@ onBeforeUnmount(() => {
           :get-import-target-columns="getImportTargetColumns"
           :format-mapped-key-preview="formatMappedKeyPreview"
           :is-mapped-key-truncated="isMappedKeyTruncated"
-          :format-import-value="formatImportValue"
           :on-import-target-mode-change="onImportTargetModeChange"
           :on-import-target-table-change="onImportTargetTableChange"
           @update:import-header-row-start="importHeaderRowStart = $event"
@@ -2542,9 +2864,11 @@ onBeforeUnmount(() => {
           @update:import-data-row-start="importDataRowStart = $event"
           @update:import-data-row-end="importDataRowEnd = $event"
           @update:import-list-delimiters="importListDelimiters = $event"
+          @update:import-preview-target-local-id="importPreviewTargetLocalId = $event"
           @import-file-change="onImportFileChange"
           @import-scan-options-change="onImportScanOptionsChanged"
           @scan-import="scanImport"
+          @refresh-import-preview="refreshImportPreview"
           @apply-import="applyImport"
           @toggle-separators="toggleAllSeparators"
           @add-import-target="addImportTarget"
