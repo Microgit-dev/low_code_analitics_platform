@@ -85,18 +85,18 @@ label {
 
 input {
   border: 1px solid var(--line);
-  background: #edf4f5;
+  background: #f8faff;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: 12px;
 }
 
 button {
   border: none;
-  background: var(--ok);
-  color: #fff;
+  background: linear-gradient(140deg, #1f8f5f, #2ca86f);
+  color: var(--text-main);
   font-weight: 700;
   padding: 11px 14px;
-  border-radius: 10px;
+  border-radius: 12px;
   margin-top: 4px;
 }
 

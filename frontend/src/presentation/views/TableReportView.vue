@@ -347,29 +347,29 @@ onMounted(loadPage)
 </template>
 
 <style scoped>
-.table-report-view-page { min-height: 100vh; padding: 28px; background: linear-gradient(180deg, #f7fbfb 0%, #eef4f5 100%); display: grid; gap: 18px; }
+.table-report-view-page { min-height: 100vh; padding: 28px; background: linear-gradient(180deg, #f8faff 0%, #eff4fc 100%); display: grid; gap: 18px; }
 .surface-card {
   min-width: 0;
-  border: 1px solid rgba(64, 90, 97, 0.14);
+  border: 1px solid var(--line);
   border-radius: 22px;
-  background: rgba(255,255,255,0.9);
+  background: rgba(255, 255, 255, 0.95);
   padding: 18px;
-  box-shadow: 0 18px 50px rgba(31,61,67,0.08);
+  box-shadow: var(--shadow-soft);
 }
 .topbar, .topbar-actions, .section-head { display:flex; align-items:center; gap:12px; }
 .topbar, .section-head { justify-content:space-between; }
 .topbar h1, .section-head h3 { margin:0; }
 .ghost-link, .primary-btn, .secondary-btn, .dataset-tab { border:none; cursor:pointer; }
-.ghost-link { background:transparent; padding:0; color:#156f69; }
+.ghost-link { background:transparent; padding:0; color:#1e63d8; }
 .primary-btn, .secondary-btn { border-radius:12px; padding:10px 16px; }
-.primary-btn { background:#156f69; color:#fff; }
-.secondary-btn { background:#eef5f4; color:#144c49; }
+.primary-btn { background: linear-gradient(140deg, #1e63d8, #2b7df4); color: var(--text-main); }
+.secondary-btn { background:#edf3ff; color:#2d4f86; }
 .dataset-tabs { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:12px; }
-.dataset-tab { background:#f5f9f8; border:1px solid rgba(64, 90, 97, 0.12); border-radius:16px; padding:12px 14px; display:grid; gap:4px; text-align:left; }
-.dataset-tab.active { background:#156f69; color:#fff; }
-.dataset-tab small, .muted { color:#6c8189; }
+.dataset-tab { background: var(--bg-soft); border:1px solid var(--line); border-radius:16px; padding:12px 14px; display:grid; gap:4px; text-align:left; }
+.dataset-tab.active { background: linear-gradient(140deg, #1e63d8, #2b7df4); color: var(--text-main); }
+.dataset-tab small, .muted { color:var(--text-muted); }
 .dataset-tab.active small { color:rgba(255,255,255,0.75); }
-.search-input, .filter-row input { width:100%; border:1px solid rgba(64,90,97,0.16); border-radius:12px; padding:10px 12px; background:#fff; font:inherit; }
+.search-input, .filter-row input { width:100%; border:1px solid var(--line); border-radius:12px; padding:10px 12px; background: var(--bg-panel); font:inherit; }
 .search-input { max-width:320px; }
 .table-wrap {
   width: 100%;
@@ -377,9 +377,9 @@ onMounted(loadPage)
   max-height: min(70vh, 760px);
   overflow-x: auto;
   overflow-y: auto;
-  border: 1px solid rgba(64, 90, 97, 0.1);
+  border: 1px solid var(--line);
   border-radius: 16px;
-  background: #fff;
+  background: var(--bg-panel);
 }
 .data-table {
   width: max-content;
@@ -390,10 +390,10 @@ onMounted(loadPage)
 }
 .data-table th, .data-table td {
   padding:10px 12px;
-  border-bottom:1px solid rgba(64,90,97,0.1);
+  border-bottom:1px solid var(--line);
   text-align:left;
   vertical-align:top;
-  background:#fff;
+  background: var(--bg-panel);
   white-space: nowrap;
 }
 .data-table th {
@@ -402,22 +402,22 @@ onMounted(loadPage)
 }
 .data-table td {
   line-height:1.35;
-  color:#284c5a;
+  color: var(--text-main);
   font-size: 0.92rem;
 }
 .data-table thead th {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: #f4f9f9;
+  background: #f2f6ff;
 }
 .data-table thead tr.filter-row th {
   top: 46px;
   z-index: 1;
-  background: #f9fcfc;
+  background: #f8faff;
 }
 .data-table tbody tr:hover td {
-  background:#f8fbfb;
+  background:#f5f8ff;
 }
 .sortable { cursor:pointer; user-select:none; }
 .filter-row th { padding-top:10px; padding-bottom:10px; }
@@ -426,7 +426,7 @@ onMounted(loadPage)
   padding: 8px 10px;
   font-size: 0.9rem;
 }
-.error { color:#b63b53; }
+.error { color: var(--danger); }
 
 @media (max-width: 980px) {
   .table-report-view-page { padding:16px; }

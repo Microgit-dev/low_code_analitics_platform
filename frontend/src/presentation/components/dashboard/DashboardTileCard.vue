@@ -28,14 +28,21 @@ defineProps<{
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 12px;
-  background: #f7fbfc;
+  background: var(--bg-panel);
   display: grid;
   gap: 8px;
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dashboard-tile-card:hover {
+  background: var(--bg-soft);
+  border-color: var(--accent-soft);
 }
 
 .dashboard-tile-card.active {
-  border-color: #2b8f86;
-  box-shadow: inset 0 0 0 1px #2b8f86;
+  background: var(--bg-soft);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .dashboard-tile-card-header {

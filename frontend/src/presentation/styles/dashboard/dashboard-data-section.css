@@ -1,7 +1,7 @@
 .data-section {
   margin-top: 8px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 18px;
   padding: 14px;
   background: var(--bg-soft);
   display: grid;
@@ -21,18 +21,18 @@
 
 select {
   border: 1px solid var(--line);
-  background: #edf4f5;
+  background: var(--bg-soft);
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: 12px;
   color: var(--text-main);
   font: inherit;
 }
 
 button {
   border: none;
-  background: var(--accent);
-  color: #e8fbff;
-  border-radius: 10px;
+  background: linear-gradient(140deg, #1e63d8, #2b7df4);
+  color: #fff;
+  border-radius: 12px;
   padding: 10px 16px;
   font-weight: 700;
 }
@@ -43,15 +43,15 @@ button.small {
 }
 
 button.danger {
-  background: var(--danger);
+  background: linear-gradient(140deg, #d93c56, #c72e48);
   color: #fff;
 }
 
 .data-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #fafbfc;
+  border-radius: 12px;
+  background: var(--bg-soft);
 }
 
 .data-table {
@@ -61,7 +61,7 @@ button.danger {
 }
 
 .data-table thead {
-  background: #f0f4f5;
+  background: var(--bg-soft);
   border-bottom: 1px solid var(--line);
 }
 
@@ -80,7 +80,7 @@ button.danger {
 }
 
 .data-table tbody tr:hover {
-  background-color: #f7fbfc;
+  background-color: var(--bg-soft);
 }
 
 .data-table td span {
@@ -97,8 +97,8 @@ button.danger {
   align-items: center;
   justify-content: center;
   padding: 12px;
-  background: #f0f4f5;
-  border-radius: 10px;
+  background: var(--bg-soft);
+  border-radius: 12px;
 }
 
 .pagination button {
@@ -107,8 +107,8 @@ button.danger {
 }
 
 .pagination button:disabled {
-  background: #d9e3e5;
-  color: #7a8c92;
+  background: var(--bg-soft);
+  color: var(--text-muted);
   cursor: not-allowed;
 }
 
@@ -139,7 +139,8 @@ button.danger {
 .edit-modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(14, 26, 30, 0.46);
+  background: rgba(15, 26, 46, 0.44);
+  backdrop-filter: blur(2px);
   display: grid;
   place-items: center;
   z-index: 90;
@@ -150,9 +151,9 @@ button.danger {
   max-height: 88vh;
   overflow: auto;
   border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #f9fcfd;
-  box-shadow: 0 20px 44px rgba(24, 43, 48, 0.26);
+  border-radius: 14px;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-strong);
 }
 
 .edit-modal-header,
@@ -197,9 +198,9 @@ button.danger {
 .edit-field select,
 .edit-field textarea {
   border: 1px solid var(--line);
-  background: #edf4f5;
+  background: var(--bg-soft);
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: 12px;
   color: var(--text-main);
   font: inherit;
 }

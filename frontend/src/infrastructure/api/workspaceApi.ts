@@ -18,6 +18,15 @@ export const workspaceApi = {
     return data
   },
 
+  async update(token: string, workspaceId: number, name: string, description?: string): Promise<Workspace> {
+    const { data } = await httpClient.put<Workspace>(
+      `/workspaces/${workspaceId}`,
+      { name, description },
+      { headers: { Authorization: `Bearer ${token}` } }
+    )
+    return data
+  },
+
   async delete(token: string, workspaceId: number): Promise<void> {
     await httpClient.delete(`/workspaces/${workspaceId}`, {
       headers: { Authorization: `Bearer ${token}` }

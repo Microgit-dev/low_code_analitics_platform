@@ -170,7 +170,7 @@ function setColumnFilter(key: string, value: string) {
 }
 
 function chartOption(chart: PublicDashboardChart) {
-  const baseColor = chart.color || '#1c8c83'
+  const baseColor = chart.color || '#1e63d8'
   return {
     color: [baseColor],
     grid: { left: 24, right: 18, top: 20, bottom: 46, containLabel: true },
@@ -209,7 +209,7 @@ function widgetChartOption(widget: PublicDashboardWidget) {
   return chartOption({
     title: widget.title,
     chart_type: 'bar',
-    color: widget.color || '#1c8c83',
+    color: widget.color || '#1e63d8',
     points,
   })
 }
@@ -467,7 +467,7 @@ const MapCard = defineComponent({
       markerObjects = []
       markerObjects = props.points.map(
         (point) =>
-          new maplibregl.Marker({ color: '#1c8c83' })
+          new maplibregl.Marker({ color: '#1e63d8' })
             .setLngLat([point.lng, point.lat])
             .setPopup(new maplibregl.Popup({ offset: 12 }).setText(point.label))
             .addTo(map)
@@ -591,7 +591,7 @@ onMounted(loadDashboard)
               {{ widget.content || 'Пустой текстовый блок' }}
             </div>
 
-            <div v-else-if="widget.type === 'metric'" class="widget-metric" :style="{ color: widget.color || '#1c8c83' }">
+            <div v-else-if="widget.type === 'metric'" class="widget-metric" :style="{ color: widget.color || '#1e63d8' }">
               {{ widget.value !== null && widget.value !== undefined ? formatMetricValue(widget.value) : '—' }}
             </div>
 
@@ -770,9 +770,9 @@ onMounted(loadDashboard)
   min-height: 100vh;
   padding: 24px;
   background:
-    radial-gradient(circle at top left, rgba(66, 164, 156, 0.16), transparent 28%),
-    radial-gradient(circle at bottom right, rgba(47, 95, 120, 0.18), transparent 24%),
-    linear-gradient(180deg, #eef7f6 0%, #f7faf8 100%);
+    radial-gradient(circle at top left, rgba(89, 123, 229, 0.15), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(54, 191, 175, 0.12), transparent 24%),
+    linear-gradient(180deg, #f6f8fc 0%, #edf1f8 100%);
 }
 
 .dashboard-shell {
@@ -789,10 +789,10 @@ onMounted(loadDashboard)
 .map-block,
 .loading-state,
 .error-state {
-  border: 1px solid rgba(56, 92, 105, 0.14);
+  border: 1px solid var(--line);
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.84);
-  box-shadow: 0 24px 60px rgba(39, 73, 80, 0.08);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: var(--shadow-soft);
   backdrop-filter: blur(12px);
 }
 
@@ -809,8 +809,8 @@ onMounted(loadDashboard)
   margin-bottom: 10px;
   padding: 6px 12px;
   border-radius: 999px;
-  background: rgba(28, 140, 131, 0.12);
-  color: #1c6f6f;
+  background: rgba(30, 99, 216, 0.12);
+  color: #355f9b;
   font-size: 0.78rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -821,13 +821,13 @@ onMounted(loadDashboard)
   margin: 0;
   font-size: clamp(2.4rem, 5vw, 4.2rem);
   line-height: 0.95;
-  color: #214e61;
+  color: var(--text-main);
 }
 
 .hero-card p {
   max-width: 720px;
   margin: 14px 0 0;
-  color: #59717b;
+  color: var(--text-muted);
   font-size: 1.02rem;
 }
 
@@ -835,11 +835,11 @@ onMounted(loadDashboard)
   display: grid;
   gap: 6px;
   justify-items: end;
-  color: #68808a;
+  color: var(--text-muted);
 }
 
 .hero-meta strong {
-  color: #244f5e;
+  color: var(--text-main);
   font-size: 1.02rem;
 }
 
@@ -856,12 +856,12 @@ onMounted(loadDashboard)
 }
 
 .metric-card span {
-  color: #5f7782;
+  color: var(--text-muted);
   font-weight: 600;
 }
 
 .metric-card strong {
-  color: #1c4351;
+  color: #1e63d8;
   font-size: clamp(2rem, 4vw, 3rem);
   line-height: 1;
 }
@@ -902,10 +902,10 @@ onMounted(loadDashboard)
 
 .widget-grid--positioned .widget-shell {
   padding: 16px;
-  border: 1px solid rgba(56, 92, 105, 0.14);
+  border: 1px solid var(--line);
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.84);
-  box-shadow: 0 18px 36px rgba(39, 73, 80, 0.08);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 18px 36px rgba(26, 44, 74, 0.09);
 }
 
 .widget-shell--full {
@@ -919,20 +919,20 @@ onMounted(loadDashboard)
 
 .widget-header h2 {
   margin: 0;
-  color: #224d5f;
+  color: var(--text-main);
   font-size: 1.28rem;
 }
 
 .widget-description {
   margin: 0;
-  color: #667d86;
+  color: var(--text-muted);
   line-height: 1.5;
 }
 
 .widget-text {
   white-space: pre-wrap;
   line-height: 1.6;
-  color: #294e5d;
+  color: var(--text-main);
 }
 
 .widget-metric {
@@ -955,7 +955,7 @@ onMounted(loadDashboard)
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: conic-gradient(#1c8c83 calc(var(--gauge-fill) * 3.6deg), #e3ecec 0deg);
+  background: conic-gradient(#1e63d8 calc(var(--gauge-fill) * 3.6deg), #e3ebfb 0deg);
   position: relative;
 }
 
@@ -973,11 +973,11 @@ onMounted(loadDashboard)
   z-index: 1;
   font-size: 1.25rem;
   font-weight: 800;
-  color: #275562;
+  color: #1e63d8;
 }
 
 .widget-gauge strong {
-  color: #284e5c;
+  color: var(--text-main);
   font-size: 1.1rem;
 }
 
@@ -995,13 +995,13 @@ onMounted(loadDashboard)
 
 .block-head h2 {
   margin: 0;
-  color: #224d5f;
+  color: var(--text-main);
   font-size: 1.28rem;
 }
 
 .block-head small,
 .muted {
-  color: #6c838b;
+  color: var(--text-muted);
 }
 
 .table-toolbar {
@@ -1014,16 +1014,16 @@ onMounted(loadDashboard)
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
-  color: #627982;
+  color: var(--text-muted);
 }
 
 .page-btn {
-  border: 1px solid rgba(56, 92, 105, 0.14);
+  border: 1px solid var(--line);
   border-radius: 10px;
-  background: rgba(247, 251, 251, 0.9);
+  background: rgba(245, 248, 255, 0.95);
   padding: 8px 12px;
   cursor: pointer;
-  color: #294e5d;
+  color: var(--text-main);
 }
 
 .page-btn:disabled {
@@ -1034,12 +1034,12 @@ onMounted(loadDashboard)
 .search-input,
 .filter-row input {
   width: 100%;
-  border: 1px solid rgba(56, 92, 105, 0.14);
+  border: 1px solid var(--line);
   border-radius: 12px;
   padding: 10px 12px;
-  background: rgba(247, 251, 251, 0.9);
+  background: rgba(245, 248, 255, 0.95);
   font: inherit;
-  color: #294e5d;
+  color: var(--text-main);
 }
 
 .search-input {
@@ -1059,14 +1059,14 @@ onMounted(loadDashboard)
 .records-table th,
 .records-table td {
   padding: 14px 16px;
-  border-bottom: 1px solid rgba(56, 92, 105, 0.10);
+  border-bottom: 1px solid var(--line);
   text-align: left;
   vertical-align: top;
-  color: #294e5d;
+  color: var(--text-main);
 }
 
 .records-table th {
-  background: rgba(240, 247, 247, 0.95);
+  background: rgba(242, 246, 255, 0.95);
   font-size: 0.82rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -1110,11 +1110,11 @@ onMounted(loadDashboard)
 .loading-state,
 .error-state {
   padding: 28px;
-  color: #355867;
+  color: var(--text-main);
 }
 
 .error-state {
-  color: #b24c60;
+  color: var(--danger);
 }
 
 @media (max-width: 920px) {

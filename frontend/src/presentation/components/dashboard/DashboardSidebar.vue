@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import UiStatusText from '../common/UiStatusText.vue'
+import { useTheme } from '../../../infrastructure/composables/useTheme'
 
 interface WorkspaceListItem {
   id: number
@@ -24,6 +25,8 @@ const emit = defineEmits<{
   (event: 'select-workspace', workspaceId: number): void
   (event: 'logout'): void
 }>()
+
+const { isDark, toggleTheme } = useTheme()
 
 const workspaceNameModel = computed({
   get: () => props.workspaceName,
@@ -70,7 +73,12 @@ const workspaceDescriptionModel = computed({
       </ul>
     </section>
 
-    <button class="ghost" @click="emit('logout')">Выйти</button>
+    <div class="sidebar-actions">
+      <button class="action-btn" :title="isDark ? 'Светлая тема' : 'Темная тема'" @click="toggleTheme">
+        {{ isDark ? '☀️' : '🌙' }}
+      </button>
+      <button class="ghost" @click="emit('logout')">Выйти</button>
+    </div>
   </aside>
 </template>
 
