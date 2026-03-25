@@ -1,0 +1,417 @@
+Ты — клерк компании «Обслуж АвтоТранс», который готовит официальный отчёт по шаблону.
+
+Тебе переданы:
+1. HTML-шаблон отчёта
+2. Данные, извлечённые из базы данных
+3. Список доступных функций и примеры их использования
+
+Твоя задача:
+- вернуть готовый HTML без комментариев и без пояснений
+- адаптировать HTML-шаблон под объём данных
+- если в таблице шаблона недостаточно строк для данных, увеличить число строк
+- сохранить структуру документа, таблиц, объединённых ячеек, заголовков, подписей и стилей
+- все пустые поля в таблицах заменить на выражения в формате {...}
+- все области с нижними подчёркиваниями тоже заменить на выражения в формате {...}
+- в {...} вставлять название подходящей функции, поля или выражения
+- не писать текст вне HTML
+- не писать комментарии
+- не использовать markdown
+
+Дополнительные правила:
+- если значение должно вычисляться как сумма, количество, условие или другая агрегация, используй выражение с функцией, например:
+  {sum(total_amount)}
+  {count(roads)}
+  {if(count(roads) > 0, 'Да', 'Нет')}
+- если поле является простым значением из строки данных, используй прямой placeholder без обёртки функцией:
+  {road_name}
+  {region}
+  {repair_date}
+- список допустимых функций и примеров берётся из function_catalog ниже и должен считаться актуальным источником для {function(value)} выражений
+- если в шаблоне есть повторяющаяся строка таблицы, расширь HTML так, чтобы строк стало достаточно для всех записей
+- не удаляй существующие table/thead/tbody/tr/th/td узлы без необходимости
+- не уменьшай количество существующих rowspan и colspan
+- если меняешь таблицу, сохраняй текущие rowspan/colspan и заголовочную структуру шаблона
+- итоговый HTML должен быть целостным и готовым для последующей подстановки выражений
+
+HTML-шаблон:
+﻿<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Приложение Д — Форма №1</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Times New Roman", serif;
+      background: #ffffff;
+      color: #000000;
+    }
+
+    .page {
+      width: 1200px;
+      margin: 24px auto;
+      padding: 8px 10px 24px;
+    }
+
+    .top-note {
+      font-size: 18px;
+      line-height: 1.25;
+      margin-bottom: 10px;
+      font-weight: 700;
+    }
+
+    .top-note .sub {
+      display: block;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    .top-note .form {
+      display: block;
+      margin-top: 2px;
+      font-weight: 400;
+    }
+
+    .main-title {
+      text-align: center;
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 1.25;
+      margin: 14px 0 18px;
+    }
+
+    .line-row {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 16px;
+      align-items: end;
+      margin-bottom: 14px;
+    }
+
+    .line-block {
+      min-height: 48px;
+    }
+
+    .line {
+      border-bottom: 1px solid #000;
+      height: 22px;
+      width: 100%;
+    }
+
+    .line-caption {
+      text-align: center;
+      font-size: 14px;
+      margin-top: 6px;
+      line-height: 1.2;
+    }
+
+    .line-caption.nowrap { white-space: nowrap; }
+
+    .line-center-text {
+      align-self: center;
+      font-size: 18px;
+      padding: 0 8px;
+      white-space: nowrap;
+    }
+
+    .length-row {
+      text-align: center;
+      font-size: 18px;
+      margin: 10px 0 16px;
+    }
+
+    .inline-line {
+      display: inline-block;
+      border-bottom: 1px solid #000;
+      min-width: 60px;
+      height: 20px;
+      vertical-align: baseline;
+    }
+
+    table.form-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 15px;
+    }
+
+    .form-table th,
+    .form-table td {
+      border: 1px solid #000;
+      padding: 6px 4px;
+      vertical-align: middle;
+      word-wrap: break-word;
+    }
+
+    .form-table th {
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .form-table .left {
+      text-align: left;
+    }
+
+    .form-table .num-row td {
+      height: 40px;
+      text-align: center;
+    }
+
+    .form-table .data-row td {
+      height: 50px;
+    }
+
+    .form-table .w1  { width: 8%; }
+    .form-table .w2  { width: 8%; }
+    .form-table .w3  { width: 8%; }
+    .form-table .w4  { width: 8%; }
+    .form-table .w5  { width: 8%; }
+    .form-table .w6  { width: 8%; }
+    .form-table .w7  { width: 8%; }
+    .form-table .w8  { width: 8%; }
+    .form-table .w9  { width: 8%; }
+    .form-table .w10 { width: 8%; }
+    .form-table .w11 { width: 8%; }
+    .form-table .w12 { width: 8%; }
+
+    .total-row {
+      margin-top: 14px;
+      font-size: 18px;
+    }
+
+    .total-line {
+      display: inline-block;
+      border-bottom: 1px solid #000;
+      min-width: 120px;
+      height: 20px;
+      vertical-align: baseline;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .page {
+        width: auto;
+        margin: 0;
+        padding: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="top-note">
+      Приложение Д
+      <span class="sub">Формы анализа данных о дорожно-транспортных происшествиях</span>
+      <span class="form">Форма № 1</span>
+    </div>
+
+    <div class="main-title">
+      Оценка тенденций изменения основных показателей аварийности на УДС,
+      находящейся в ведении
+    </div>
+
+    <div class="line-row">
+      <div class="line-block">
+        <div class="line"></div>
+        <div class="line-caption">(Владелец автомобильными дорогами)</div>
+      </div>
+
+      <div class="line-center-text">за</div>
+
+      <div class="line-block">
+        <div class="line"></div>
+        <div class="line-caption nowrap">Период учета (квартал, полугодие, девять месяцев, год)</div>
+      </div>
+    </div>
+
+    <div class="length-row">
+      Общая протяженность УДС
+      <span class="inline-line"></span>
+      км
+      <span class="inline-line" style="min-width: 40px;"></span>
+      м
+    </div>
+
+    <table class="form-table">
+      <tr>
+        <th class="w1" rowspan="3">№<br>п\п</th>
+        <th class="w2" rowspan="3">Наименование<br>дороги<br>(улицы)</th>
+        <th class="w3" rowspan="3">Годы</th>
+
+        <th colspan="4" class="left">Сведения о ДТП</th>
+
+        <th colspan="5" class="left">
+          Сведения о ДТП, в местах совершения которых установлены
+          недостатки транспортно-эксплуатационного состояния УДС
+        </th>
+      </tr>
+
+      <tr>
+        <th class="w4 left" rowspan="2">Количество ДТП</th>
+        <th class="w5 left" rowspan="2">Ранено,<br>чел.</th>
+        <th class="w6 left" rowspan="2">Погибло,<br>чел.</th>
+        <th class="w7 left" rowspan="2">Показатель тяжести последствий ДТП</th>
+
+        <th colspan="2" class="left">Количество ДТП</th>
+        <th class="w10 left" rowspan="2">Ранено,<br>чел.</th>
+        <th class="w11 left" rowspan="2">Погибло,<br>чел.</th>
+        <th class="w12 left" rowspan="2">Показатель тяжести последствий ДТП</th>
+      </tr>
+
+      <tr>
+        <th class="w8 left">Всего</th>
+        <th class="w9 left">В % от общего количества ДТП</th>
+      </tr>
+
+      <tr class="num-row">
+        <td class="left">1</td>
+        <td class="left">2</td>
+        <td class="left">3</td>
+        <td class="left">4</td>
+        <td class="left">5</td>
+        <td class="left">6</td>
+        <td class="left">7</td>
+        <td class="left">8</td>
+        <td class="left">9</td>
+        <td class="left">10</td>
+        <td class="left">11</td>
+        <td class="left">12</td>
+      </tr>
+
+      <tr class="data-row">
+        <td rowspan="3" class="left">1.</td>
+        <td rowspan="3">&nbsp;</td>
+        <td class="left">АППГ</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>3
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+      </tr>
+      <tr class="data-row">
+        <td class="left">Период учета</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+      </tr>
+      <tr class="data-row">
+        <td class="left">(+/-, %%)</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+      </tr>
+
+      <tr class="data-row">
+        <td rowspan="3" class="left">2.</td>
+        <td rowspan="3">&nbsp;</td>
+        <td class="left">АППГ</td>
+        <td>{{}}</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+      </tr>
+      <tr class="data-row">
+        <td class="left">Период учета</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+      </tr>
+      <tr class="data-row">
+        <td class="left">(+/-, %%)</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+      </tr>
+    </table>
+
+    <div class="total-row">
+      Итого за период учета:
+      <span class="total-line"></span>
+    </div>
+  </div>
+</body>
+</html>
+
+
+Данные из БД:
+[{"road_name": "?-11", "region": "??????", "repair_date": "2025-05-10", "total_amount": "12345.67"}, {"road_name": "?-11", "region": "??????", "repair_date": "2025-06-11", "total_amount": "222.00"}, {"road_name": "?-21", "region": "?????-?????????", "repair_date": "2025-03-01", "total_amount": "333.00"}]
+
+Список функций:
+[
+  {
+    "name": "value",
+    "description": "??????? ???????? ?? ?????? ?????? ??? ?????????.",
+    "example": "{{road_name}}"
+  },
+  {
+    "name": "sum",
+    "description": "????? ???????? ?? ???????.",
+    "example": "{{sum(total_amount)}}"
+  },
+  {
+    "name": "count",
+    "description": "?????????? ????? ??? ???????? ????????.",
+    "example": "{{count(road_name)}}"
+  },
+  {
+    "name": "avg",
+    "description": "??????? ???????? ?? ???????? ???????.",
+    "example": "{{avg(total_amount)}}"
+  },
+  {
+    "name": "min",
+    "description": "??????????? ???????? ?? ???????.",
+    "example": "{{min(repair_date)}}"
+  },
+  {
+    "name": "max",
+    "description": "???????????? ???????? ?? ???????.",
+    "example": "{{max(repair_date)}}"
+  },
+  {
+    "name": "if",
+    "description": "???????? ?????????.",
+    "example": "{{if(count(road_name) > 0, '??', '???')}}"
+  }
+]

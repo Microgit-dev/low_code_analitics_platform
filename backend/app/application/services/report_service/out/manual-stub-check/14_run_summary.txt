@@ -1,0 +1,11 @@
+status: OK
+success: True
+mode: stub
+out_dir: C:\Users\kolac\Desktop\ml\low_code_platform\low_code_analitics_platform\report_service\out\manual-stub-check
+rows_count: 2
+duration_seconds: 0.076
+template: C:\Users\kolac\Desktop\ml\low_code_platform\low_code_analitics_platform\report_service\form_d.html
+prompt: C:\Users\kolac\Desktop\ml\low_code_platform\low_code_analitics_platform\report_service\prompt_conversion_dps_new_2026.txt
+db_host: stub
+db_name: stub
+sql_present: yes (275 chars)

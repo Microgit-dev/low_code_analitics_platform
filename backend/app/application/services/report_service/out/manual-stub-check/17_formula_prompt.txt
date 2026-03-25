@@ -1,0 +1,2276 @@
+Ты — генератор формул DSL для HTML-шаблона отчёта по ДТП.
+
+Твоя задача:
+для КАЖДОГО placeholder ID из списка ниже подобрать правильную формулу,
+чтобы итоговые выражения были максимально близки к эталонному образцу.
+
+У тебя есть 5 входов:
+
+1. ЭТАЛОННЫЙ ОБРАЗЕЦ
+Это частично заполненный правильный пример того, как должны выглядеть формулы.
+Смотри на него как на главный reference по стилю, структуре и логике формул.
+
+<REFERENCE_SAMPLE>
+﻿<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Приложение Д — Форма №1</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Times New Roman", serif;
+      background: #ffffff;
+      color: #000000;
+    }
+
+    .page {
+      width: 1200px;
+      margin: 24px auto;
+      padding: 8px 10px 24px;
+    }
+
+    .top-note {
+      font-size: 18px;
+      line-height: 1.25;
+      margin-bottom: 10px;
+      font-weight: 700;
+    }
+
+    .top-note .sub {
+      display: block;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    .top-note .form {
+      display: block;
+      margin-top: 2px;
+      font-weight: 400;
+    }
+
+    .main-title {
+      text-align: center;
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 1.25;
+      margin: 14px 0 18px;
+    }
+
+    .line-row {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 16px;
+      align-items: end;
+      margin-bottom: 14px;
+    }
+
+    .line-block {
+      min-height: 48px;
+    }
+
+    .line {
+      border-bottom: 1px solid #000;
+      height: 22px;
+      width: 100%;
+    }
+
+    .line-caption {
+      text-align: center;
+      font-size: 14px;
+      margin-top: 6px;
+      line-height: 1.2;
+    }
+
+    .line-caption.nowrap { white-space: nowrap; }
+
+    .line-center-text {
+      align-self: center;
+      font-size: 18px;
+      padding: 0 8px;
+      white-space: nowrap;
+    }
+
+    .length-row {
+      text-align: center;
+      font-size: 18px;
+      margin: 10px 0 16px;
+    }
+
+    .inline-line {
+      display: inline-block;
+      border-bottom: 1px solid #000;
+      min-width: 60px;
+      height: 20px;
+      vertical-align: baseline;
+    }
+
+    table.form-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 15px;
+    }
+
+    .form-table th,
+    .form-table td {
+      border: 1px solid #000;
+      padding: 6px 4px;
+      vertical-align: middle;
+      word-wrap: break-word;
+    }
+
+    .form-table th {
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .form-table .left {
+      text-align: left;
+    }
+
+    .form-table .num-row td {
+      height: 40px;
+      text-align: center;
+    }
+
+    .form-table .data-row td {
+      height: 50px;
+    }
+
+    .form-table .w1  { width: 8%; }
+    .form-table .w2  { width: 8%; }
+    .form-table .w3  { width: 8%; }
+    .form-table .w4  { width: 8%; }
+    .form-table .w5  { width: 8%; }
+    .form-table .w6  { width: 8%; }
+    .form-table .w7  { width: 8%; }
+    .form-table .w8  { width: 8%; }
+    .form-table .w9  { width: 8%; }
+    .form-table .w10 { width: 8%; }
+    .form-table .w11 { width: 8%; }
+    .form-table .w12 { width: 8%; }
+
+    .total-row {
+      margin-top: 14px;
+      font-size: 18px;
+    }
+
+    .total-line {
+      display: inline-block;
+      border-bottom: 1px solid #000;
+      min-width: 120px;
+      height: 20px;
+      vertical-align: baseline;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .page {
+        width: auto;
+        margin: 0;
+        padding: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="top-note">
+      Приложение Д
+      <span class="sub">Формы анализа данных о дорожно-транспортных происшествиях</span>
+      <span class="form">Форма № 1</span>
+    </div>
+
+    <div class="main-title">
+      Оценка тенденций изменения основных показателей аварийности на УДС,
+      находящейся в ведении
+    </div>
+
+    <div class="line-row">
+      <div class="line-block">
+        <div class="line"></div>
+        <div class="line-caption">(Владелец автомобильными дорогами)</div>
+      </div>
+
+      <div class="line-center-text">за</div>
+
+      <div class="line-block">
+        <div class="line"></div>
+        <div class="line-caption nowrap">Период учета (квартал, полугодие, девять месяцев, год)</div>
+      </div>
+    </div>
+
+    <div class="length-row">
+      Общая протяженность УДС
+      <span class="inline-line"></span>
+      км
+      <span class="inline-line" style="min-width: 40px;"></span>
+      м
+    </div>
+
+    <table class="form-table">
+      <tr>
+        <th class="w1" rowspan="3">№<br>п\п</th>
+        <th class="w2" rowspan="3">Наименование<br>дороги<br>(улицы)</th>
+        <th class="w3" rowspan="3">Годы</th>
+
+        <th colspan="4" class="left">Сведения о ДТП</th>
+
+        <th colspan="5" class="left">
+          Сведения о ДТП, в местах совершения которых установлены
+          недостатки транспортно-эксплуатационного состояния УДС
+        </th>
+      </tr>
+
+      <tr>
+        <th class="w4 left" rowspan="2">Количество ДТП</th>
+        <th class="w5 left" rowspan="2">Ранено,<br>чел.</th>
+        <th class="w6 left" rowspan="2">Погибло,<br>чел.</th>
+        <th class="w7 left" rowspan="2">Показатель тяжести последствий ДТП</th>
+
+        <th colspan="2" class="left">Количество ДТП</th>
+        <th class="w10 left" rowspan="2">Ранено,<br>чел.</th>
+        <th class="w11 left" rowspan="2">Погибло,<br>чел.</th>
+        <th class="w12 left" rowspan="2">Показатель тяжести последствий ДТП</th>
+      </tr>
+
+      <tr>
+        <th class="w8 left">Всего</th>
+        <th class="w9 left">В % от общего количества ДТП</th>
+      </tr>
+
+      <tr class="num-row">
+        <td class="left">1</td>
+        <td class="left">2</td>
+        <td class="left">3</td>
+        <td class="left">4</td>
+        <td class="left">5</td>
+        <td class="left">6</td>
+        <td class="left">7</td>
+        <td class="left">8</td>
+        <td class="left">9</td>
+        <td class="left">10</td>
+        <td class="left">11</td>
+        <td class="left">12</td>
+      </tr>
+
+      <tr class="data-row">
+        <td rowspan="3" class="left">1.</td>
+        <td rowspan="3">&nbsp;</td>
+        <td class="left">АППГ</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>3
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+      </tr>
+      <tr class="data-row">
+        <td class="left">Период учета</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+      </tr>
+      <tr class="data-row">
+        <td class="left">(+/-, %%)</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+      </tr>
+
+      <tr class="data-row">
+        <td rowspan="3" class="left">2.</td>
+        <td rowspan="3">&nbsp;</td>
+        <td class="left">АППГ</td>
+        <td>{{}}</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+      </tr>
+      <tr class="data-row">
+        <td class="left">Период учета</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+      </tr>
+      <tr class="data-row">
+        <td class="left">(+/-, %%)</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+        <td>&nbsp;</td>
+      </tr>
+    </table>
+
+    <div class="total-row">
+      Итого за период учета:
+      <span class="total-line"></span>
+    </div>
+  </div>
+</body>
+</html>
+
+</REFERENCE_SAMPLE>
+
+2. СПРАВКА ПО DSL
+Используй ТОЛЬКО функции и синтаксис, разрешённые в этой справке.
+Нельзя придумывать новые функции, которых нет в DSL.
+
+<DSL_SPEC>
+Поддерживаемый DSL агрегатов и формул:
+- агрегаты: count, sum, avg, min, max
+- селекторы: first, last
+- условия: where, eq, neq, gt, gte, lt, lte, between, in, not_in, contains, starts_with, ends_with, regex, is_null, not_null
+- даты: before, after, date_between
+- арифметика: +, -, *, /, add, sub, mul, div
+
+Примеры формул:
+- first(общая_колонка, where(п_п, eq(341)))
+- count(*, where(created_at, date_between(date(1, 1, 2025), date(31, 12, 2026))))
+- count(последствия_дтп_число_раненых_чел, var(road1))
+- add(count(последствия_дтп_число_погибших_чел, var(road1)), 1)
+</DSL_SPEC>
+
+3. HTML ПОСЛЕ ВТОРОГО СЛОЯ
+Это result.html после генерации структуры.
+Его НЕЛЬЗЯ переписывать.
+Он нужен только как контекст таблицы.
+
+<CURRENT_HTML>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Приложение Д — Форма №1</title>
+<style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Times New Roman", serif;
+      background: #ffffff;
+      color: #000000;
+    }
+
+    .page {
+      width: 1200px;
+      margin: 24px auto;
+      padding: 8px 10px 24px;
+    }
+
+    .top-note {
+      font-size: 18px;
+      line-height: 1.25;
+      margin-bottom: 10px;
+      font-weight: 700;
+    }
+
+    .top-note .sub {
+      display: block;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    .top-note .form {
+      display: block;
+      margin-top: 2px;
+      font-weight: 400;
+    }
+
+    .main-title {
+      text-align: center;
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 1.25;
+      margin: 14px 0 18px;
+    }
+
+    .line-row {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 16px;
+      align-items: end;
+      margin-bottom: 14px;
+    }
+
+    .line-block {
+      min-height: 48px;
+    }
+
+    .line {
+      border-bottom: 1px solid #000;
+      height: 22px;
+      width: 100%;
+    }
+
+    .line-caption {
+      text-align: center;
+      font-size: 14px;
+      margin-top: 6px;
+      line-height: 1.2;
+    }
+
+    .line-caption.nowrap { white-space: nowrap; }
+
+    .line-center-text {
+      align-self: center;
+      font-size: 18px;
+      padding: 0 8px;
+      white-space: nowrap;
+    }
+
+    .length-row {
+      text-align: center;
+      font-size: 18px;
+      margin: 10px 0 16px;
+    }
+
+    .inline-line {
+      display: inline-block;
+      border-bottom: 1px solid #000;
+      min-width: 60px;
+      height: 20px;
+      vertical-align: baseline;
+    }
+
+    table.form-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 15px;
+    }
+
+    .form-table th,
+    .form-table td {
+      border: 1px solid #000;
+      padding: 6px 4px;
+      vertical-align: middle;
+      word-wrap: break-word;
+    }
+
+    .form-table th {
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .form-table .left {
+      text-align: left;
+    }
+
+    .form-table .num-row td {
+      height: 40px;
+      text-align: center;
+    }
+
+    .form-table .data-row td {
+      height: 50px;
+    }
+
+    .form-table .w1  { width: 8%; }
+    .form-table .w2  { width: 8%; }
+    .form-table .w3  { width: 8%; }
+    .form-table .w4  { width: 8%; }
+    .form-table .w5  { width: 8%; }
+    .form-table .w6  { width: 8%; }
+    .form-table .w7  { width: 8%; }
+    .form-table .w8  { width: 8%; }
+    .form-table .w9  { width: 8%; }
+    .form-table .w10 { width: 8%; }
+    .form-table .w11 { width: 8%; }
+    .form-table .w12 { width: 8%; }
+
+    .total-row {
+      margin-top: 14px;
+      font-size: 18px;
+    }
+
+    .total-line {
+      display: inline-block;
+      border-bottom: 1px solid #000;
+      min-width: 120px;
+      height: 20px;
+      vertical-align: baseline;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .page {
+        width: auto;
+        margin: 0;
+        padding: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+<div class="top-note">
+      Приложение Д
+      <span class="sub">Формы анализа данных о дорожно-транспортных происшествиях</span>
+<span class="form">Форма № 1</span>
+</div>
+<div class="main-title">
+      Оценка тенденций изменения основных показателей аварийности на УДС,
+      находящейся в ведении
+    </div>
+<div class="line-row">
+<div class="line-block">
+<div class="line">{{owner_name}}</div>
+<div class="line-caption">(Владелец автомобильными дорогами)</div>
+</div>
+<div class="line-center-text">за</div>
+<div class="line-block">
+<div class="line">{{report_period}}</div>
+<div class="line-caption nowrap">Период учета (квартал, полугодие, девять месяцев, год)</div>
+</div>
+</div>
+<div class="length-row">
+      Общая протяженность УДС
+      <span class="inline-line">{{total_length_km}}</span>
+      км
+      <span class="inline-line" style="min-width: 40px;">{{total_length_m}}</span>
+      м
+    </div>
+<table class="form-table">
+<tr>
+<th class="w1" rowspan="3">№<br/>п\п</th>
+<th class="w2" rowspan="3">Наименование<br/>дороги<br/>(улицы)</th>
+<th class="w3" rowspan="3">Годы</th>
+<th class="left" colspan="4">Сведения о ДТП</th>
+<th class="left" colspan="5">
+          Сведения о ДТП, в местах совершения которых установлены
+          недостатки транспортно-эксплуатационного состояния УДС
+        </th>
+</tr>
+<tr>
+<th class="w4 left" rowspan="2">Количество ДТП</th>
+<th class="w5 left" rowspan="2">Ранено,<br/>чел.</th>
+<th class="w6 left" rowspan="2">Погибло,<br/>чел.</th>
+<th class="w7 left" rowspan="2">Показатель тяжести последствий ДТП</th>
+<th class="left" colspan="2">Количество ДТП</th>
+<th class="w10 left" rowspan="2">Ранено,<br/>чел.</th>
+<th class="w11 left" rowspan="2">Погибло,<br/>чел.</th>
+<th class="w12 left" rowspan="2">Показатель тяжести последствий ДТП</th>
+</tr>
+<tr>
+<th class="w8 left">Всего</th>
+<th class="w9 left">В % от общего количества ДТП</th>
+</tr>
+<tr class="num-row">
+<td class="left">1</td>
+<td class="left">2</td>
+<td class="left">3</td>
+<td class="left">4</td>
+<td class="left">5</td>
+<td class="left">6</td>
+<td class="left">7</td>
+<td class="left">8</td>
+<td class="left">9</td>
+<td class="left">10</td>
+<td class="left">11</td>
+<td class="left">12</td>
+</tr>
+<tr class="data-row">
+<td class="left" rowspan="3">1.</td>
+<td rowspan="3">{{road_name}}</td>
+<td class="left">АППГ</td>
+<td>{{accident_count}}</td>
+<td>{{injured_count}}</td>
+<td>{{dead_count}}</td>3
+        <td>{{severity_rate}}</td>
+<td>{{defect_accident_count}}</td>
+<td>{{defect_accident_share}}</td>
+<td>{{defect_injured_count}}</td>
+<td>{{defect_dead_count}}</td>
+<td>{{defect_severity_rate}}</td>
+</tr>
+<tr class="data-row">
+<td class="left">Период учета</td>
+<td>{{accident_count}}</td>
+<td>{{injured_count}}</td>
+<td>{{dead_count}}</td>
+<td>{{severity_rate}}</td>
+<td>{{defect_accident_count}}</td>
+<td>{{defect_accident_share}}</td>
+<td>{{defect_injured_count}}</td>
+<td>{{defect_dead_count}}</td>
+<td>{{defect_severity_rate}}</td>
+</tr>
+<tr class="data-row">
+<td class="left">(+/-, %%)</td>
+<td>{{accident_count}}</td>
+<td>{{injured_count}}</td>
+<td>{{dead_count}}</td>
+<td>{{severity_rate}}</td>
+<td>{{defect_accident_count}}</td>
+<td>{{defect_accident_share}}</td>
+<td>{{defect_injured_count}}</td>
+<td>{{defect_dead_count}}</td>
+<td>{{defect_severity_rate}}</td>
+</tr>
+<tr class="data-row">
+<td class="left" rowspan="3">2.</td>
+<td rowspan="3">{{road_name}}</td>
+<td class="left">АППГ</td>
+<td>{{accident_count}}</td>
+<td>{{injured_count}}</td>
+<td>{{dead_count}}</td>
+<td>{{severity_rate}}</td>
+<td>{{defect_accident_count}}</td>
+<td>{{defect_accident_share}}</td>
+<td>{{defect_injured_count}}</td>
+<td>{{defect_dead_count}}</td>
+<td>{{defect_severity_rate}}</td>
+</tr>
+<tr class="data-row">
+<td class="left">Период учета</td>
+<td>{{accident_count}}</td>
+<td>{{injured_count}}</td>
+<td>{{dead_count}}</td>
+<td>{{severity_rate}}</td>
+<td>{{defect_accident_count}}</td>
+<td>{{defect_accident_share}}</td>
+<td>{{defect_injured_count}}</td>
+<td>{{defect_dead_count}}</td>
+<td>{{defect_severity_rate}}</td>
+</tr>
+<tr class="data-row">
+<td class="left">(+/-, %%)</td>
+<td>{{accident_count}}</td>
+<td>{{injured_count}}</td>
+<td>{{dead_count}}</td>
+<td>{{severity_rate}}</td>
+<td>{{defect_accident_count}}</td>
+<td>{{defect_accident_share}}</td>
+<td>{{defect_injured_count}}</td>
+<td>{{defect_dead_count}}</td>
+<td>{{defect_severity_rate}}</td>
+</tr>
+</table>
+<div class="total-row">
+      Итого за период учета:
+      <span class="total-line">{{sum(accident_count)}}</span>
+</div>
+</div>
+</body>
+</html>
+</CURRENT_HTML>
+
+4. ИНДЕКСИРОВАННЫЙ СПИСОК PLACEHOLDER-ОВ
+Для каждого placeholder даны:
+- id
+- original_text
+- row_index
+- column_index
+- cell_text
+- row_text
+- upper_header
+- left_header
+- neighbor_cells
+- tag
+
+<PLACEHOLDER_INDEX_JSON>
+[
+  {
+    "id": "ph_001",
+    "raw_placeholder": "{{owner_name}}",
+    "inner": "owner_name",
+    "original_text": "owner_name",
+    "full_placeholder": "{{owner_name}}",
+    "document_order": 1,
+    "order": 1,
+    "start": 3605,
+    "end": 3619,
+    "row_index": null,
+    "column_index": null,
+    "cell_text": "owner_name",
+    "row_text": "",
+    "upper_header": "",
+    "left_header": "",
+    "neighbor_cells": [],
+    "tag": "div",
+    "cell_html": "",
+    "row_html": ""
+  },
+  {
+    "id": "ph_002",
+    "raw_placeholder": "{{report_period}}",
+    "inner": "report_period",
+    "original_text": "report_period",
+    "full_placeholder": "{{report_period}}",
+    "document_order": 2,
+    "order": 2,
+    "start": 3782,
+    "end": 3799,
+    "row_index": null,
+    "column_index": null,
+    "cell_text": "report_period",
+    "row_text": "",
+    "upper_header": "",
+    "left_header": "",
+    "neighbor_cells": [],
+    "tag": "div",
+    "cell_html": "",
+    "row_html": ""
+  },
+  {
+    "id": "ph_003",
+    "raw_placeholder": "{{total_length_km}}",
+    "inner": "total_length_km",
+    "original_text": "total_length_km",
+    "full_placeholder": "{{total_length_km}}",
+    "document_order": 3,
+    "order": 3,
+    "start": 4001,
+    "end": 4020,
+    "row_index": null,
+    "column_index": null,
+    "cell_text": "total_length_km",
+    "row_text": "",
+    "upper_header": "",
+    "left_header": "",
+    "neighbor_cells": [],
+    "tag": "span",
+    "cell_html": "",
+    "row_html": ""
+  },
+  {
+    "id": "ph_004",
+    "raw_placeholder": "{{total_length_m}}",
+    "inner": "total_length_m",
+    "original_text": "total_length_m",
+    "full_placeholder": "{{total_length_m}}",
+    "document_order": 4,
+    "order": 4,
+    "start": 4094,
+    "end": 4112,
+    "row_index": null,
+    "column_index": null,
+    "cell_text": "total_length_m",
+    "row_text": "",
+    "upper_header": "",
+    "left_header": "",
+    "neighbor_cells": [],
+    "tag": "span",
+    "cell_html": "",
+    "row_html": ""
+  },
+  {
+    "id": "ph_005",
+    "raw_placeholder": "{{road_name}}",
+    "inner": "road_name",
+    "original_text": "road_name",
+    "full_placeholder": "{{road_name}}",
+    "document_order": 5,
+    "order": 5,
+    "start": 5514,
+    "end": 5527,
+    "row_index": 4,
+    "column_index": 1,
+    "cell_text": "road_name",
+    "row_text": "1. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "В % от общего количества ДТП",
+    "left_header": "1.",
+    "neighbor_cells": [
+      "1.",
+      "АППГ"
+    ],
+    "tag": "td",
+    "cell_html": "<td rowspan=\"3\">{{road_name}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">1.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>3\n        <td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_006",
+    "raw_placeholder": "{{accident_count}}",
+    "inner": "accident_count",
+    "original_text": "accident_count",
+    "full_placeholder": "{{accident_count}}",
+    "document_order": 6,
+    "order": 6,
+    "start": 5564,
+    "end": 5582,
+    "row_index": 4,
+    "column_index": 3,
+    "cell_text": "accident_count",
+    "row_text": "1. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Показатель тяжести последствий ДТП",
+    "left_header": "АППГ",
+    "neighbor_cells": [
+      "АППГ",
+      "injured_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{accident_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">1.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>3\n        <td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_007",
+    "raw_placeholder": "{{injured_count}}",
+    "inner": "injured_count",
+    "original_text": "injured_count",
+    "full_placeholder": "{{injured_count}}",
+    "document_order": 7,
+    "order": 7,
+    "start": 5592,
+    "end": 5609,
+    "row_index": 4,
+    "column_index": 4,
+    "cell_text": "injured_count",
+    "row_text": "1. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Количество ДТП",
+    "left_header": "accident_count",
+    "neighbor_cells": [
+      "accident_count",
+      "dead_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{injured_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">1.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>3\n        <td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_008",
+    "raw_placeholder": "{{dead_count}}",
+    "inner": "dead_count",
+    "original_text": "dead_count",
+    "full_placeholder": "{{dead_count}}",
+    "document_order": 8,
+    "order": 8,
+    "start": 5619,
+    "end": 5633,
+    "row_index": 4,
+    "column_index": 5,
+    "cell_text": "dead_count",
+    "row_text": "1. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Количество ДТП",
+    "left_header": "injured_count",
+    "neighbor_cells": [
+      "injured_count",
+      "severity_rate"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{dead_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">1.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>3\n        <td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_009",
+    "raw_placeholder": "{{severity_rate}}",
+    "inner": "severity_rate",
+    "original_text": "severity_rate",
+    "full_placeholder": "{{severity_rate}}",
+    "document_order": 9,
+    "order": 9,
+    "start": 5652,
+    "end": 5669,
+    "row_index": 4,
+    "column_index": 6,
+    "cell_text": "severity_rate",
+    "row_text": "1. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Ранено, чел.",
+    "left_header": "dead_count",
+    "neighbor_cells": [
+      "dead_count",
+      "defect_accident_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{severity_rate}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">1.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>3\n        <td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_010",
+    "raw_placeholder": "{{defect_accident_count}}",
+    "inner": "defect_accident_count",
+    "original_text": "defect_accident_count",
+    "full_placeholder": "{{defect_accident_count}}",
+    "document_order": 10,
+    "order": 10,
+    "start": 5679,
+    "end": 5704,
+    "row_index": 4,
+    "column_index": 7,
+    "cell_text": "defect_accident_count",
+    "row_text": "1. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Погибло, чел.",
+    "left_header": "severity_rate",
+    "neighbor_cells": [
+      "severity_rate",
+      "defect_accident_share"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_accident_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">1.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>3\n        <td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_011",
+    "raw_placeholder": "{{defect_accident_share}}",
+    "inner": "defect_accident_share",
+    "original_text": "defect_accident_share",
+    "full_placeholder": "{{defect_accident_share}}",
+    "document_order": 11,
+    "order": 11,
+    "start": 5714,
+    "end": 5739,
+    "row_index": 4,
+    "column_index": 8,
+    "cell_text": "defect_accident_share",
+    "row_text": "1. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Показатель тяжести последствий ДТП",
+    "left_header": "defect_accident_count",
+    "neighbor_cells": [
+      "defect_accident_count",
+      "defect_injured_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_accident_share}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">1.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>3\n        <td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_012",
+    "raw_placeholder": "{{defect_injured_count}}",
+    "inner": "defect_injured_count",
+    "original_text": "defect_injured_count",
+    "full_placeholder": "{{defect_injured_count}}",
+    "document_order": 12,
+    "order": 12,
+    "start": 5749,
+    "end": 5773,
+    "row_index": 4,
+    "column_index": 9,
+    "cell_text": "defect_injured_count",
+    "row_text": "1. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Сведения о ДТП, в местах совершения которых установлены недостатки транспортно-эксплуатационного состояния УДС",
+    "left_header": "defect_accident_share",
+    "neighbor_cells": [
+      "defect_accident_share",
+      "defect_dead_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_injured_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">1.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>3\n        <td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_013",
+    "raw_placeholder": "{{defect_dead_count}}",
+    "inner": "defect_dead_count",
+    "original_text": "defect_dead_count",
+    "full_placeholder": "{{defect_dead_count}}",
+    "document_order": 13,
+    "order": 13,
+    "start": 5783,
+    "end": 5804,
+    "row_index": 4,
+    "column_index": 10,
+    "cell_text": "defect_dead_count",
+    "row_text": "1. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Сведения о ДТП, в местах совершения которых установлены недостатки транспортно-эксплуатационного состояния УДС",
+    "left_header": "defect_injured_count",
+    "neighbor_cells": [
+      "defect_injured_count",
+      "defect_severity_rate"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_dead_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">1.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>3\n        <td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_014",
+    "raw_placeholder": "{{defect_severity_rate}}",
+    "inner": "defect_severity_rate",
+    "original_text": "defect_severity_rate",
+    "full_placeholder": "{{defect_severity_rate}}",
+    "document_order": 14,
+    "order": 14,
+    "start": 5814,
+    "end": 5838,
+    "row_index": 4,
+    "column_index": 11,
+    "cell_text": "defect_severity_rate",
+    "row_text": "1. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Сведения о ДТП, в местах совершения которых установлены недостатки транспортно-эксплуатационного состояния УДС",
+    "left_header": "defect_dead_count",
+    "neighbor_cells": [
+      "defect_dead_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_severity_rate}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">1.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>3\n        <td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_015",
+    "raw_placeholder": "{{accident_count}}",
+    "inner": "accident_count",
+    "original_text": "accident_count",
+    "full_placeholder": "{{accident_count}}",
+    "document_order": 15,
+    "order": 15,
+    "start": 5911,
+    "end": 5929,
+    "row_index": 5,
+    "column_index": 1,
+    "cell_text": "accident_count",
+    "row_text": "Период учета | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "В % от общего количества ДТП",
+    "left_header": "Период учета",
+    "neighbor_cells": [
+      "Период учета",
+      "injured_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{accident_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">Период учета</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_016",
+    "raw_placeholder": "{{injured_count}}",
+    "inner": "injured_count",
+    "original_text": "injured_count",
+    "full_placeholder": "{{injured_count}}",
+    "document_order": 16,
+    "order": 16,
+    "start": 5939,
+    "end": 5956,
+    "row_index": 5,
+    "column_index": 2,
+    "cell_text": "injured_count",
+    "row_text": "Период учета | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Погибло, чел.",
+    "left_header": "accident_count",
+    "neighbor_cells": [
+      "accident_count",
+      "dead_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{injured_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">Период учета</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_017",
+    "raw_placeholder": "{{dead_count}}",
+    "inner": "dead_count",
+    "original_text": "dead_count",
+    "full_placeholder": "{{dead_count}}",
+    "document_order": 17,
+    "order": 17,
+    "start": 5966,
+    "end": 5980,
+    "row_index": 5,
+    "column_index": 3,
+    "cell_text": "dead_count",
+    "row_text": "Период учета | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Показатель тяжести последствий ДТП",
+    "left_header": "injured_count",
+    "neighbor_cells": [
+      "injured_count",
+      "severity_rate"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{dead_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">Период учета</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_018",
+    "raw_placeholder": "{{severity_rate}}",
+    "inner": "severity_rate",
+    "original_text": "severity_rate",
+    "full_placeholder": "{{severity_rate}}",
+    "document_order": 18,
+    "order": 18,
+    "start": 5990,
+    "end": 6007,
+    "row_index": 5,
+    "column_index": 4,
+    "cell_text": "severity_rate",
+    "row_text": "Период учета | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Количество ДТП",
+    "left_header": "dead_count",
+    "neighbor_cells": [
+      "dead_count",
+      "defect_accident_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{severity_rate}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">Период учета</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_019",
+    "raw_placeholder": "{{defect_accident_count}}",
+    "inner": "defect_accident_count",
+    "original_text": "defect_accident_count",
+    "full_placeholder": "{{defect_accident_count}}",
+    "document_order": 19,
+    "order": 19,
+    "start": 6017,
+    "end": 6042,
+    "row_index": 5,
+    "column_index": 5,
+    "cell_text": "defect_accident_count",
+    "row_text": "Период учета | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Количество ДТП",
+    "left_header": "severity_rate",
+    "neighbor_cells": [
+      "severity_rate",
+      "defect_accident_share"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_accident_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">Период учета</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_020",
+    "raw_placeholder": "{{defect_accident_share}}",
+    "inner": "defect_accident_share",
+    "original_text": "defect_accident_share",
+    "full_placeholder": "{{defect_accident_share}}",
+    "document_order": 20,
+    "order": 20,
+    "start": 6052,
+    "end": 6077,
+    "row_index": 5,
+    "column_index": 6,
+    "cell_text": "defect_accident_share",
+    "row_text": "Период учета | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Ранено, чел.",
+    "left_header": "defect_accident_count",
+    "neighbor_cells": [
+      "defect_accident_count",
+      "defect_injured_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_accident_share}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">Период учета</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_021",
+    "raw_placeholder": "{{defect_injured_count}}",
+    "inner": "defect_injured_count",
+    "original_text": "defect_injured_count",
+    "full_placeholder": "{{defect_injured_count}}",
+    "document_order": 21,
+    "order": 21,
+    "start": 6087,
+    "end": 6111,
+    "row_index": 5,
+    "column_index": 7,
+    "cell_text": "defect_injured_count",
+    "row_text": "Период учета | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Погибло, чел.",
+    "left_header": "defect_accident_share",
+    "neighbor_cells": [
+      "defect_accident_share",
+      "defect_dead_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_injured_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">Период учета</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_022",
+    "raw_placeholder": "{{defect_dead_count}}",
+    "inner": "defect_dead_count",
+    "original_text": "defect_dead_count",
+    "full_placeholder": "{{defect_dead_count}}",
+    "document_order": 22,
+    "order": 22,
+    "start": 6121,
+    "end": 6142,
+    "row_index": 5,
+    "column_index": 8,
+    "cell_text": "defect_dead_count",
+    "row_text": "Период учета | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Показатель тяжести последствий ДТП",
+    "left_header": "defect_injured_count",
+    "neighbor_cells": [
+      "defect_injured_count",
+      "defect_severity_rate"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_dead_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">Период учета</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_023",
+    "raw_placeholder": "{{defect_severity_rate}}",
+    "inner": "defect_severity_rate",
+    "original_text": "defect_severity_rate",
+    "full_placeholder": "{{defect_severity_rate}}",
+    "document_order": 23,
+    "order": 23,
+    "start": 6152,
+    "end": 6176,
+    "row_index": 5,
+    "column_index": 9,
+    "cell_text": "defect_severity_rate",
+    "row_text": "Период учета | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Сведения о ДТП, в местах совершения которых установлены недостатки транспортно-эксплуатационного состояния УДС",
+    "left_header": "defect_dead_count",
+    "neighbor_cells": [
+      "defect_dead_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_severity_rate}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">Период учета</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_024",
+    "raw_placeholder": "{{accident_count}}",
+    "inner": "accident_count",
+    "original_text": "accident_count",
+    "full_placeholder": "{{accident_count}}",
+    "document_order": 24,
+    "order": 24,
+    "start": 6246,
+    "end": 6264,
+    "row_index": 6,
+    "column_index": 1,
+    "cell_text": "accident_count",
+    "row_text": "(+/-, %%) | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "В % от общего количества ДТП",
+    "left_header": "(+/-, %%)",
+    "neighbor_cells": [
+      "(+/-, %%)",
+      "injured_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{accident_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">(+/-, %%)</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_025",
+    "raw_placeholder": "{{injured_count}}",
+    "inner": "injured_count",
+    "original_text": "injured_count",
+    "full_placeholder": "{{injured_count}}",
+    "document_order": 25,
+    "order": 25,
+    "start": 6274,
+    "end": 6291,
+    "row_index": 6,
+    "column_index": 2,
+    "cell_text": "injured_count",
+    "row_text": "(+/-, %%) | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Погибло, чел.",
+    "left_header": "accident_count",
+    "neighbor_cells": [
+      "accident_count",
+      "dead_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{injured_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">(+/-, %%)</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_026",
+    "raw_placeholder": "{{dead_count}}",
+    "inner": "dead_count",
+    "original_text": "dead_count",
+    "full_placeholder": "{{dead_count}}",
+    "document_order": 26,
+    "order": 26,
+    "start": 6301,
+    "end": 6315,
+    "row_index": 6,
+    "column_index": 3,
+    "cell_text": "dead_count",
+    "row_text": "(+/-, %%) | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Показатель тяжести последствий ДТП",
+    "left_header": "injured_count",
+    "neighbor_cells": [
+      "injured_count",
+      "severity_rate"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{dead_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">(+/-, %%)</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_027",
+    "raw_placeholder": "{{severity_rate}}",
+    "inner": "severity_rate",
+    "original_text": "severity_rate",
+    "full_placeholder": "{{severity_rate}}",
+    "document_order": 27,
+    "order": 27,
+    "start": 6325,
+    "end": 6342,
+    "row_index": 6,
+    "column_index": 4,
+    "cell_text": "severity_rate",
+    "row_text": "(+/-, %%) | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Количество ДТП",
+    "left_header": "dead_count",
+    "neighbor_cells": [
+      "dead_count",
+      "defect_accident_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{severity_rate}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">(+/-, %%)</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_028",
+    "raw_placeholder": "{{defect_accident_count}}",
+    "inner": "defect_accident_count",
+    "original_text": "defect_accident_count",
+    "full_placeholder": "{{defect_accident_count}}",
+    "document_order": 28,
+    "order": 28,
+    "start": 6352,
+    "end": 6377,
+    "row_index": 6,
+    "column_index": 5,
+    "cell_text": "defect_accident_count",
+    "row_text": "(+/-, %%) | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Количество ДТП",
+    "left_header": "severity_rate",
+    "neighbor_cells": [
+      "severity_rate",
+      "defect_accident_share"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_accident_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">(+/-, %%)</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_029",
+    "raw_placeholder": "{{defect_accident_share}}",
+    "inner": "defect_accident_share",
+    "original_text": "defect_accident_share",
+    "full_placeholder": "{{defect_accident_share}}",
+    "document_order": 29,
+    "order": 29,
+    "start": 6387,
+    "end": 6412,
+    "row_index": 6,
+    "column_index": 6,
+    "cell_text": "defect_accident_share",
+    "row_text": "(+/-, %%) | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Ранено, чел.",
+    "left_header": "defect_accident_count",
+    "neighbor_cells": [
+      "defect_accident_count",
+      "defect_injured_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_accident_share}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">(+/-, %%)</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_030",
+    "raw_placeholder": "{{defect_injured_count}}",
+    "inner": "defect_injured_count",
+    "original_text": "defect_injured_count",
+    "full_placeholder": "{{defect_injured_count}}",
+    "document_order": 30,
+    "order": 30,
+    "start": 6422,
+    "end": 6446,
+    "row_index": 6,
+    "column_index": 7,
+    "cell_text": "defect_injured_count",
+    "row_text": "(+/-, %%) | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Погибло, чел.",
+    "left_header": "defect_accident_share",
+    "neighbor_cells": [
+      "defect_accident_share",
+      "defect_dead_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_injured_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">(+/-, %%)</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_031",
+    "raw_placeholder": "{{defect_dead_count}}",
+    "inner": "defect_dead_count",
+    "original_text": "defect_dead_count",
+    "full_placeholder": "{{defect_dead_count}}",
+    "document_order": 31,
+    "order": 31,
+    "start": 6456,
+    "end": 6477,
+    "row_index": 6,
+    "column_index": 8,
+    "cell_text": "defect_dead_count",
+    "row_text": "(+/-, %%) | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Показатель тяжести последствий ДТП",
+    "left_header": "defect_injured_count",
+    "neighbor_cells": [
+      "defect_injured_count",
+      "defect_severity_rate"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_dead_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">(+/-, %%)</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_032",
+    "raw_placeholder": "{{defect_severity_rate}}",
+    "inner": "defect_severity_rate",
+    "original_text": "defect_severity_rate",
+    "full_placeholder": "{{defect_severity_rate}}",
+    "document_order": 32,
+    "order": 32,
+    "start": 6487,
+    "end": 6511,
+    "row_index": 6,
+    "column_index": 9,
+    "cell_text": "defect_severity_rate",
+    "row_text": "(+/-, %%) | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Сведения о ДТП, в местах совершения которых установлены недостатки транспортно-эксплуатационного состояния УДС",
+    "left_header": "defect_dead_count",
+    "neighbor_cells": [
+      "defect_dead_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_severity_rate}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">(+/-, %%)</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_033",
+    "raw_placeholder": "{{road_name}}",
+    "inner": "road_name",
+    "original_text": "road_name",
+    "full_placeholder": "{{road_name}}",
+    "document_order": 33,
+    "order": 33,
+    "start": 6598,
+    "end": 6611,
+    "row_index": 7,
+    "column_index": 1,
+    "cell_text": "road_name",
+    "row_text": "2. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "В % от общего количества ДТП",
+    "left_header": "2.",
+    "neighbor_cells": [
+      "2.",
+      "АППГ"
+    ],
+    "tag": "td",
+    "cell_html": "<td rowspan=\"3\">{{road_name}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">2.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_034",
+    "raw_placeholder": "{{accident_count}}",
+    "inner": "accident_count",
+    "original_text": "accident_count",
+    "full_placeholder": "{{accident_count}}",
+    "document_order": 34,
+    "order": 34,
+    "start": 6648,
+    "end": 6666,
+    "row_index": 7,
+    "column_index": 3,
+    "cell_text": "accident_count",
+    "row_text": "2. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Показатель тяжести последствий ДТП",
+    "left_header": "АППГ",
+    "neighbor_cells": [
+      "АППГ",
+      "injured_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{accident_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">2.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_035",
+    "raw_placeholder": "{{injured_count}}",
+    "inner": "injured_count",
+    "original_text": "injured_count",
+    "full_placeholder": "{{injured_count}}",
+    "document_order": 35,
+    "order": 35,
+    "start": 6676,
+    "end": 6693,
+    "row_index": 7,
+    "column_index": 4,
+    "cell_text": "injured_count",
+    "row_text": "2. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Количество ДТП",
+    "left_header": "accident_count",
+    "neighbor_cells": [
+      "accident_count",
+      "dead_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{injured_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">2.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_036",
+    "raw_placeholder": "{{dead_count}}",
+    "inner": "dead_count",
+    "original_text": "dead_count",
+    "full_placeholder": "{{dead_count}}",
+    "document_order": 36,
+    "order": 36,
+    "start": 6703,
+    "end": 6717,
+    "row_index": 7,
+    "column_index": 5,
+    "cell_text": "dead_count",
+    "row_text": "2. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Количество ДТП",
+    "left_header": "injured_count",
+    "neighbor_cells": [
+      "injured_count",
+      "severity_rate"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{dead_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">2.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_037",
+    "raw_placeholder": "{{severity_rate}}",
+    "inner": "severity_rate",
+    "original_text": "severity_rate",
+    "full_placeholder": "{{severity_rate}}",
+    "document_order": 37,
+    "order": 37,
+    "start": 6727,
+    "end": 6744,
+    "row_index": 7,
+    "column_index": 6,
+    "cell_text": "severity_rate",
+    "row_text": "2. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Ранено, чел.",
+    "left_header": "dead_count",
+    "neighbor_cells": [
+      "dead_count",
+      "defect_accident_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{severity_rate}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">2.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_038",
+    "raw_placeholder": "{{defect_accident_count}}",
+    "inner": "defect_accident_count",
+    "original_text": "defect_accident_count",
+    "full_placeholder": "{{defect_accident_count}}",
+    "document_order": 38,
+    "order": 38,
+    "start": 6754,
+    "end": 6779,
+    "row_index": 7,
+    "column_index": 7,
+    "cell_text": "defect_accident_count",
+    "row_text": "2. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Погибло, чел.",
+    "left_header": "severity_rate",
+    "neighbor_cells": [
+      "severity_rate",
+      "defect_accident_share"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_accident_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">2.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_039",
+    "raw_placeholder": "{{defect_accident_share}}",
+    "inner": "defect_accident_share",
+    "original_text": "defect_accident_share",
+    "full_placeholder": "{{defect_accident_share}}",
+    "document_order": 39,
+    "order": 39,
+    "start": 6789,
+    "end": 6814,
+    "row_index": 7,
+    "column_index": 8,
+    "cell_text": "defect_accident_share",
+    "row_text": "2. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Показатель тяжести последствий ДТП",
+    "left_header": "defect_accident_count",
+    "neighbor_cells": [
+      "defect_accident_count",
+      "defect_injured_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_accident_share}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">2.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_040",
+    "raw_placeholder": "{{defect_injured_count}}",
+    "inner": "defect_injured_count",
+    "original_text": "defect_injured_count",
+    "full_placeholder": "{{defect_injured_count}}",
+    "document_order": 40,
+    "order": 40,
+    "start": 6824,
+    "end": 6848,
+    "row_index": 7,
+    "column_index": 9,
+    "cell_text": "defect_injured_count",
+    "row_text": "2. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Сведения о ДТП, в местах совершения которых установлены недостатки транспортно-эксплуатационного состояния УДС",
+    "left_header": "defect_accident_share",
+    "neighbor_cells": [
+      "defect_accident_share",
+      "defect_dead_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_injured_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">2.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_041",
+    "raw_placeholder": "{{defect_dead_count}}",
+    "inner": "defect_dead_count",
+    "original_text": "defect_dead_count",
+    "full_placeholder": "{{defect_dead_count}}",
+    "document_order": 41,
+    "order": 41,
+    "start": 6858,
+    "end": 6879,
+    "row_index": 7,
+    "column_index": 10,
+    "cell_text": "defect_dead_count",
+    "row_text": "2. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Сведения о ДТП, в местах совершения которых установлены недостатки транспортно-эксплуатационного состояния УДС",
+    "left_header": "defect_injured_count",
+    "neighbor_cells": [
+      "defect_injured_count",
+      "defect_severity_rate"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_dead_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">2.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_042",
+    "raw_placeholder": "{{defect_severity_rate}}",
+    "inner": "defect_severity_rate",
+    "original_text": "defect_severity_rate",
+    "full_placeholder": "{{defect_severity_rate}}",
+    "document_order": 42,
+    "order": 42,
+    "start": 6889,
+    "end": 6913,
+    "row_index": 7,
+    "column_index": 11,
+    "cell_text": "defect_severity_rate",
+    "row_text": "2. | road_name | АППГ | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Сведения о ДТП, в местах совершения которых установлены недостатки транспортно-эксплуатационного состояния УДС",
+    "left_header": "defect_dead_count",
+    "neighbor_cells": [
+      "defect_dead_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_severity_rate}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\" rowspan=\"3\">2.</td>\n<td rowspan=\"3\">{{road_name}}</td>\n<td class=\"left\">АППГ</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_043",
+    "raw_placeholder": "{{accident_count}}",
+    "inner": "accident_count",
+    "original_text": "accident_count",
+    "full_placeholder": "{{accident_count}}",
+    "document_order": 43,
+    "order": 43,
+    "start": 6986,
+    "end": 7004,
+    "row_index": 8,
+    "column_index": 1,
+    "cell_text": "accident_count",
+    "row_text": "Период учета | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "В % от общего количества ДТП",
+    "left_header": "Период учета",
+    "neighbor_cells": [
+      "Период учета",
+      "injured_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{accident_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">Период учета</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_044",
+    "raw_placeholder": "{{injured_count}}",
+    "inner": "injured_count",
+    "original_text": "injured_count",
+    "full_placeholder": "{{injured_count}}",
+    "document_order": 44,
+    "order": 44,
+    "start": 7014,
+    "end": 7031,
+    "row_index": 8,
+    "column_index": 2,
+    "cell_text": "injured_count",
+    "row_text": "Период учета | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Погибло, чел.",
+    "left_header": "accident_count",
+    "neighbor_cells": [
+      "accident_count",
+      "dead_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{injured_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">Период учета</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_045",
+    "raw_placeholder": "{{dead_count}}",
+    "inner": "dead_count",
+    "original_text": "dead_count",
+    "full_placeholder": "{{dead_count}}",
+    "document_order": 45,
+    "order": 45,
+    "start": 7041,
+    "end": 7055,
+    "row_index": 8,
+    "column_index": 3,
+    "cell_text": "dead_count",
+    "row_text": "Период учета | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Показатель тяжести последствий ДТП",
+    "left_header": "injured_count",
+    "neighbor_cells": [
+      "injured_count",
+      "severity_rate"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{dead_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">Период учета</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_046",
+    "raw_placeholder": "{{severity_rate}}",
+    "inner": "severity_rate",
+    "original_text": "severity_rate",
+    "full_placeholder": "{{severity_rate}}",
+    "document_order": 46,
+    "order": 46,
+    "start": 7065,
+    "end": 7082,
+    "row_index": 8,
+    "column_index": 4,
+    "cell_text": "severity_rate",
+    "row_text": "Период учета | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Количество ДТП",
+    "left_header": "dead_count",
+    "neighbor_cells": [
+      "dead_count",
+      "defect_accident_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{severity_rate}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">Период учета</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_047",
+    "raw_placeholder": "{{defect_accident_count}}",
+    "inner": "defect_accident_count",
+    "original_text": "defect_accident_count",
+    "full_placeholder": "{{defect_accident_count}}",
+    "document_order": 47,
+    "order": 47,
+    "start": 7092,
+    "end": 7117,
+    "row_index": 8,
+    "column_index": 5,
+    "cell_text": "defect_accident_count",
+    "row_text": "Период учета | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Количество ДТП",
+    "left_header": "severity_rate",
+    "neighbor_cells": [
+      "severity_rate",
+      "defect_accident_share"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_accident_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">Период учета</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_048",
+    "raw_placeholder": "{{defect_accident_share}}",
+    "inner": "defect_accident_share",
+    "original_text": "defect_accident_share",
+    "full_placeholder": "{{defect_accident_share}}",
+    "document_order": 48,
+    "order": 48,
+    "start": 7127,
+    "end": 7152,
+    "row_index": 8,
+    "column_index": 6,
+    "cell_text": "defect_accident_share",
+    "row_text": "Период учета | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Ранено, чел.",
+    "left_header": "defect_accident_count",
+    "neighbor_cells": [
+      "defect_accident_count",
+      "defect_injured_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_accident_share}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">Период учета</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_049",
+    "raw_placeholder": "{{defect_injured_count}}",
+    "inner": "defect_injured_count",
+    "original_text": "defect_injured_count",
+    "full_placeholder": "{{defect_injured_count}}",
+    "document_order": 49,
+    "order": 49,
+    "start": 7162,
+    "end": 7186,
+    "row_index": 8,
+    "column_index": 7,
+    "cell_text": "defect_injured_count",
+    "row_text": "Период учета | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Погибло, чел.",
+    "left_header": "defect_accident_share",
+    "neighbor_cells": [
+      "defect_accident_share",
+      "defect_dead_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_injured_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">Период учета</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_050",
+    "raw_placeholder": "{{defect_dead_count}}",
+    "inner": "defect_dead_count",
+    "original_text": "defect_dead_count",
+    "full_placeholder": "{{defect_dead_count}}",
+    "document_order": 50,
+    "order": 50,
+    "start": 7196,
+    "end": 7217,
+    "row_index": 8,
+    "column_index": 8,
+    "cell_text": "defect_dead_count",
+    "row_text": "Период учета | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Показатель тяжести последствий ДТП",
+    "left_header": "defect_injured_count",
+    "neighbor_cells": [
+      "defect_injured_count",
+      "defect_severity_rate"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_dead_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">Период учета</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_051",
+    "raw_placeholder": "{{defect_severity_rate}}",
+    "inner": "defect_severity_rate",
+    "original_text": "defect_severity_rate",
+    "full_placeholder": "{{defect_severity_rate}}",
+    "document_order": 51,
+    "order": 51,
+    "start": 7227,
+    "end": 7251,
+    "row_index": 8,
+    "column_index": 9,
+    "cell_text": "defect_severity_rate",
+    "row_text": "Период учета | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Сведения о ДТП, в местах совершения которых установлены недостатки транспортно-эксплуатационного состояния УДС",
+    "left_header": "defect_dead_count",
+    "neighbor_cells": [
+      "defect_dead_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_severity_rate}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">Период учета</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_052",
+    "raw_placeholder": "{{accident_count}}",
+    "inner": "accident_count",
+    "original_text": "accident_count",
+    "full_placeholder": "{{accident_count}}",
+    "document_order": 52,
+    "order": 52,
+    "start": 7321,
+    "end": 7339,
+    "row_index": 9,
+    "column_index": 1,
+    "cell_text": "accident_count",
+    "row_text": "(+/-, %%) | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "В % от общего количества ДТП",
+    "left_header": "(+/-, %%)",
+    "neighbor_cells": [
+      "(+/-, %%)",
+      "injured_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{accident_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">(+/-, %%)</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_053",
+    "raw_placeholder": "{{injured_count}}",
+    "inner": "injured_count",
+    "original_text": "injured_count",
+    "full_placeholder": "{{injured_count}}",
+    "document_order": 53,
+    "order": 53,
+    "start": 7349,
+    "end": 7366,
+    "row_index": 9,
+    "column_index": 2,
+    "cell_text": "injured_count",
+    "row_text": "(+/-, %%) | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Погибло, чел.",
+    "left_header": "accident_count",
+    "neighbor_cells": [
+      "accident_count",
+      "dead_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{injured_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">(+/-, %%)</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_054",
+    "raw_placeholder": "{{dead_count}}",
+    "inner": "dead_count",
+    "original_text": "dead_count",
+    "full_placeholder": "{{dead_count}}",
+    "document_order": 54,
+    "order": 54,
+    "start": 7376,
+    "end": 7390,
+    "row_index": 9,
+    "column_index": 3,
+    "cell_text": "dead_count",
+    "row_text": "(+/-, %%) | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Показатель тяжести последствий ДТП",
+    "left_header": "injured_count",
+    "neighbor_cells": [
+      "injured_count",
+      "severity_rate"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{dead_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">(+/-, %%)</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_055",
+    "raw_placeholder": "{{severity_rate}}",
+    "inner": "severity_rate",
+    "original_text": "severity_rate",
+    "full_placeholder": "{{severity_rate}}",
+    "document_order": 55,
+    "order": 55,
+    "start": 7400,
+    "end": 7417,
+    "row_index": 9,
+    "column_index": 4,
+    "cell_text": "severity_rate",
+    "row_text": "(+/-, %%) | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Количество ДТП",
+    "left_header": "dead_count",
+    "neighbor_cells": [
+      "dead_count",
+      "defect_accident_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{severity_rate}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">(+/-, %%)</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_056",
+    "raw_placeholder": "{{defect_accident_count}}",
+    "inner": "defect_accident_count",
+    "original_text": "defect_accident_count",
+    "full_placeholder": "{{defect_accident_count}}",
+    "document_order": 56,
+    "order": 56,
+    "start": 7427,
+    "end": 7452,
+    "row_index": 9,
+    "column_index": 5,
+    "cell_text": "defect_accident_count",
+    "row_text": "(+/-, %%) | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Количество ДТП",
+    "left_header": "severity_rate",
+    "neighbor_cells": [
+      "severity_rate",
+      "defect_accident_share"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_accident_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">(+/-, %%)</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_057",
+    "raw_placeholder": "{{defect_accident_share}}",
+    "inner": "defect_accident_share",
+    "original_text": "defect_accident_share",
+    "full_placeholder": "{{defect_accident_share}}",
+    "document_order": 57,
+    "order": 57,
+    "start": 7462,
+    "end": 7487,
+    "row_index": 9,
+    "column_index": 6,
+    "cell_text": "defect_accident_share",
+    "row_text": "(+/-, %%) | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Ранено, чел.",
+    "left_header": "defect_accident_count",
+    "neighbor_cells": [
+      "defect_accident_count",
+      "defect_injured_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_accident_share}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">(+/-, %%)</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_058",
+    "raw_placeholder": "{{defect_injured_count}}",
+    "inner": "defect_injured_count",
+    "original_text": "defect_injured_count",
+    "full_placeholder": "{{defect_injured_count}}",
+    "document_order": 58,
+    "order": 58,
+    "start": 7497,
+    "end": 7521,
+    "row_index": 9,
+    "column_index": 7,
+    "cell_text": "defect_injured_count",
+    "row_text": "(+/-, %%) | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Погибло, чел.",
+    "left_header": "defect_accident_share",
+    "neighbor_cells": [
+      "defect_accident_share",
+      "defect_dead_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_injured_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">(+/-, %%)</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_059",
+    "raw_placeholder": "{{defect_dead_count}}",
+    "inner": "defect_dead_count",
+    "original_text": "defect_dead_count",
+    "full_placeholder": "{{defect_dead_count}}",
+    "document_order": 59,
+    "order": 59,
+    "start": 7531,
+    "end": 7552,
+    "row_index": 9,
+    "column_index": 8,
+    "cell_text": "defect_dead_count",
+    "row_text": "(+/-, %%) | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Показатель тяжести последствий ДТП",
+    "left_header": "defect_injured_count",
+    "neighbor_cells": [
+      "defect_injured_count",
+      "defect_severity_rate"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_dead_count}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">(+/-, %%)</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_060",
+    "raw_placeholder": "{{defect_severity_rate}}",
+    "inner": "defect_severity_rate",
+    "original_text": "defect_severity_rate",
+    "full_placeholder": "{{defect_severity_rate}}",
+    "document_order": 60,
+    "order": 60,
+    "start": 7562,
+    "end": 7586,
+    "row_index": 9,
+    "column_index": 9,
+    "cell_text": "defect_severity_rate",
+    "row_text": "(+/-, %%) | accident_count | injured_count | dead_count | severity_rate | defect_accident_count | defect_accident_share | defect_injured_count | defect_dead_count | defect_severity_rate",
+    "upper_header": "Сведения о ДТП, в местах совершения которых установлены недостатки транспортно-эксплуатационного состояния УДС",
+    "left_header": "defect_dead_count",
+    "neighbor_cells": [
+      "defect_dead_count"
+    ],
+    "tag": "td",
+    "cell_html": "<td>{{defect_severity_rate}}</td>",
+    "row_html": "<tr class=\"data-row\">\n<td class=\"left\">(+/-, %%)</td>\n<td>{{accident_count}}</td>\n<td>{{injured_count}}</td>\n<td>{{dead_count}}</td>\n<td>{{severity_rate}}</td>\n<td>{{defect_accident_count}}</td>\n<td>{{defect_accident_share}}</td>\n<td>{{defect_injured_count}}</td>\n<td>{{defect_dead_count}}</td>\n<td>{{defect_severity_rate}}</td>\n</tr>"
+  },
+  {
+    "id": "ph_061",
+    "raw_placeholder": "{{sum(accident_count)}}",
+    "inner": "sum(accident_count)",
+    "original_text": "sum(accident_count)",
+    "full_placeholder": "{{sum(accident_count)}}",
+    "document_order": 61,
+    "order": 61,
+    "start": 7691,
+    "end": 7714,
+    "row_index": null,
+    "column_index": null,
+    "cell_text": "sum(accident_count)",
+    "row_text": "",
+    "upper_header": "",
+    "left_header": "",
+    "neighbor_cells": [],
+    "tag": "span",
+    "cell_html": "",
+    "row_html": ""
+  }
+]
+</PLACEHOLDER_INDEX_JSON>
+
+5. ТЕКСТ ЗАПРОСА НА ОТЧЁТ
+Если в запросе есть текущий период, прошлый период, владелец, диапазон дат — используй это.
+
+<REPORT_REQUEST>
+Сформировать HTML-отчёт по шаблону form_d.html с placeholder-выражениями {{value}} и {{function(value)}} на основе актуальных данных.
+</REPORT_REQUEST>
+
+Твоя цель
+---------
+Нужно вернуть JSON-словарь:
+- ключ = placeholder ID
+- значение = формула БЕЗ внешних { }
+- если формулу подобрать нельзя, верни пустую строку ""
+
+Главные правила
+---------------
+1. НЕ переписывай HTML.
+2. НЕ меняй количество placeholder-ов.
+3. НЕ возвращай пояснения.
+4. НЕ возвращай markdown.
+5. НЕ возвращай текст до JSON или после JSON.
+6. Верни только один валидный JSON-объект.
+7. Используй только DSL из справки.
+8. Если в эталоне есть готовый паттерн для аналогичной ячейки — копируй именно его логику.
+9. Разные по смыслу ячейки должны получать разные формулы.
+10. Если в одной строке разные колонки (ДТП / ранено / погибло / тяжесть), формулы должны различаться по смыслу.
+11. Если reference использует var(...) или set(...), но таких конструкций нет в DSL-справке, разворачивай формулу через явные where(...), а не придумывай недоступный синтаксис.
+
+Как интерпретировать таблицу
+----------------------------
+Ориентируйся в первую очередь на:
+- заголовок колонки
+- левый заголовок строки
+- тип строки: "АППГ", "Период учета", "(+/- , %%)"
+- соседние ячейки
+- аналогичные ячейки из эталонного образца
+
+Логика выбора формулы
+---------------------
+1. Ячейка с названием дороги:
+   обычно это selector-формула вида first(...), как в эталоне.
+
+2. Строка "АППГ":
+   это показатели за аналогичный период прошлого года.
+   Обычно нужны count/sum/... с фильтром по дороге и по диапазону прошлогодних дат.
+   Если в эталоне для аналогичной ячейки уже есть паттерн — используй его.
+
+3. Строка "Период учета":
+   это показатели за текущий период.
+   Обычно нужны count/sum/... с фильтром по дороге и текущему периоду.
+   Если в reference есть var(road1), var(road2) или аналогичный селектор, используй ту же логику ТОЛЬКО если такой синтаксис допустим в данном DSL/контексте.
+   Если не уверен, используй явный where(...).
+
+4. Строка "(+/- , %%)":
+   это разница или процентное изменение между текущим периодом и АППГ.
+   Используй арифметические выражения DSL:
+   add/sub/mul/div или обычные + - * /,
+   если это разрешено справкой DSL.
+
+5. Колонка "Количество ДТП":
+   обычно count(*, ...)
+
+6. Колонка "Ранено, чел.":
+   используй поле числа раненых, аналогично эталону.
+
+7. Колонка "Погибло, чел.":
+   используй поле числа погибших, аналогично эталону.
+
+8. Колонка "Показатель тяжести последствий ДТП":
+   используй ту же логику, что и в эталоне.
+   Если в reference для этой ячейки стоит составная формула, повтори паттерн.
+
+9. Блок "Сведения о ДТП, в местах совершения которых установлены недостатки ...":
+   применяй дополнительную логику/фильтрацию недостатков, если она явно следует из эталона и контекста.
+   Не подставляй сюда те же самые формулы, что и в обычный блок, если по смыслу должен быть отдельный фильтр.
+
+Что считать правильным ответом
+------------------------------
+- Формула должна быть максимально близка по структуре к эталонному примеру.
+- Формула должна соответствовать именно этой ячейке, а не просто быть “похожей”.
+- Повторять одну и ту же формулу во все ячейки нельзя.
+- Пустую строку возвращай только если реально не хватает данных.
+
+Ниже несколько ориентиров по стилю формул из эталона
+----------------------------------------------------
+Это НЕ полный ответ, а ориентир по паттернам:
+- first(...)
+- count(*, where(...))
+- count(поле_раненых, ...)
+- count(поле_погибших, ...)
+- add(...)
+- date_between(...)
+- where(...)
+- eq(...)
+
+Проверь себя перед ответом
+--------------------------
+Перед тем как вернуть JSON, мысленно проверь:
+- каждый ли ключ из PLACEHOLDER_INDEX_JSON обработан
+- нет ли выдуманных функций
+- нет ли markdown
+- нет ли текста вне JSON
+- нет ли { } внутри значений
+- не одинаковы ли формулы у явно разных ячеек
+
+Формат ответа строго:
+{
+  "ph_001": "formula_here",
+  "ph_002": "",
+  "ph_003": "formula_here"
+}

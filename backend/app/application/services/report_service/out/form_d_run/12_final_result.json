@@ -1,0 +1,52 @@
+{
+  "success": true,
+  "status": "OK",
+  "mode": "stub",
+  "debug": true,
+  "trace": true,
+  "sql": "SELECT road_name, period_label, accident_count, injured_count, dead_count, severity_rate, defect_accident_count, defect_accident_share, defect_injured_count, defect_dead_count, defect_severity_rate, owner_name, report_period, total_length_km, total_length_m FROM DPS_NEW_2026",
+  "rows_count": 2,
+  "error": null,
+  "validation_error": null,
+  "debug_info": {
+    "stub_mode": true,
+    "rows_count": 2,
+    "columns": [
+      "road_name",
+      "period_label",
+      "accident_count",
+      "injured_count",
+      "dead_count",
+      "severity_rate",
+      "defect_accident_count",
+      "defect_accident_share",
+      "defect_injured_count",
+      "defect_dead_count",
+      "defect_severity_rate",
+      "owner_name",
+      "report_period",
+      "total_length_km",
+      "total_length_m"
+    ],
+    "html_status": "OK_STUB"
+  },
+  "artifacts_dir": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\out\\form_d_run",
+  "artifacts": {
+    "sql_prompt": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\out\\form_d_run\\04_sql_prompt.txt",
+    "sql_raw": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\out\\form_d_run\\05_sql_raw.txt",
+    "sql_validated_or_error": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\out\\form_d_run\\06_sql_validated.txt",
+    "rows": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\out\\form_d_run\\07_rows.json",
+    "html_prompt": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\out\\form_d_run\\08_html_prompt.txt",
+    "html_raw": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\out\\form_d_run\\09_html_raw.txt",
+    "html_extracted": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\out\\form_d_run\\10_html_extracted.html",
+    "html_after_guard": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\out\\form_d_run\\11_html_after_guard.html",
+    "result_html": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\out\\form_d_run\\15_result.html",
+    "formula_placeholders": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\out\\form_d_run\\16_formula_placeholders.json",
+    "formula_prompt": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\out\\form_d_run\\17_formula_prompt.txt",
+    "formula_response": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\out\\form_d_run\\18_formula_response.json",
+    "result_with_formulas": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\out\\form_d_run\\19_result_with_formulas.html",
+    "formula_reference_sample": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\out\\form_d_run\\20_formula_reference_sample.txt",
+    "final_html": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\out\\form_d_run\\13_final_result.html"
+  },
+  "summary": "status: OK\nsuccess: True\nmode: stub\nout_dir: C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\out\\form_d_run\nrows_count: 2\nduration_seconds: 0.060\ntemplate: C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\form_d.html\nprompt: C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\low_code_analitics_platform\\report_service\\prompt_conversion_dps_new_2026.txt\ndb_host: stub\ndb_name: stub\nsql_present: yes (275 chars)\n"
+}

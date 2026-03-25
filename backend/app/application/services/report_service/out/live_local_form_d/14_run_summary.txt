@@ -1,0 +1,12 @@
+status: LLMError
+success: False
+mode: live
+out_dir: C:\Users\kolac\Desktop\ml\low_code_platform\report_service\out\live_local_form_d
+rows_count: 0
+duration_seconds: 0.395
+template: C:\Users\kolac\Desktop\ml\low_code_platform\report_service\form_d.html
+prompt: C:\Users\kolac\Desktop\ml\low_code_platform\report_service\prompt_conversion_dps_new_2026.txt
+db_host: localhost
+db_name: low_code
+sql_present: no
+error: Ошибка запроса к DeepSeek: HTTPSConnectionPool(host='api.deepseek.com', port=443): Max retries exceeded with url: /chat/completions (Caused by NewConnectionError('<urllib3.connection.HTTPSConnection object at 0x000002706A1380E0>: Failed to establish a new connection: [WinError 10013] Сделана попытка доступа к сокету методом, запрещенным правами доступа'))

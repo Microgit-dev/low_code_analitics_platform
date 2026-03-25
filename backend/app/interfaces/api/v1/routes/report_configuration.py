@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
 import zipfile
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
@@ -692,6 +692,30 @@ def _render_template_content(content_xml: str, rows: list[TableDataRecordModel])
         return _format_template_value(value)
 
     return TEMPLATE_FIELD_PATTERN.sub(replace_field, content_xml)
+
+
+def _parse_template_table_ids(raw_table_ids: str | None) -> list[int]:
+    if not raw_table_ids:
+        return []
+
+    parsed_ids: list[int] = []
+    seen: set[int] = set()
+    for chunk in raw_table_ids.split(","):
+        value = chunk.strip()
+        if not value:
+            continue
+        if not value.isdigit() or int(value) < 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="table_ids должен содержать положительные целые значения через запятую",
+            )
+
+        table_id_value = int(value)
+        if table_id_value not in seen:
+            seen.add(table_id_value)
+            parsed_ids.append(table_id_value)
+
+    return parsed_ids
 
 
 @router.get("/reports/{report_id}/dashboard", response_model=PublicDashboardResponse)
@@ -1491,5 +1515,126 @@ async def calculate_template_report(
     return StreamingResponse(
         output,
         media_type="application/vnd.oasis.opendocument.text",
+        headers={"Content-Disposition": f'attachment; filename="{output_name}"'},
+    )
+
+
+@router.post("/workspaces/{workspace_id}/reports/template-generate")
+async def generate_html_report_by_template(
+    workspace_id: int,
+    template_file: UploadFile = File(...),
+    table_ids: str | None = Form(default=None),
+    current_user=Depends(get_current_user),
+    session: Session = Depends(get_db),
+):
+    logger.info(
+        "[template-generate] incoming workspace_id=%s filename=%s file_content_type=%s table_ids=%s",
+        workspace_id,
+        template_file.filename,
+        template_file.content_type,
+        table_ids,
+    )
+    _assert_workspace_owner(session, workspace_id, current_user.id)
+
+    original_name = template_file.filename or "template.docx"
+    if not original_name.lower().endswith(".docx"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Разрешены только .docx файлы",
+        )
+
+    selected_table_ids = _parse_template_table_ids(table_ids)
+
+    table_query = select(TableStructureModel).where(TableStructureModel.workspace_id == workspace_id)
+    if selected_table_ids:
+        table_query = table_query.where(TableStructureModel.id.in_(selected_table_ids))
+
+    tables = session.execute(table_query).scalars().all()
+    if selected_table_ids:
+        found_ids = {table.id for table in tables}
+        missing_ids = [table_id for table_id in selected_table_ids if table_id not in found_ids]
+        if missing_ids:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Таблицы не найдены: {', '.join(str(item) for item in missing_ids)}",
+            )
+    elif not tables:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Во workspace нет таблиц")
+
+    active_table_ids = [table.id for table in tables]
+
+    template_bytes = await template_file.read()
+    if not template_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Файл шаблона пустой")
+
+    try:
+        import mammoth
+    except ImportError as import_error:
+        logger.exception("[template-generate] mammoth import failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Сервис конвертации Word недоступен на сервере",
+        ) from import_error
+
+    try:
+        conversion_result = mammoth.convert_to_html(BytesIO(template_bytes))
+        template_html = conversion_result.value
+    except Exception as conversion_error:
+        logger.exception(
+            "[template-generate] failed to convert docx workspace_id=%s filename=%s",
+            workspace_id,
+            original_name,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Не удалось конвертировать .docx в HTML",
+        ) from conversion_error
+
+    if not template_html or not template_html.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="После конвертации получен пустой HTML",
+        )
+
+    rows = (
+        session.execute(
+            select(TableDataRecordModel, TableStructureModel.name)
+            .join(TableStructureModel, TableStructureModel.id == TableDataRecordModel.table_id)
+            .where(
+                TableDataRecordModel.workspace_id == workspace_id,
+                TableDataRecordModel.table_id.in_(active_table_ids),
+            )
+            .order_by(TableDataRecordModel.created_at.desc())
+        )
+        .all()
+    )
+
+    rows_data: list[dict[str, Any]] = []
+    for row, table_name in rows:
+        payload = dict(row.data_json or {})
+        payload["_table_id"] = row.table_id
+        payload["_table_name"] = table_name
+        rows_data.append(payload)
+
+    try:
+        rendered_html = render_template_content(template_html, rows_data)
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)) from error
+
+    output_name = f"{Path(original_name).stem}_generated.html"
+    payload = BytesIO(rendered_html.encode("utf-8"))
+    payload.seek(0)
+
+    logger.info(
+        "[template-generate] success workspace_id=%s tables=%s rows=%s source_filename=%s output_filename=%s",
+        workspace_id,
+        active_table_ids,
+        len(rows_data),
+        original_name,
+        output_name,
+    )
+    return StreamingResponse(
+        payload,
+        media_type="text/html; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{output_name}"'},
     )

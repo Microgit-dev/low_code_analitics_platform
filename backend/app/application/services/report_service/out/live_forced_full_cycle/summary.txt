@@ -1,0 +1,10 @@
+{
+  "rows": 3,
+  "columns": [
+    "road_name",
+    "region",
+    "repair_date",
+    "total_amount"
+  ],
+  "html_status": "OK_AFTER_AUTOPATCH"
+}

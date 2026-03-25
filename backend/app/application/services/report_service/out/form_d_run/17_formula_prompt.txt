@@ -1,0 +1,2 @@
+Unavailable.
+Formula prompt not produced. Formula layer was skipped or failed before prompt generation.
