@@ -134,6 +134,9 @@ const importTargetSeq = ref(1)
 const importPreviewTargetLocalId = ref<number | null>(null)
 const importShowAllSeparators = ref(false)
 const importRequiresRescan = ref(false)
+const importRescanTimer = ref<number | null>(null)
+const importToastMessage = ref('')
+const importToastTimer = ref<number | null>(null)
 const IMPORT_KEY_MAX_LENGTH = 64
 
 // Reports state
@@ -356,7 +359,7 @@ const importPreviewColumns = computed<ImportPreviewColumn[]>(() => {
       id: `${sourceKey}:${normalizedKey}:${index}`,
       sourceKey,
       outputKey: normalizedKey,
-      outputName: detected?.suggested_name || sourceKey,
+      outputName: target.column_names?.[sourceKey]?.trim() || detected?.suggested_name || sourceKey,
       outputType
     })
   })
@@ -1479,6 +1482,7 @@ const syncImportTargetMappings = (target: ImportTargetUi) => {
   if (!importScanResult.value) return
 
   const nextMappings: Record<string, string | null> = {}
+  const nextColumnNames: Record<string, string | null> = {}
   const nextColumnTypes: Record<string, string | null> = {}
   if (target.mode === 'new') {
     for (const detected of importScanResult.value.detected_columns) {
@@ -1486,6 +1490,7 @@ const syncImportTargetMappings = (target: ImportTargetUi) => {
       const current = target.column_mappings[detected.source_key]
       if (hasSourceKey && current === null) {
         nextMappings[detected.source_key] = null
+        nextColumnNames[detected.source_key] = target.column_names?.[detected.source_key] || detected.suggested_name
         nextColumnTypes[detected.source_key] = null
         continue
       }
@@ -1494,6 +1499,11 @@ const syncImportTargetMappings = (target: ImportTargetUi) => {
         typeof current === 'string' && current.trim().length > 0
           ? normalizeImportKey(current)
           : normalizeImportKey(detected.suggested_key || detected.source_key)
+
+      nextColumnNames[detected.source_key] =
+        typeof target.column_names?.[detected.source_key] === 'string' && target.column_names[detected.source_key]?.trim()
+          ? target.column_names[detected.source_key]!.trim()
+          : detected.suggested_name
 
       const existingType = target.column_types?.[detected.source_key]
       nextColumnTypes[detected.source_key] = normalizeImportColumnType(existingType || detected.suggested_type)
@@ -1514,6 +1524,7 @@ const syncImportTargetMappings = (target: ImportTargetUi) => {
   }
 
   target.column_mappings = nextMappings
+  target.column_names = nextColumnNames
   target.column_types = nextColumnTypes
 }
 
@@ -1526,6 +1537,7 @@ const addImportTarget = () => {
     table_name: '',
     table_description: '',
     column_mappings: {},
+    column_names: {},
     column_types: {},
     map_section_to_field: false,
     section_field_name: 'Раздел'
@@ -1566,6 +1578,12 @@ const onImportTargetTableChange = (target: ImportTargetUi) => {
 const onImportFileChange = (event: Event) => {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0] ?? null
+
+  if (importRescanTimer.value !== null && typeof window !== 'undefined') {
+    window.clearTimeout(importRescanTimer.value)
+    importRescanTimer.value = null
+  }
+
   importFile.value = file
   importError.value = ''
   importSuccess.value = ''
@@ -1573,12 +1591,28 @@ const onImportFileChange = (event: Event) => {
   importPreviewTargetLocalId.value = null
   importShowAllSeparators.value = false
   importRequiresRescan.value = false
+
+  if (file) {
+    void scanImport()
+  }
 }
 
 const onImportScanOptionsChanged = () => {
-  if (!importScanResult.value) return
+  if (!importFile.value) return
+
+  if (importRescanTimer.value !== null && typeof window !== 'undefined') {
+    window.clearTimeout(importRescanTimer.value)
+  }
+
   importRequiresRescan.value = true
   importSuccess.value = ''
+
+  if (typeof window === 'undefined') return
+
+  importRescanTimer.value = window.setTimeout(() => {
+    importRescanTimer.value = null
+    void scanImport()
+  }, 450)
 }
 
 const scanImport = async () => {
@@ -1586,7 +1620,9 @@ const scanImport = async () => {
 
   importLoading.value = true
   importError.value = ''
-  importSuccess.value = ''
+  if (!importRequiresRescan.value) {
+    importSuccess.value = ''
+  }
   try {
     const delimiters = importListDelimiters.value
       .split(';')
@@ -1658,6 +1694,14 @@ const buildImportApplyConfig = (): ImportApplyConfig => {
       column_mappings: Object.fromEntries(
         Object.entries(target.column_mappings).map(([source, mapped]) => [source, mapped && mapped.trim() ? mapped.trim() : null])
       ),
+      column_names: target.mode === 'new'
+        ? Object.fromEntries(
+            Object.entries(target.column_names || {}).map(([source, columnName]) => [
+              source,
+              target.column_mappings[source] ? (columnName || '').trim() || null : null
+            ])
+          )
+        : {},
       column_types: target.mode === 'new'
         ? Object.fromEntries(
             Object.entries(target.column_types || {}).map(([source, selectedType]) => [
@@ -1692,10 +1736,24 @@ const applyImport = async () => {
     const config = buildImportApplyConfig()
     const result = await importUseCase.applyImport(authStore.token, selectedWorkspace.value.id, importFile.value, config)
     importSuccess.value = result.imported_tables
-      .map((item) => `${item.table_name}: ${item.created_records} записей`)
-      .join(' | ')
+      .map((item, index) => `Импорт ${index + 1}: ${item.created_records} записей`)
+      .join(' • ')
+
+    if (importToastTimer.value !== null && typeof window !== 'undefined') {
+      window.clearTimeout(importToastTimer.value)
+    }
+
+    importToastMessage.value = importSuccess.value
+    if (typeof window !== 'undefined') {
+      importToastTimer.value = window.setTimeout(() => {
+        importToastMessage.value = ''
+        importToastTimer.value = null
+      }, 3600)
+    }
+
     await loadSchema()
     await loadTableData()
+    workspaceTab.value = 'tables'
   } catch (error) {
     importError.value = 'Ошибка при импорте данных'
     console.error(error)
@@ -2365,6 +2423,12 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  if (importRescanTimer.value !== null && typeof window !== 'undefined') {
+    window.clearTimeout(importRescanTimer.value)
+  }
+  if (importToastTimer.value !== null && typeof window !== 'undefined') {
+    window.clearTimeout(importToastTimer.value)
+  }
   window.removeEventListener('pointermove', onCanvasPointerMove)
   window.removeEventListener('pointerup', stopTableDrag)
 })
@@ -2380,6 +2444,9 @@ onBeforeUnmount(() => {
     />
 
     <section class="content">
+      <div v-if="importToastMessage" class="import-toast" role="status" aria-live="polite">
+        {{ importToastMessage }}
+      </div>
       <article v-if="selectedWorkspace" class="workspace-content">
         <DashboardTopBar
           :workspaces="workspaces"
@@ -2868,7 +2935,6 @@ onBeforeUnmount(() => {
           @update:import-preview-target-local-id="importPreviewTargetLocalId = $event"
           @import-file-change="onImportFileChange"
           @import-scan-options-change="onImportScanOptionsChanged"
-          @scan-import="scanImport"
           @refresh-import-preview="refreshImportPreview"
           @apply-import="applyImport"
           @toggle-separators="toggleAllSeparators"

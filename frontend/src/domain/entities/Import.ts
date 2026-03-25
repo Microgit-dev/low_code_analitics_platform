@@ -35,6 +35,7 @@ export interface ImportTargetConfig {
   table_name?: string;
   table_description?: string;
   column_mappings: Record<string, string | null>;
+  column_names?: Record<string, string | null>;
   column_types?: Record<string, string | null>;
   map_section_to_field: boolean;
   section_field_name: string;
