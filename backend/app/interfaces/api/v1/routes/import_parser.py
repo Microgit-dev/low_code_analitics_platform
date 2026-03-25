@@ -50,6 +50,7 @@ class ImportTargetConfig(BaseModel):
     table_name: str | None = None
     table_description: str | None = None
     column_mappings: dict[str, str | None] = Field(default_factory=dict)
+    column_names: dict[str, str | None] = Field(default_factory=dict)
     column_types: dict[str, str | None] = Field(default_factory=dict)
     map_section_to_field: bool = False
     section_field_name: str = "Общая колонка"
@@ -586,6 +587,7 @@ def apply_import_file(
                     if not mapped:
                         continue
                     safe_mapped = _normalize_key(mapped)
+                    column_name = (target.column_names.get(source_key) or detected["suggested_name"]).strip()
                     selected_type = target.column_types.get(source_key)
                     col_type = selected_type or detected["suggested_type"]
                     if col_type not in {"text", "number", "boolean", "date", "datetime", "enum", "list", "geoPoint", "geoPolygon"}:
@@ -593,7 +595,7 @@ def apply_import_file(
                     new_columns.append(
                         {
                             "key": safe_mapped,
-                            "name": detected["suggested_name"],
+                            "name": column_name or detected["suggested_name"],
                             "type": col_type,
                             "required": False,
                             "settings": detected.get("settings", {}),

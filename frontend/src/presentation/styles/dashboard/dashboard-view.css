@@ -95,6 +95,23 @@ ul {
   flex-direction: column;
 }
 
+.import-toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 80;
+  max-width: min(420px, calc(100vw - 96px));
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--ok) 18%, var(--bg-panel));
+  border: 1px solid color-mix(in srgb, var(--ok) 38%, var(--line));
+  color: var(--text-main);
+  box-shadow: 0 18px 40px color-mix(in srgb, #000 16%, transparent);
+  font-weight: 700;
+  line-height: 1.4;
+  backdrop-filter: blur(10px);
+}
+
 .workspace-content {
   display: flex;
   flex-direction: column;
