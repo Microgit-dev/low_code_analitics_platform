@@ -96,6 +96,17 @@ const relationSourceColumn = ref('')
 const relationTargetColumn = ref('')
 
 const dragState = ref<{ sourceTableId: number; columnKey: string } | null>(null)
+const COLUMN_TYPE_OPTIONS: ColumnType[] = [
+  'text',
+  'number',
+  'boolean',
+  'date',
+  'datetime',
+  'enum',
+  'list',
+  'geoPoint',
+  'geoPolygon'
+]
 
 // Form Builder state
 const formConfigurations = ref<FormConfiguration[]>([])
@@ -103,6 +114,9 @@ const selectedFormId = ref<number | null>(null)
 const formEditorOpen = ref(false)
 const formLoading = ref(false)
 const formError = ref('')
+const formSaving = ref(false)
+const formSaveError = ref('')
+const formSavedSnapshot = ref('')
 const formFieldDragIndex = ref<number | null>(null)
 const selectedFormFieldIndex = ref<number | null>(null)
 const formTableSelection = ref<number[]>([])
@@ -392,6 +406,16 @@ const selectedColumn = computed(() => {
   const parent = selectedColumnParent.value
   if (!parent) return null
   return parent.columns.find((column) => column.key === selectedColumnRef.value?.columnKey) ?? null
+})
+
+const selectedColumnCanSave = computed(() => {
+  if (!selectedColumn.value || !selectedColumnParent.value) return false
+  const nextKey = selectedColumn.value.key.trim()
+  const nextName = selectedColumn.value.name.trim()
+  if (!nextKey || !nextName) return false
+
+  const duplicates = selectedColumnParent.value.columns.filter((column) => column.key === nextKey)
+  return duplicates.length <= 1
 })
 
 const allTableOptions = computed(() => tableStructures.value.map((table) => ({ id: table.id, name: table.name })))
@@ -703,6 +727,10 @@ const selectColumn = (tableId: number, columnKey: string) => {
   selectedColumnRef.value = { tableId, columnKey }
 }
 
+const closeColumnEditor = () => {
+  selectedColumnRef.value = null
+}
+
 const getTablePosition = (tableId: number): TablePosition => {
   const fallback = { x: 40, y: 40 }
   if (!tablePositions.value[tableId]) {
@@ -751,7 +779,68 @@ const onTableCardPointerDown = (event: PointerEvent, tableId: number) => {
 const saveSelectedColumn = async () => {
   const parent = selectedColumnParent.value
   if (!parent) return
+
+  const key = selectedColumn.value?.key.trim() || ''
+  const name = selectedColumn.value?.name.trim() || ''
+  if (!key || !name) {
+    alert('Название и ключ столбца обязательны.')
+    return
+  }
+
+  const duplicates = parent.columns.filter((column) => column.key === key)
+  if (duplicates.length > 1) {
+    alert('Ключ столбца должен быть уникальным в рамках таблицы.')
+    return
+  }
+
+  if (selectedColumn.value) {
+    selectedColumn.value.key = key
+    selectedColumn.value.name = name
+  }
+
   await saveTable(parent)
+}
+
+const setSelectedColumnType = (nextType: ColumnType) => {
+  if (!selectedColumn.value) return
+  selectedColumn.value.type = nextType
+  selectedColumn.value.settings = {
+    ...(selectedColumn.value.settings ?? {})
+  }
+}
+
+const getSelectedColumnOptionsText = (): string => {
+  if (!selectedColumn.value) return ''
+  const options = selectedColumn.value.settings?.options
+  if (!Array.isArray(options)) return ''
+  return options.map((item) => String(item)).filter(Boolean).join(', ')
+}
+
+const setSelectedColumnOptionsText = (raw: string) => {
+  if (!selectedColumn.value) return
+  const options = raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+  selectedColumn.value.settings = {
+    ...(selectedColumn.value.settings ?? {}),
+    options
+  }
+}
+
+const setSelectedListItemType = (itemType: 'text' | 'number' | 'boolean' | 'enum') => {
+  if (!selectedColumn.value || selectedColumn.value.type !== 'list') return
+  selectedColumn.value.settings = {
+    ...(selectedColumn.value.settings ?? {}),
+    itemType
+  }
+}
+
+const getSelectedListItemType = (): 'text' | 'number' | 'boolean' | 'enum' => {
+  if (!selectedColumn.value || selectedColumn.value.type !== 'list') return 'text'
+  const raw = selectedColumn.value.settings?.itemType
+  if (raw === 'number' || raw === 'boolean' || raw === 'enum') return raw
+  return 'text'
 }
 
 const createTable = async () => {
@@ -983,6 +1072,8 @@ const loadForms = async () => {
     selectedFormId.value = null
     selectedFormFieldIndex.value = null
     formTableSelection.value = []
+    formSavedSnapshot.value = ''
+    formSaveError.value = ''
     return
   }
 
@@ -996,6 +1087,8 @@ const loadForms = async () => {
       selectedFormFieldIndex.value = null
       formTableSelection.value = []
       formEditorOpen.value = false
+      formSavedSnapshot.value = ''
+      formSaveError.value = ''
       return
     }
 
@@ -1003,6 +1096,7 @@ const loadForms = async () => {
     selectedFormId.value = selectedExists ? selectedFormId.value : formConfigurations.value[0].id
     syncFormTableSelectionFromSelected()
     selectedFormFieldIndex.value = selectedForm.value?.fields.length ? 0 : null
+    rememberSavedFormSnapshot()
   } catch (error) {
     formError.value = 'Не удалось загрузить формы'
     console.error(error)
@@ -1015,6 +1109,39 @@ const selectedForm = computed(() => {
   if (!selectedFormId.value) return null
   return formConfigurations.value.find((f) => f.id === selectedFormId.value) ?? null
 })
+
+const buildSelectedFormSnapshot = (): string => {
+  if (!selectedForm.value) return ''
+
+  return JSON.stringify({
+    id: selectedForm.value.id,
+    name: selectedForm.value.name,
+    description: selectedForm.value.description,
+    tableSelection: formTableSelection.value,
+    is_published: selectedForm.value.is_published,
+    collect_email: selectedForm.value.collect_email,
+    fields: selectedForm.value.fields
+  })
+}
+
+const isFormDirty = computed(() => {
+  if (!selectedForm.value) return false
+  if (!formSavedSnapshot.value) return false
+  return buildSelectedFormSnapshot() !== formSavedSnapshot.value
+})
+
+const formSaveStatusText = computed(() => {
+  if (!selectedForm.value) return ''
+  if (formSaving.value) return 'Сохранение формы...'
+  if (formSaveError.value) return formSaveError.value
+  if (isFormDirty.value) return 'Есть несохраненные изменения'
+  return 'Изменения сохранены'
+})
+
+const rememberSavedFormSnapshot = () => {
+  formSavedSnapshot.value = buildSelectedFormSnapshot()
+  formSaveError.value = ''
+}
 
 const getFormUsedTableIds = (form: FormConfiguration): number[] => {
   const ids = new Set<number>()
@@ -1058,6 +1185,8 @@ const selectForm = (formId: number) => {
   selectedFormId.value = formId
   selectedFormFieldIndex.value = selectedForm.value?.fields.length ? 0 : null
   syncFormTableSelectionFromSelected()
+  formSaveError.value = ''
+  rememberSavedFormSnapshot()
   formEditorOpen.value = true
 }
 
@@ -1346,6 +1475,9 @@ const onFormTablesChange = () => {
 const saveSingleForm = async () => {
   if (!selectedForm.value || !selectedWorkspace.value || formTableSelection.value.length === 0) return
 
+  formSaving.value = true
+  formSaveError.value = ''
+
   const primaryTableId = formTableSelection.value[0]
 
   // Keep form fields mapped to selected tables only.
@@ -1356,17 +1488,25 @@ const saveSingleForm = async () => {
 
   selectedForm.value.table_id = primaryTableId
 
-  await formBuilderUseCase.updateForm(
-    selectedWorkspace.value.id,
-    selectedForm.value.id,
-    selectedForm.value.name,
-    selectedForm.value.description,
-    selectedForm.value.fields,
-    selectedForm.value.is_published,
-    selectedForm.value.collect_email
-  )
+  try {
+    await formBuilderUseCase.updateForm(
+      selectedWorkspace.value.id,
+      selectedForm.value.id,
+      selectedForm.value.name,
+      selectedForm.value.description,
+      selectedForm.value.fields,
+      selectedForm.value.is_published,
+      selectedForm.value.collect_email
+    )
 
-  await loadForms()
+    await loadForms()
+    formSaveError.value = ''
+    rememberSavedFormSnapshot()
+  } catch (error: any) {
+    formSaveError.value = error?.response?.data?.detail || 'Не удалось сохранить форму'
+  } finally {
+    formSaving.value = false
+  }
 }
 
 const deleteForm = async (formId: number) => {
@@ -2540,9 +2680,10 @@ onBeforeUnmount(() => {
                         :key="column.key"
                         class="column-item"
                         draggable="true"
+                        @pointerdown.stop
                         @dragstart="startDraggingColumn(table.id, column.key)"
                         @dragend="dragState = null"
-                        @click="selectColumn(table.id, column.key)"
+                        @click.stop="selectColumn(table.id, column.key)"
                       >
                         <div>
                           <strong>{{ column.name }}</strong>
@@ -2556,6 +2697,118 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </div>
+
+          <Transition name="column-editor-fade">
+            <aside v-if="selectedColumn" class="column-editor-modal">
+              <section class="object-card">
+                <div class="column-editor-head">
+                  <h4>Редактирование столбца</h4>
+                  <button class="small ghost" @click="closeColumnEditor">Закрыть</button>
+                </div>
+
+                <div class="new-column-form">
+                  <label>Название</label>
+                  <input v-model="selectedColumn.name" placeholder="Название столбца" />
+
+                  <label>Ключ</label>
+                  <input v-model="selectedColumn.key" placeholder="Уникальный ключ" />
+
+                  <label>Тип</label>
+                  <select :value="selectedColumn.type" @change="setSelectedColumnType(($event.target as HTMLSelectElement).value as ColumnType)">
+                    <option v-for="typeOption in COLUMN_TYPE_OPTIONS" :key="`selected-col-type-${typeOption}`" :value="typeOption">
+                      {{ typeOption }}
+                    </option>
+                  </select>
+
+                  <label class="checkbox-inline">
+                    <input v-model="selectedColumn.required" type="checkbox" /> Обязательный
+                  </label>
+                </div>
+
+                <div v-if="selectedColumn.type === 'enum'" class="type-settings">
+                  <label>Варианты enum</label>
+                  <input
+                    :value="getSelectedColumnOptionsText()"
+                    placeholder="Значение 1, Значение 2"
+                    @input="setSelectedColumnOptionsText(($event.target as HTMLInputElement).value)"
+                  />
+                </div>
+
+                <div v-if="selectedColumn.type === 'list'" class="type-settings">
+                  <label>Тип элементов списка</label>
+                  <select :value="getSelectedListItemType()" @change="setSelectedListItemType(($event.target as HTMLSelectElement).value as 'text' | 'number' | 'boolean' | 'enum')">
+                    <option value="text">text</option>
+                    <option value="number">number</option>
+                    <option value="boolean">boolean</option>
+                    <option value="enum">enum</option>
+                  </select>
+
+                  <input
+                    v-if="getSelectedListItemType() === 'enum'"
+                    :value="getSelectedColumnOptionsText()"
+                    placeholder="Варианты list enum через запятую"
+                    @input="setSelectedColumnOptionsText(($event.target as HTMLInputElement).value)"
+                  />
+                </div>
+
+                <div v-if="selectedColumn.type === 'number'" class="type-settings">
+                  <label class="checkbox-inline">
+                    <input
+                      :checked="getSelectedNumberSetting('isId', false)"
+                      type="checkbox"
+                      @change="onSelectedColumnIsIdChange(($event.target as HTMLInputElement).checked)"
+                    />
+                    Использовать как ID
+                  </label>
+                  <label class="checkbox-inline">
+                    <input
+                      :checked="getSelectedNumberSetting('autoIncrement', false)"
+                      type="checkbox"
+                      @change="setSelectedNumberSetting('autoIncrement', ($event.target as HTMLInputElement).checked)"
+                    />
+                    Автоинкремент
+                  </label>
+                  <label class="setting-label">Стартовое значение</label>
+                  <input
+                    :value="getSelectedNumberSetting('autoIncrementStart', 1)"
+                    type="number"
+                    min="1"
+                    @input="setSelectedNumberSetting('autoIncrementStart', Number(($event.target as HTMLInputElement).value) || 1)"
+                  />
+                  <label class="setting-label">Шаг инкремента</label>
+                  <input
+                    :value="getSelectedNumberSetting('autoIncrementStep', 1)"
+                    type="number"
+                    min="1"
+                    @input="setSelectedNumberSetting('autoIncrementStep', Number(($event.target as HTMLInputElement).value) || 1)"
+                  />
+                </div>
+
+                <div v-if="selectedColumn.type === 'geoPoint' || selectedColumn.type === 'geoPolygon'" class="type-settings">
+                  <label>SRID</label>
+                  <input
+                    :value="Number(selectedColumn.settings?.srid || 4326)"
+                    type="number"
+                    min="1"
+                    @input="selectedColumn.settings = { ...(selectedColumn.settings ?? {}), srid: Number(($event.target as HTMLInputElement).value) || 4326 }"
+                  />
+                  <label v-if="selectedColumn.type === 'geoPolygon'" class="checkbox-inline">
+                    <input
+                      :checked="Boolean(selectedColumn.settings?.allowHoles)"
+                      type="checkbox"
+                      @change="selectedColumn.settings = { ...(selectedColumn.settings ?? {}), allowHoles: ($event.target as HTMLInputElement).checked }"
+                    />
+                    allow holes
+                  </label>
+                </div>
+
+                <DashboardTileActions>
+                  <button class="small" :disabled="!selectedColumnCanSave" @click="saveSelectedColumn">Сохранить столбец</button>
+                  <button class="small danger" @click="removeColumnFromActiveTable(selectedColumn.key)">Удалить столбец</button>
+                </DashboardTileActions>
+              </section>
+            </aside>
+          </Transition>
         </section>
 
         <section v-if="workspaceTab === 'forms'" class="forms-section">
@@ -2705,7 +2958,16 @@ onBeforeUnmount(() => {
                 <label class="checkbox-inline">
                   <input v-model="selectedForm.collect_email" type="checkbox" /> Собирать email
                 </label>
-                <button class="small" @click="saveSingleForm">Сохранить форму</button>
+                <button class="small" :disabled="formSaving || !isFormDirty" @click="saveSingleForm">
+                  {{ formSaving ? 'Сохраняем...' : 'Сохранить форму' }}
+                </button>
+                <UiStatusText
+                  v-if="formSaveStatusText"
+                  as="div"
+                  :variant="formSaveError ? 'error' : isFormDirty ? undefined : 'success'"
+                >
+                  {{ formSaveStatusText }}
+                </UiStatusText>
               </section>
 
               <section class="object-card">

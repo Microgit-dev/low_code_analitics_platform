@@ -423,9 +423,43 @@ ul {
   font-size: 0.85rem;
 }
 
+.column-editor-modal {
+  position: fixed;
+  right: 18px;
+  top: 96px;
+  width: min(420px, calc(100vw - 84px));
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+  z-index: 90;
+}
+
+.column-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.column-editor-fade-enter-active,
+.column-editor-fade-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.column-editor-fade-enter-from,
+.column-editor-fade-leave-to {
+  opacity: 0;
+  transform: translateX(12px);
+}
+
 @media (max-width: 1280px) {
   .table-workspace {
     grid-template-columns: 280px minmax(0, 1fr);
+  }
+
+  .column-editor-modal {
+    right: 10px;
+    top: 84px;
+    width: min(390px, calc(100vw - 74px));
   }
 }
 
