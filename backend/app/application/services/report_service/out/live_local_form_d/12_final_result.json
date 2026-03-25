@@ -1,0 +1,25 @@
+{
+  "success": false,
+  "status": "LLMError",
+  "mode": "live",
+  "debug": true,
+  "trace": true,
+  "sql": null,
+  "rows_count": 0,
+  "error": "Ошибка запроса к DeepSeek: HTTPSConnectionPool(host='api.deepseek.com', port=443): Max retries exceeded with url: /chat/completions (Caused by NewConnectionError('<urllib3.connection.HTTPSConnection object at 0x000002706A1380E0>: Failed to establish a new connection: [WinError 10013] Сделана попытка доступа к сокету методом, запрещенным правами доступа'))",
+  "validation_error": null,
+  "debug_info": {},
+  "artifacts_dir": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\report_service\\out\\live_local_form_d",
+  "artifacts": {
+    "sql_prompt": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\report_service\\out\\live_local_form_d\\04_sql_prompt.txt",
+    "sql_raw": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\report_service\\out\\live_local_form_d\\05_sql_raw.txt",
+    "sql_validated_or_error": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\report_service\\out\\live_local_form_d\\06_sql_validated.txt",
+    "rows": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\report_service\\out\\live_local_form_d\\07_rows.json",
+    "html_prompt": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\report_service\\out\\live_local_form_d\\08_html_prompt.txt",
+    "html_raw": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\report_service\\out\\live_local_form_d\\09_html_raw.txt",
+    "html_extracted": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\report_service\\out\\live_local_form_d\\10_html_extracted.html",
+    "html_after_guard": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\report_service\\out\\live_local_form_d\\11_html_after_guard.html",
+    "final_html": "C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\report_service\\out\\live_local_form_d\\13_final_result.html"
+  },
+  "summary": "status: LLMError\nsuccess: False\nmode: live\nout_dir: C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\report_service\\out\\live_local_form_d\nrows_count: 0\nduration_seconds: 0.395\ntemplate: C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\report_service\\form_d.html\nprompt: C:\\Users\\kolac\\Desktop\\ml\\low_code_platform\\report_service\\prompt_conversion_dps_new_2026.txt\ndb_host: localhost\ndb_name: low_code\nsql_present: no\nerror: Ошибка запроса к DeepSeek: HTTPSConnectionPool(host='api.deepseek.com', port=443): Max retries exceeded with url: /chat/completions (Caused by NewConnectionError('<urllib3.connection.HTTPSConnection object at 0x000002706A1380E0>: Failed to establish a new connection: [WinError 10013] Сделана попытка доступа к сокету методом, запрещенным правами доступа'))\n"
+}

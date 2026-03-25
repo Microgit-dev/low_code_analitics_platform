@@ -1,0 +1,36 @@
+[
+  {
+    "road_name": "Диагностическая дорога 1",
+    "period_label": "АППГ",
+    "accident_count": 10,
+    "injured_count": 10,
+    "dead_count": 10,
+    "severity_rate": 10.5,
+    "defect_accident_count": 10,
+    "defect_accident_share": 10.5,
+    "defect_injured_count": 10,
+    "defect_dead_count": 10,
+    "defect_severity_rate": 10.5,
+    "owner_name": "ГКУ Дирекция развития УДС",
+    "report_period": "2026 год",
+    "total_length_km": 152,
+    "total_length_m": 340
+  },
+  {
+    "road_name": "Диагностическая дорога 2",
+    "period_label": "Период учета",
+    "accident_count": 13,
+    "injured_count": 13,
+    "dead_count": 13,
+    "severity_rate": 12.75,
+    "defect_accident_count": 13,
+    "defect_accident_share": 12.75,
+    "defect_injured_count": 13,
+    "defect_dead_count": 13,
+    "defect_severity_rate": 12.75,
+    "owner_name": "ГКУ Дирекция развития УДС",
+    "report_period": "2026 год",
+    "total_length_km": 152,
+    "total_length_m": 340
+  }
+]

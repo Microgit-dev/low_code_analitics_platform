@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Приложение Д — Форма №1</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Times New Roman", serif;
+      background: #ffffff;
+      color: #000000;
+    }
+
+    .page {
+      width: 1200px;
+      margin: 24px auto;
+      padding: 8px 10px 24px;
+    }
+
+    .top-note {
+      font-size: 18px;
+      line-height: 1.25;
+      margin-bottom: 10px;
+      font-weight: 700;
+    }
+
+    .top-note .sub {
+      display: block;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    .top-note .form {
+      display: block;
+      margin-top: 2px;
+      font-weight: 400;
+    }
+
+    .main-title {
+      text-align: center;
+      font-size: 22px;
+      font-weight: 700;
+      line-height: 1.25;
+      margin: 14px 0 18px;
+    }
+
+    .line-row {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 16px;
+      align-items: end;
+      margin-bottom: 14px;
+    }
+
+    .line-block {
+      min-height: 48px;
+    }
+
+    .line {
+      border-bottom: 1px solid #000;
+      height: 22px;
+      width: 100%;
+    }
+
+    .line-caption {
+      text-align: center;
+      font-size: 14px;
+      margin-top: 6px;
+      line-height: 1.2;
+    }
+
+    .line-caption.nowrap { white-space: nowrap; }
+
+    .line-center-text {
+      align-self: center;
+      font-size: 18px;
+      padding: 0 8px;
+      white-space: nowrap;
+    }
+
+    .length-row {
+      text-align: center;
+      font-size: 18px;
+      margin: 10px 0 16px;
+    }
+
+    .inline-line {
+      display: inline-block;
+      border-bottom: 1px solid #000;
+      min-width: 60px;
+      height: 20px;
+      vertical-align: baseline;
+    }
+
+    table.form-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-size: 15px;
+    }
+
+    .form-table th,
+    .form-table td {
+      border: 1px solid #000;
+      padding: 6px 4px;
+      vertical-align: middle;
+      word-wrap: break-word;
+    }
+
+    .form-table th {
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .form-table .left {
+      text-align: left;
+    }
+
+    .form-table .num-row td {
+      height: 40px;
+      text-align: center;
+    }
+
+    .form-table .data-row td {
+      height: 50px;
+    }
+
+    .form-table .w1  { width: 8%; }
+    .form-table .w2  { width: 8%; }
+    .form-table .w3  { width: 8%; }
+    .form-table .w4  { width: 8%; }
+    .form-table .w5  { width: 8%; }
+    .form-table .w6  { width: 8%; }
+    .form-table .w7  { width: 8%; }
+    .form-table .w8  { width: 8%; }
+    .form-table .w9  { width: 8%; }
+    .form-table .w10 { width: 8%; }
+    .form-table .w11 { width: 8%; }
+    .form-table .w12 { width: 8%; }
+
+    .total-row {
+      margin-top: 14px;
+      font-size: 18px;
+    }
+
+    .total-line {
+      display: inline-block;
+      border-bottom: 1px solid #000;
+      min-width: 120px;
+      height: 20px;
+      vertical-align: baseline;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .page {
+        width: auto;
+        margin: 0;
+        padding: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="top-note">
+      Приложение Д
+      <span class="sub">Формы анализа данных о дорожно-транспортных происшествиях</span>
+      <span class="form">Форма № 1</span>
+    </div>
+
+    <div class="main-title">
+      Оценка тенденций изменения основных показателей аварийности на УДС,
+      находящейся в ведении
+    </div>
+
+    <div class="line-row">
+      <div class="line-block">
+        <div class="line"></div>
+        <div class="line-caption">(Владелец автомобильными дорогами)</div>
+      </div>
+
+      <div class="line-center-text">за</div>
+
+      <div class="line-block">
+        <div class="line"></div>
+        <div class="line-caption nowrap">Период учета (квартал, полугодие, девять месяцев, год)</div>
+      </div>
+    </div>
+
+    <div class="length-row">
+      Общая протяженность УДС
+      <span class="inline-line"></span>
+      км
+      <span class="inline-line" style="min-width: 40px;"></span>
+      м
+    </div>
+
+    <table class="form-table">
+      <tr>
+        <th class="w1" rowspan="3">№<br>п\п</th>
+        <th class="w2" rowspan="3">Наименование<br>дороги<br>(улицы)</th>
+        <th class="w3" rowspan="3">Годы</th>
+
+        <th colspan="4" class="left">Сведения о ДТП</th>
+
+        <th colspan="5" class="left">
+          Сведения о ДТП, в местах совершения которых установлены
+          недостатки транспортно-эксплуатационного состояния УДС
+        </th>
+      </tr>
+
+      <tr>
+        <th class="w4 left" rowspan="2">Количество ДТП</th>
+        <th class="w5 left" rowspan="2">Ранено,<br>чел.</th>
+        <th class="w6 left" rowspan="2">Погибло,<br>чел.</th>
+        <th class="w7 left" rowspan="2">Показатель тяжести последствий ДТП</th>
+
+        <th colspan="2" class="left">Количество ДТП</th>
+        <th class="w10 left" rowspan="2">Ранено,<br>чел.</th>
+        <th class="w11 left" rowspan="2">Погибло,<br>чел.</th>
+        <th class="w12 left" rowspan="2">Показатель тяжести последствий ДТП</th>
+      </tr>
+
+      <tr>
+        <th class="w8 left">Всего</th>
+        <th class="w9 left">В % от общего количества ДТП</th>
+      </tr>
+
+      <tr class="num-row">
+        <td class="left">1</td>
+        <td class="left">2</td>
+        <td class="left">3</td>
+        <td class="left">4</td>
+        <td class="left">5</td>
+        <td class="left">6</td>
+        <td class="left">7</td>
+        <td class="left">8</td>
+        <td class="left">9</td>
+        <td class="left">10</td>
+        <td class="left">11</td>
+        <td class="left">12</td>
+      </tr>
+
+      <tr class="data-row">
+        <td rowspan="3" class="left">1.</td>
+        <td rowspan="3">{road_name}</td>
+        <td class="left">АППГ</td>
+        <td>{}</td>
+        <td>{}</td>
+        <td>{}</td>
+        <td>{}</td>
+        <td>{}</td>
+        <td>{}</td>
+        <td>{}</td>
+        <td>{}</td>
+        <td>{}</td>
+      </tr>
+      <tr class="data-row">
+        <td class="left">Период учета</td>
+        <td>{}</td>
+        <td>{}</td>
+        <td>{}</td>
+        <td>{}</td>
+        <td>{}</td>
+        <td>{}</td>
+        <td>{}</td>
+        <td>{}</td>

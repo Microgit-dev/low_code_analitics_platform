@@ -59,6 +59,10 @@ export class ReportUseCase {
     return reportApi.calculateByTemplate(this.token, workspaceId, tableId, file);
   }
 
+  async generateHtmlByTemplate(workspaceId: number, file: File, tableIds: number[]): Promise<Blob> {
+    return reportApi.generateHtmlByTemplate(this.token, workspaceId, file, tableIds);
+  }
+
   async downloadConversionPrompt(workspaceId: number, tableId: number): Promise<Blob> {
     return reportApi.downloadConversionPrompt(this.token, workspaceId, tableId);
   }

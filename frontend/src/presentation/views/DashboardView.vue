@@ -20,6 +20,7 @@ import DashboardDataSection from '../components/dashboard/DashboardDataSection.v
 import DashboardImportSection from '../components/dashboard/DashboardImportSection.vue'
 import DashboardSidebar from '../components/dashboard/DashboardSidebar.vue'
 import DashboardTopBar from '../components/dashboard/DashboardTopBar.vue'
+import DashboardReportServiceModal from '../components/dashboard/DashboardReportServiceModal.vue'
 import DashboardTemplateModal from '../components/dashboard/DashboardTemplateModal.vue'
 import DashboardTileActions from '../components/dashboard/DashboardTileActions.vue'
 import DashboardTileCard from '../components/dashboard/DashboardTileCard.vue'
@@ -178,6 +179,12 @@ const templateDragActive = ref(false)
 const templateUploading = ref(false)
 const templateError = ref('')
 const templateFileName = ref('')
+const reportServiceModalOpen = ref(false)
+const reportServiceTableIds = ref<number[]>([])
+const reportServiceDragActive = ref(false)
+const reportServiceUploading = ref(false)
+const reportServiceError = ref('')
+const reportServiceFileName = ref('')
 const templateFileInput = ref<HTMLInputElement | null>(null)
 const promptModalOpen = ref(false)
 const promptTableId = ref<number | null>(null)
@@ -2339,6 +2346,7 @@ const resetTemplateModalState = () => {
 
 const openTemplateModal = () => {
   promptModalOpen.value = false
+  reportServiceModalOpen.value = false
   templateModalOpen.value = true
   resetTemplateModalState()
   templateTableId.value = activeTable.value?.id ?? tableStructures.value[0]?.id ?? null
@@ -2350,8 +2358,30 @@ const closeTemplateModal = () => {
   resetTemplateModalState()
 }
 
+const resetReportServiceModalState = () => {
+  reportServiceDragActive.value = false
+  reportServiceUploading.value = false
+  reportServiceError.value = ''
+  reportServiceFileName.value = ''
+}
+
+const openReportServiceModal = () => {
+  promptModalOpen.value = false
+  templateModalOpen.value = false
+  reportServiceModalOpen.value = true
+  resetReportServiceModalState()
+  reportServiceTableIds.value = activeTable.value?.id ? [activeTable.value.id] : []
+}
+
+const closeReportServiceModal = () => {
+  if (reportServiceUploading.value) return
+  reportServiceModalOpen.value = false
+  resetReportServiceModalState()
+}
+
 const openPromptModal = () => {
   templateModalOpen.value = false
+  reportServiceModalOpen.value = false
   promptModalOpen.value = true
   promptError.value = ''
   promptTableId.value = activeTable.value?.id ?? tableStructures.value[0]?.id ?? null
@@ -2395,6 +2425,10 @@ const downloadConversionPrompt = async () => {
 
 const isOdtFile = (file: File): boolean =>
   file.name.toLowerCase().endsWith('.odt') || file.type === 'application/vnd.oasis.opendocument.text'
+
+const isWordFile = (file: File): boolean =>
+  file.name.toLowerCase().endsWith('.docx') ||
+  file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 
 const saveBlob = (blob: Blob, filename: string) => {
   const url = window.URL.createObjectURL(blob)
@@ -2466,6 +2500,47 @@ const processTemplateFile = async (file: File) => {
   }
 }
 
+const processReportServiceFile = async (file: File) => {
+  if (!selectedWorkspace.value) {
+    reportServiceError.value = 'Сначала выберите workspace.'
+    return
+  }
+  if (!isWordFile(file)) {
+    reportServiceError.value = 'Нужен файл в формате .docx'
+    return
+  }
+
+  reportServiceUploading.value = true
+  reportServiceError.value = ''
+  reportServiceFileName.value = file.name
+
+  let completed = false
+  try {
+    const result = await reportUseCase.generateHtmlByTemplate(
+      selectedWorkspace.value.id,
+      file,
+      reportServiceTableIds.value
+    )
+    const normalizedName = file.name.toLowerCase().endsWith('.docx')
+      ? file.name.slice(0, -5)
+      : file.name
+    saveBlob(result, `${normalizedName}_generated.html`)
+    completed = true
+  } catch (error: any) {
+    console.error('Report service request failed', {
+      status: error?.response?.status,
+      data: error?.response?.data
+    })
+    reportServiceError.value = extractTemplateApiError(error)
+  } finally {
+    reportServiceUploading.value = false
+  }
+
+  if (completed) {
+    closeReportServiceModal()
+  }
+}
+
 const onTemplateDragOver = (event: DragEvent) => {
   event.preventDefault()
   if (templateUploading.value) return
@@ -2485,6 +2560,27 @@ const onTemplateDrop = async (event: DragEvent) => {
   const file = event.dataTransfer?.files?.[0]
   if (!file) return
   await processTemplateFile(file)
+}
+
+const onReportServiceDragOver = (event: DragEvent) => {
+  event.preventDefault()
+  if (reportServiceUploading.value) return
+  reportServiceDragActive.value = true
+}
+
+const onReportServiceDragLeave = (event: DragEvent) => {
+  event.preventDefault()
+  reportServiceDragActive.value = false
+}
+
+const onReportServiceDrop = async (event: DragEvent) => {
+  event.preventDefault()
+  reportServiceDragActive.value = false
+  if (reportServiceUploading.value) return
+
+  const file = event.dataTransfer?.files?.[0]
+  if (!file) return
+  await processReportServiceFile(file)
 }
 
 const deleteDataRecord = async (recordId: number) => {
@@ -3266,7 +3362,8 @@ onBeforeUnmount(() => {
           >
             <template #actions>
               <DashboardTileActions>
-                <button class="small ghost" @click="openTemplateModal">Посчитать по шаблону</button>
+                <button class="small ghost" @click="openTemplateModal">Посчитать по шаблону (.odt)</button>
+                <button class="small ghost" @click="openReportServiceModal">Report service</button>
                 <button class="small" @click="createReport">Новый отчет</button>
               </DashboardTileActions>
             </template>
@@ -3408,6 +3505,22 @@ onBeforeUnmount(() => {
             @drag-leave="onTemplateDragLeave"
             @drop="onTemplateDrop"
             @file-selected="processTemplateFile"
+          />
+
+          <DashboardReportServiceModal
+            :open="reportServiceModalOpen"
+            :uploading="reportServiceUploading"
+            :drag-active="reportServiceDragActive"
+            :error="reportServiceError"
+            :file-name="reportServiceFileName"
+            :table-ids="reportServiceTableIds"
+            :table-options="allTableOptions"
+            @close="closeReportServiceModal"
+            @update:table-ids="reportServiceTableIds = $event"
+            @drag-over="onReportServiceDragOver"
+            @drag-leave="onReportServiceDragLeave"
+            @drop="onReportServiceDrop"
+            @file-selected="processReportServiceFile"
           />
         </section>
 

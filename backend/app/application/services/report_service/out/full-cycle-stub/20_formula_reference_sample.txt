@@ -1,0 +1,40 @@
+[REFERENCE_SOURCE] forma_prilozhenie_d (2) (12).odt
+[REFERENCE_FORMAT] odt
+[PARAGRAPH] Приложение Д
+[PARAGRAPH] Формы анализа данных о дорожно-транспортных происшествиях
+[PARAGRAPH] Форма № 1
+[PARAGRAPH] Оценка тенденций изменения основных показателей аварийности на УДС, находящейся в ведении
+[TABLE 1]
+row_000: [EMPTY] | за | [EMPTY]
+row_001: (Владелец автомобильными дорогами) | [EMPTY] | Период учета (квартал, полугодие,девять месяцев, год)
+[PARAGRAPH] Общая протяженность УДС км м
+[TABLE 2]
+row_000: №п\п | Наименованиедороги (улицы) | Годы | Сведения о ДТП | [COVERED] | [COVERED] | [COVERED] | Сведения о ДТП, в местах совершения которых установленынедостатки транспортно-эксплуатационного состояния УДС | [COVERED] | [COVERED] | [COVERED] | [COVERED]
+row_001: [COVERED] | [COVERED] | [COVERED] | КоличествоДТП | Ранено,чел. | Погибло,чел. | Показательтяжестипоследствий ДТП | Количество ДТП | [COVERED] | Ранено,чел. | Погибло,чел. | Показательтяжестипоследствий ДТП
+row_002: [COVERED] | [COVERED] | [COVERED] | [COVERED] | [COVERED] | [COVERED] | [COVERED] | Всего | В % от общегоколичества ДТП | [COVERED] | [COVERED] | [COVERED]
+row_003: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12
+row_004: 1. | {{ first(общая_колонка, where(п_п, eq(341))) }} | АППГ | {{ count(*, where(общая_колонка, eq(first(общая_колонка, where(п_п, eq(341))))), where(created_at, date_between(date(1, 1, 2025), date(31, 12, 2026)))) }} | {{ count(*, where(общая_колонка, eq(first(общая_колонка, where(п_п, eq(341))))), where(created_at, date_between(date(1, 1, 2025), date(31, 12, 2026)))) }} | {{ count(*, where(общая_колонка, eq(first(общая_колонка, where(п_п, eq(341))))), where(created_at, date_between(date(1, 1, 2025), date(31, 12, 2026)))) }} | {{ count(*, where(общая_колонка, eq(first(общая_колонка, where(п_п, eq(341))))), where(created_at, date_between(date(1, 1, 2025), date(31, 12, 2026)))) }} | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY]
+row_005: [COVERED] | [COVERED] | Периодучета | {{ count(*, var(road1)) }} | {{ count(последствия_дтп_число_раненых_чел, var(road1)) }} | {{ count(последствия_дтп_число_погибших_чел, var(road1)) }} | {{ add(count(последствия_дтп_число_погибших_чел, var(road1)), 1) }} | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY]
+row_006: [COVERED] | [COVERED] | (+/-,%%) | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY]
+row_007: 2. | {{ first(общая_колонка, where(п_п, eq(160))) }} | АППГ | {{ count(*, where(общая_колонка, eq(first(общая_колонка, where(п_п, eq(341))))), where(created_at, date_between(date(1, 1, 2025), date(31, 12, 2026)))) }} | {{ count(*, where(общая_колонка, eq(first(общая_колонка, where(п_п, eq(341))))), where(created_at, date_between(date(1, 1, 2025), date(31, 12, 2026)))) }} | {{ count(*, where(общая_колонка, eq(first(общая_колонка, where(п_п, eq(341))))), where(created_at, date_between(date(1, 1, 2025), date(31, 12, 2026)))) }} | {{ count(*, where(общая_колонка, eq(first(общая_колонка, where(п_п, eq(341))))), where(created_at, date_between(date(1, 1, 2025), date(31, 12, 2026)))) }} | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY]
+row_008: [COVERED] | [COVERED] | Периодучета | {{ count(*, var(roa21)) }} | {{ count(последствия_дтп_число_раненых_чел, var(road2)) }} | {{ count(последствия_дтп_число_погибших_чел, var(road2)) }} | {{ add(count(последствия_дтп_число_погибших_чел, var(road2)), 1) }} | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY]
+row_009: [COVERED] | [COVERED] | (+/-,%%) | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY] | [EMPTY]
+[PARAGRAPH] Итого за период учета:
+[PARAGRAPH] Дата:
+[PARAGRAPH] where(created_at, date_between(date(1, 1, 2025), date(31, 12, 2025)))
+[PARAGRAPH] Дата год назад:
+[PARAGRAPH] where(created_at, date_between(add_years(date(1, 1, 2025), -1), add_years(date(31, 12, 2025), -1)))
+[PARAGRAPH] {{ count(*, where(общая_колонка, eq(first(общая_колонка, where(п_п, eq(341)))))) }}
+[PARAGRAPH] {{ set(road1, where(общая_колонка, eq(first(общая_колонка, where(п_п, eq(341)))))) }}
+[PARAGRAPH] {{ set(road2, where(общая_колонка, eq(first(общая_колонка, where(п_п, eq(160)))))) }}
+[PARAGRAPH] {
+[PARAGRAPH] "п_п": 312,
+[PARAGRAPH] "общая_колонка": "Автомобильная дорога А-119 Вологда – Медвежьегорск – автомобильная дорога Р-21 «Кола» (км 393+857 – км 636+469)",
+[PARAGRAPH] "дата_число_месяц_год": 45959,
+[PARAGRAPH] "количество_полос_движения_общее": 3,
+[PARAGRAPH] "код_вида_покрытия_проезжей_части": 1,
+[PARAGRAPH] "последствия_дтп_число_раненых_чел": 1,
+[PARAGRAPH] "последствия_дтп_число_погибших_чел": null,
+[PARAGRAPH] "дорожные_условия_код_объектов_находящихся_в_непосредственной_бли": [],
+[PARAGRAPH] "недостатки_транспортно_эксплуатационного_состояния_удс_установле": 2
+[PARAGRAPH] }

@@ -1,0 +1,1 @@
+SELECT roads.road_name, roads.region, repairs.repair_date, repairs.total_amount FROM roads LEFT JOIN repairs ON roads.id = repairs.road_id ORDER BY roads.road_name, repairs.repair_date

@@ -1,0 +1,6 @@
+SELECT r.road_name AS "Дорога", r.region AS "Регион", SUM(rep.total_amount) AS "Сумма", MAX(rep.repair_date) AS "Дата"
+FROM roads r
+JOIN repairs rep ON r.id = rep.road_id
+WHERE EXTRACT(YEAR FROM rep.repair_date) = 2025
+GROUP BY r.road_name, r.region
+ORDER BY r.road_name;
