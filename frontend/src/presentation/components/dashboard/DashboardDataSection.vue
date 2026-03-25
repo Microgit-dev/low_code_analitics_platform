@@ -23,8 +23,8 @@ interface DataTable {
 interface DataRecord {
   id: number
   data: Record<string, unknown>
-  submitted_at?: string | null
-  created_at?: string | null
+  submitted_at?: string | number | null
+  created_at?: string | number | null
   submitter_email?: string | null
 }
 
@@ -39,7 +39,7 @@ const props = defineProps<{
   allTableOptions: TableOption[]
   selectedDataTableId: number | null
   formatDataValue: (value: unknown, columnType: ColumnType) => string
-  formatDate: (value: string) => string
+  formatDate: (value: unknown) => string
 }>()
 
 const emit = defineEmits<{
@@ -178,7 +178,7 @@ const saveEditedRecord = () => {
                 {{ formatDataValue(record.data[column.key], column.type) }}
               </span>
             </td>
-            <td>{{ formatDate((record.submitted_at || record.created_at || '') as string) }}</td>
+            <td>{{ formatDate(record.submitted_at || record.created_at || '') }}</td>
             <td>{{ record.submitter_email || '—' }}</td>
             <td class="actions-cell">
               <button class="small" @click="openEditModal(record)">Редактировать</button>

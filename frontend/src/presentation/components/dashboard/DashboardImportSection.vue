@@ -16,6 +16,18 @@ interface ImportColumnOption {
   name: string
 }
 
+interface ImportPreviewColumn {
+  id: string
+  outputKey: string
+  outputName: string
+  outputType: string
+}
+
+interface ImportPreviewTargetOption {
+  localId: number
+  label: string
+}
+
 const props = defineProps<{
   importScanResult: ImportScanResult | null
   importRequiresRescan: boolean
@@ -31,7 +43,10 @@ const props = defineProps<{
   importTargets: ImportTargetUi[]
   allTableOptions: TableOption[]
   importSourceKeys: string[]
-  importPreviewRows: Record<string, unknown>[]
+  importPreviewColumns: ImportPreviewColumn[]
+  importPreviewRows: Record<string, string>[]
+  importPreviewTargetLocalId: number | null
+  importPreviewTargetOptions: ImportPreviewTargetOption[]
   importDetectedSeparators: string[]
   importVisibleSeparators: string[]
   importShowAllSeparators: boolean
@@ -41,7 +56,6 @@ const props = defineProps<{
   getImportTargetColumns: (target: ImportTargetUi) => ImportColumnOption[]
   formatMappedKeyPreview: (key: string | null) => string
   isMappedKeyTruncated: (key: string | null) => boolean
-  formatImportValue: (value: unknown) => string
   onImportTargetModeChange: (target: ImportTargetUi) => void
   onImportTargetTableChange: (target: ImportTargetUi) => void
 }>()
@@ -52,14 +66,41 @@ const emit = defineEmits<{
   (event: 'update:importDataRowStart', value: number | null): void
   (event: 'update:importDataRowEnd', value: number | null): void
   (event: 'update:importListDelimiters', value: string): void
+  (event: 'update:importPreviewTargetLocalId', value: number | null): void
   (event: 'import-file-change', eventObj: Event): void
   (event: 'import-scan-options-change'): void
   (event: 'scan-import'): void
+  (event: 'refresh-import-preview'): void
   (event: 'apply-import'): void
   (event: 'toggle-separators'): void
   (event: 'add-import-target'): void
   (event: 'remove-import-target', localId: number): void
 }>()
+
+const NEW_TABLE_COLUMN_TYPES = [
+  { value: 'text', label: 'text' },
+  { value: 'number', label: 'number' },
+  { value: 'boolean', label: 'boolean' },
+  { value: 'date', label: 'date' },
+  { value: 'datetime', label: 'datetime' },
+  { value: 'enum', label: 'enum' },
+  { value: 'list', label: 'list' },
+  { value: 'geoPoint', label: 'geoPoint' },
+  { value: 'geoPolygon', label: 'geoPolygon' }
+]
+
+const toggleNewColumnImport = (target: ImportTargetUi, sourceKey: string, include: boolean) => {
+  if (include) {
+    target.column_mappings[sourceKey] = target.column_mappings[sourceKey] || sourceKey
+    target.column_types = target.column_types || {}
+    target.column_types[sourceKey] = target.column_types[sourceKey] || 'text'
+    return
+  }
+
+  target.column_mappings[sourceKey] = null
+  target.column_types = target.column_types || {}
+  target.column_types[sourceKey] = null
+}
 </script>
 
 <template>
@@ -250,7 +291,31 @@ const emit = defineEmits<{
                 :placeholder="`Ключ колонки (например ${sourceKey})`"
               />
 
-              <p v-if="target.mode === 'new'" class="mapping-hint">
+              <template v-if="target.mode === 'new'">
+                <div class="mapping-controls">
+                  <label class="checkbox-inline mapping-include-toggle">
+                    <input
+                      type="checkbox"
+                      :checked="target.column_mappings[sourceKey] !== null"
+                      @change="toggleNewColumnImport(target, sourceKey, ($event.target as HTMLInputElement).checked)"
+                    />
+                    Включить колонку
+                  </label>
+
+                  <select
+                    v-if="target.column_mappings[sourceKey] !== null"
+                    :value="target.column_types?.[sourceKey] || 'text'"
+                    class="mapping-type-select"
+                    @change="target.column_types = target.column_types || {}; target.column_types[sourceKey] = ($event.target as HTMLSelectElement).value"
+                  >
+                    <option v-for="typeOption in NEW_TABLE_COLUMN_TYPES" :key="`type-${sourceKey}-${typeOption.value}`" :value="typeOption.value">
+                      {{ typeOption.label }}
+                    </option>
+                  </select>
+                </div>
+              </template>
+
+              <p v-if="target.mode === 'new' && target.column_mappings[sourceKey] !== null" class="mapping-hint">
                 Итоговый ключ: <strong>{{ formatMappedKeyPreview(target.column_mappings[sourceKey]) }}</strong>
                 <span v-if="isMappedKeyTruncated(target.column_mappings[sourceKey])" class="mapping-warning">
                   (будет сокращен до {{ importKeyMaxLength }} символов)
@@ -261,22 +326,48 @@ const emit = defineEmits<{
         </div>
       </article>
 
-      <article class="import-card import-preview-card" v-if="importPreviewRows.length > 0">
-        <h4>Превью данных</h4>
+      <article class="import-card import-preview-card" v-if="importScanResult">
+        <div class="import-preview-head">
+          <h4>Превью перед сохранением</h4>
+          <DashboardTileActions>
+            <select
+              v-if="importPreviewTargetOptions.length > 1"
+              :value="importPreviewTargetLocalId ?? ''"
+              @change="emit('update:importPreviewTargetLocalId', Number(($event.target as HTMLSelectElement).value) || null)"
+            >
+              <option v-for="target in importPreviewTargetOptions" :key="`preview-target-${target.localId}`" :value="target.localId">
+                {{ target.label }}
+              </option>
+            </select>
+            <button
+              class="small ghost"
+              :disabled="!importFile || importLoading"
+              @click="emit('refresh-import-preview')"
+            >
+              {{ importLoading ? 'Обновление...' : 'Обновить превью' }}
+            </button>
+          </DashboardTileActions>
+        </div>
+        <UiStatusText as="div">Показывает, как данные будут сохранены по текущему маппингу и типам.</UiStatusText>
+        <UiStatusText v-if="importPreviewColumns.length === 0" as="div">
+          Нет выбранных колонок для превью. Настройте маппинг в цели импорта.
+        </UiStatusText>
         <div class="data-table-wrap import-preview-wrap">
           <table class="data-table">
             <thead>
               <tr>
                 <th>#</th>
-                <th v-for="sourceKey in importSourceKeys" :key="`preview-head-${sourceKey}`">{{ sourceKey }}</th>
+                <th v-for="column in importPreviewColumns" :key="`preview-head-${column.id}`">
+                  {{ column.outputName }} ({{ column.outputKey }}) • {{ column.outputType }}
+                </th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="(row, rowIndex) in importPreviewRows" :key="`preview-row-${rowIndex}`">
                 <td>{{ rowIndex + 1 }}</td>
-                <td v-for="sourceKey in importSourceKeys" :key="`preview-cell-${rowIndex}-${sourceKey}`">
-                  <span :title="formatImportValue(row[sourceKey])">
-                    {{ formatImportValue(row[sourceKey]) }}
+                <td v-for="column in importPreviewColumns" :key="`preview-cell-${rowIndex}-${column.id}`">
+                  <span :title="row[column.id] || '—'">
+                    {{ row[column.id] || '—' }}
                   </span>
                 </td>
               </tr>
