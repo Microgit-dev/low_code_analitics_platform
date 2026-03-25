@@ -55,6 +55,18 @@
   box-shadow: var(--shadow-soft);
 }
 
+:global(:root[data-theme='dark']) .hero {
+  background:
+    radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.08) 0%, transparent 38%),
+    linear-gradient(140deg, #13274a 0%, #1f4b8f 46%, #245f88 100%);
+  border-color: rgba(116, 157, 228, 0.22);
+  box-shadow: 0 24px 44px rgba(0, 0, 0, 0.4);
+}
+
+:global(:root[data-theme='dark']) .hero p {
+  color: #c8daf8;
+}
+
 @media (max-width: 900px) {
   .auth-layout {
     grid-template-columns: 1fr;

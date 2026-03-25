@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 
 interface WorkspaceItem {
   id: number
@@ -18,10 +18,13 @@ const emit = defineEmits<{
 }>()
 
 const widgetRef = ref<HTMLElement | null>(null)
+const menuRef = ref<HTMLElement | null>(null)
 const menuOpen = ref(false)
 const menuX = ref(0)
 const menuY = ref(0)
 const menuWorkspaceId = ref<number | null>(null)
+const MENU_OFFSET = 8
+const VIEWPORT_PADDING = 12
 
 const selectWorkspace = (workspaceId: number) => {
   emit('select', workspaceId)
@@ -33,12 +36,27 @@ const openCreate = () => {
   menuOpen.value = false
 }
 
-const openContextMenu = (event: MouseEvent, workspaceId: number) => {
+const positionMenuAtCursor = async (clientX: number, clientY: number) => {
+  await nextTick()
+
+  const menuEl = menuRef.value
+  if (!menuEl) return
+
+  const { innerWidth, innerHeight } = window
+  const menuWidth = menuEl.offsetWidth
+  const menuHeight = menuEl.offsetHeight
+
+  menuX.value = Math.min(clientX + MENU_OFFSET, innerWidth - menuWidth - VIEWPORT_PADDING)
+  menuY.value = Math.min(clientY + MENU_OFFSET, innerHeight - menuHeight - VIEWPORT_PADDING)
+}
+
+const openContextMenu = async (event: MouseEvent, workspaceId: number) => {
   event.preventDefault()
   menuWorkspaceId.value = workspaceId
-  menuX.value = event.clientX
-  menuY.value = event.clientY
   menuOpen.value = true
+  menuX.value = event.clientX + MENU_OFFSET
+  menuY.value = event.clientY + MENU_OFFSET
+  await positionMenuAtCursor(event.clientX, event.clientY)
 }
 
 const closeMenu = () => {
@@ -90,6 +108,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
     <Transition name="menu-fade">
       <div
         v-if="menuOpen"
+        ref="menuRef"
         class="context-menu"
         :style="{ left: `${menuX}px`, top: `${menuY}px` }"
       >
@@ -103,7 +122,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
 <style scoped>
 .workspace-tabs-widget {
   position: relative;
-  min-width: 320px;
+  min-width: 240px;
   max-width: 100%;
 }
 
@@ -113,18 +132,17 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
   gap: 6px;
   overflow-x: auto;
   max-width: 100%;
-  padding-bottom: 2px;
+  padding-bottom: 0;
 }
 
 .tab {
-  border: 1px solid #cfdcdf;
-  border-bottom-color: #b8c9ce;
-  border-radius: 10px 10px 0 0;
-  background: linear-gradient(180deg, #f9fcfd 0%, #eaf2f4 100%);
-  min-width: 150px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  min-width: 130px;
   max-width: 240px;
-  height: 34px;
-  padding: 0 12px;
+  height: 30px;
+  padding: 0 10px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -137,21 +155,20 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
 }
 
 .tab.active {
-  background: #ffffff;
-  border-bottom-color: #ffffff;
-  box-shadow: 0 -1px 0 #ffffff inset;
+  background: var(--bg-tab);
+  box-shadow: inset 0 0 0 1px var(--line);
 }
 
 .tab-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: #2f8486;
+  background: var(--accent);
 }
 
 .tab-title {
-  color: #445766;
-  font-size: 13px;
+  color: var(--text-main);
+  font-size: 12px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -159,16 +176,16 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
 }
 
 .new-tab {
-  border: 1px dashed #9ab8be;
+  border: 1px dashed var(--line-strong);
   border-radius: 10px;
-  background: transparent;
-  color: #2f8486;
-  width: 34px;
-  min-width: 34px;
-  height: 34px;
+  background: var(--bg-panel);
+  color: var(--accent);
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
   display: grid;
   place-items: center;
-  font-size: 20px;
+  font-size: 18px;
   cursor: pointer;
 }
 
@@ -176,11 +193,11 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
   position: fixed;
   z-index: 120;
   width: 180px;
-  border: 1px solid #d5e2e5;
-  background: #ffffff;
+  border: 1px solid var(--line);
+  background: var(--bg-panel);
   border-radius: 10px;
   padding: 6px;
-  box-shadow: 0 8px 20px rgba(41, 62, 78, 0.18);
+  box-shadow: var(--shadow-soft);
 }
 
 .context-item {
@@ -193,15 +210,15 @@ onUnmounted(() => document.removeEventListener('mousedown', onClickOutside))
   border: none;
   cursor: pointer;
   font-size: 13px;
-  color: #4d6070;
+  color: var(--text-main);
 }
 
 .context-item:hover {
-  background: #f1f7f8;
+  background: var(--bg-soft);
 }
 
 .context-item.danger {
-  color: #b04259;
+  color: var(--danger);
 }
 
 .menu-fade-enter-active,

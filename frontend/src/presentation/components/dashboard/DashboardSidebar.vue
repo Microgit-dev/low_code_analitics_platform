@@ -2,7 +2,6 @@
 import { useTheme } from '../../../infrastructure/composables/useTheme'
 
 const props = defineProps<{
-  authEmail?: string
   activeTab: 'tables' | 'forms' | 'data' | 'reports' | 'details' | 'import'
 }>()
 
@@ -27,7 +26,8 @@ const spriteStyle = (y: number): Record<string, string> => ({
   backgroundImage: `url(${HOT_BAR})`,
   backgroundSize: '68px 1080px',
   backgroundPosition: `-8px -${y}px`,
-  backgroundRepeat: 'no-repeat'
+  backgroundRepeat: 'no-repeat',
+  mixBlendMode: 'multiply'
 })
 </script>
 
@@ -41,13 +41,12 @@ const spriteStyle = (y: number): Record<string, string> => ({
         :class="{ active: activeTab === item.id }"
         @click="emit('nav-click', item.id)"
       >
-        <span class="nav-icon" :style="spriteStyle(item.y)" />
+        <span class="nav-icon" :style="spriteStyle(item.y)" aria-hidden="true" />
         <span class="nav-label">{{ item.label }}</span>
       </button>
     </nav>
 
     <div class="sidebar-footer">
-      <p class="auth-email" :title="authEmail">{{ authEmail || 'no-user' }}</p>
       <div class="sidebar-actions">
         <button class="icon-action profile" title="Профиль" @click="emit('open-profile')">
           <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
@@ -64,7 +63,13 @@ const spriteStyle = (y: number): Record<string, string> => ({
             <path d="M20 15.2A8.5 8.5 0 1 1 8.8 4a7 7 0 0 0 11.2 11.2Z" stroke="currentColor" stroke-width="1.7" />
           </svg>
         </button>
-        <button class="icon-action danger" @click="emit('logout')">Выйти</button>
+        <button class="icon-action danger" title="Выйти" aria-label="Выйти" @click="emit('logout')">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+            <path d="M10 8l4 4-4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M14 12H4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+          </svg>
+        </button>
       </div>
     </div>
   </aside>
