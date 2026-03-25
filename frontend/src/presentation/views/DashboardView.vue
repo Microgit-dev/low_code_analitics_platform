@@ -1324,6 +1324,10 @@ const selectFormField = (index: number) => {
   selectedFormFieldIndex.value = index
 }
 
+const closeSelectedFormField = () => {
+  selectedFormFieldIndex.value = null
+}
+
 const removeFormField = (index: number) => {
   if (!selectedForm.value || index < 0 || index >= selectedForm.value.fields.length) return
 
@@ -2857,82 +2861,6 @@ onBeforeUnmount(() => {
           <UiStatusText v-else-if="!formLoading">Пока нет форм. Создайте первую.</UiStatusText>
 
           <div v-if="formEditorOpen && selectedForm" class="form-editor">
-            <article class="form-preview">
-              <header class="form-header">
-                <h4>{{ selectedForm.name }}</h4>
-                <p>{{ selectedForm.description }}</p>
-              </header>
-
-              <form @submit.prevent>
-                <div
-                  v-for="(field, index) in selectedForm.fields"
-                  :key="`${field.table_id ?? 'default'}-${field.column_key}`"
-                  class="form-field-preview"
-                  :class="{ active: selectedFormFieldIndex === index }"
-                  draggable="true"
-                  @dragstart="startFieldDrag(index)"
-                  @dragover.prevent
-                  @drop.prevent="dropFieldAt(index)"
-                  @click="selectFormField(index)"
-                >
-                  <label :for="`field-${field.column_key}`">
-                    {{ field.field_label }}
-                    <span v-if="field.required" class="required">*</span>
-                  </label>
-                  <p class="field-table-label">Таблица: {{ getFieldTableName(field) }}</p>
-                  <input
-                    v-if="['text_input', 'number_input', 'date_input', 'datetime_input'].includes(field.widget_type)"
-                    :id="`field-${field.column_key}`"
-                    :type="getFieldInputType(field.widget_type)"
-                    :placeholder="field.placeholder"
-                    :required="field.required"
-                  />
-                  <textarea
-                    v-else-if="field.widget_type === 'textarea'"
-                    :id="`field-${field.column_key}`"
-                    :placeholder="field.placeholder"
-                    :required="field.required"
-                  />
-                  <select
-                    v-else-if="field.widget_type === 'select' && field.widget_settings.options"
-                    :id="`field-${field.column_key}`"
-                    :required="field.required"
-                  >
-                    <option value="">{{ field.placeholder || 'Выберите...' }}</option>
-                    <option v-for="opt in field.widget_settings.options" :key="opt" :value="opt">{{ opt }}</option>
-                  </select>
-                  <select
-                    v-else-if="field.widget_type === 'multiselect' && field.widget_settings.options"
-                    :id="`field-${field.column_key}`"
-                    multiple
-                    :required="field.required"
-                  >
-                    <option v-for="opt in field.widget_settings.options" :key="`multi-${opt}`" :value="opt">{{ opt }}</option>
-                  </select>
-                  <div v-else-if="field.widget_type === 'list_input'" class="list-input-preview">
-                    <input :placeholder="field.placeholder || 'Добавить элемент списка'" />
-                    <button type="button" class="small">Добавить</button>
-                  </div>
-                  <div v-else-if="field.widget_type === 'checkbox'" class="checkbox-wrapper">
-                    <template v-if="getFieldOptions(field).length > 0">
-                      <label v-for="(opt, idx) in getFieldOptions(field)" :key="`preview-checkbox-${idx}-${opt}`">
-                        <input type="checkbox" :name="`field-${field.column_key}`" :value="opt" />
-                        {{ opt }}
-                      </label>
-                    </template>
-                    <input v-else :id="`field-${field.column_key}`" type="checkbox" :required="field.required" />
-                  </div>
-                  <div v-else-if="field.widget_type === 'radio' && field.widget_settings.options" class="radio-wrapper">
-                    <label v-for="opt in field.widget_settings.options" :key="opt">
-                      <input type="radio" :name="`field-${field.column_key}`" :value="opt" :required="field.required" />
-                      {{ opt }}
-                    </label>
-                  </div>
-                  <p v-if="field.help_text" class="help-text">{{ field.help_text }}</p>
-                </div>
-              </form>
-            </article>
-
             <aside class="form-config">
               <section class="object-card">
                 <h4>Настройки формы</h4>
@@ -2992,69 +2920,7 @@ onBeforeUnmount(() => {
                   </select>
                   <button class="small" @click="addSelectedFieldToForm">Добавить поле в конец формы</button>
                 </div>
-                <ul v-if="selectedForm.fields.length > 0" class="form-fields-list">
-                  <li
-                    v-for="(field, index) in selectedForm.fields"
-                    :key="`${field.table_id ?? 'default'}-${field.column_key}`"
-                    :class="{ active: selectedFormFieldIndex === index }"
-                    @click="selectFormField(index)"
-                  >
-                    <div>
-                      <strong>{{ field.field_label }}</strong>
-                      <span>{{ getWidgetTypeLabel(field.widget_type) }} · {{ field.column_key }} · {{ getFieldTableName(field) }}</span>
-                    </div>
-                    <button class="small danger" @click.stop="removeFormField(index)">Удалить</button>
-                  </li>
-                </ul>
-                <p v-else class="muted">Нет полей</p>
-              </section>
-
-              <section v-if="selectedFormField" class="object-card">
-                <h4>Настройки выбранного поля</h4>
-                <p class="muted">Текущая таблица: {{ getFieldTableName(selectedFormField) }}</p>
-                <input v-model="selectedFormField.field_label" placeholder="Заголовок поля" />
-                <select v-model="selectedFormField.widget_type">
-                  <option value="text_input">text_input</option>
-                  <option value="textarea">textarea</option>
-                  <option value="number_input">number_input</option>
-                  <option value="date_input">date_input</option>
-                  <option value="datetime_input">datetime_input</option>
-                  <option value="select">select</option>
-                  <option value="multiselect">multiselect</option>
-                  <option value="list_input">list_input</option>
-                  <option value="checkbox">checkbox</option>
-                  <option value="radio">radio</option>
-                </select>
-                <select v-model.number="selectedFormField.table_id">
-                  <option v-for="table in allTableOptions.filter((item) => formTableSelection.includes(item.id))" :key="`sf-t-${table.id}`" :value="table.id">
-                    {{ table.name }}
-                  </option>
-                </select>
-                <input v-model="selectedFormField.placeholder" placeholder="Placeholder" />
-                <input v-model="selectedFormField.help_text" placeholder="Подсказка" />
-                <div v-if="supportsWidgetOptions(selectedFormField)" class="options-editor">
-                  <label>Варианты</label>
-                  <div class="option-row" v-for="(opt, optIndex) in getFieldOptions(selectedFormField)" :key="`opt-${optIndex}`">
-                    <input
-                      :value="opt"
-                      placeholder="Вариант"
-                      @input="updateFieldOptionAt(selectedFormField, optIndex, ($event.target as HTMLInputElement).value)"
-                    />
-                    <button class="small danger" @click="removeFieldOptionAt(selectedFormField, optIndex)">Удалить</button>
-                  </div>
-                  <div class="option-add-row">
-                    <input
-                      v-model="newWidgetOption"
-                      placeholder="Новый вариант"
-                      @keydown.enter.prevent="addOptionToSelectedField"
-                    />
-                    <button class="small" @click="addOptionToSelectedField">Добавить вариант</button>
-                  </div>
-                </div>
-                <label class="checkbox-inline">
-                  <input v-model="selectedFormField.required" type="checkbox" /> Обязательное
-                </label>
-                <button class="small danger" @click="removeSelectedFormField">Удалить поле</button>
+                <p class="muted">Выберите поле справа в превью для редактирования.</p>
               </section>
 
               <section class="object-card">
@@ -3066,6 +2932,143 @@ onBeforeUnmount(() => {
                 </div>
               </section>
             </aside>
+
+            <article class="form-preview">
+              <header class="form-header">
+                <h4>{{ selectedForm.name }}</h4>
+                <p>{{ selectedForm.description }}</p>
+              </header>
+
+              <form @submit.prevent>
+                <div
+                  v-for="(field, index) in selectedForm.fields"
+                  :key="`${field.table_id ?? 'default'}-${field.column_key}`"
+                  class="form-field-preview"
+                  :class="{ active: selectedFormFieldIndex === index }"
+                  draggable="true"
+                  @dragstart="startFieldDrag(index)"
+                  @dragover.prevent
+                  @drop.prevent="dropFieldAt(index)"
+                  @click="selectFormField(index)"
+                >
+                  <div class="form-field-top">
+                    <label :for="`field-${field.column_key}`">
+                      {{ field.field_label }}
+                      <span v-if="field.required" class="required">*</span>
+                    </label>
+                    <div class="form-field-actions">
+                      <button class="small danger" type="button" @click.stop="removeFormField(index)">Удалить</button>
+                    </div>
+                  </div>
+                  <p class="field-table-label">Таблица: {{ getFieldTableName(field) }}</p>
+                  <input
+                    v-if="['text_input', 'number_input', 'date_input', 'datetime_input'].includes(field.widget_type)"
+                    :id="`field-${field.column_key}`"
+                    :type="getFieldInputType(field.widget_type)"
+                    :placeholder="field.placeholder"
+                    :required="field.required"
+                  />
+                  <textarea
+                    v-else-if="field.widget_type === 'textarea'"
+                    :id="`field-${field.column_key}`"
+                    :placeholder="field.placeholder"
+                    :required="field.required"
+                  />
+                  <select
+                    v-else-if="field.widget_type === 'select' && field.widget_settings.options"
+                    :id="`field-${field.column_key}`"
+                    :required="field.required"
+                  >
+                    <option value="">{{ field.placeholder || 'Выберите...' }}</option>
+                    <option v-for="opt in field.widget_settings.options" :key="opt" :value="opt">{{ opt }}</option>
+                  </select>
+                  <select
+                    v-else-if="field.widget_type === 'multiselect' && field.widget_settings.options"
+                    :id="`field-${field.column_key}`"
+                    multiple
+                    :required="field.required"
+                  >
+                    <option v-for="opt in field.widget_settings.options" :key="`multi-${opt}`" :value="opt">{{ opt }}</option>
+                  </select>
+                  <div v-else-if="field.widget_type === 'list_input'" class="list-input-preview">
+                    <input :placeholder="field.placeholder || 'Добавить элемент списка'" />
+                    <button type="button" class="small">Добавить</button>
+                  </div>
+                  <div v-else-if="field.widget_type === 'checkbox'" class="checkbox-wrapper">
+                    <template v-if="getFieldOptions(field).length > 0">
+                      <label v-for="(opt, idx) in getFieldOptions(field)" :key="`preview-checkbox-${idx}-${opt}`">
+                        <input type="checkbox" :name="`field-${field.column_key}`" :value="opt" />
+                        {{ opt }}
+                      </label>
+                    </template>
+                    <input v-else :id="`field-${field.column_key}`" type="checkbox" :required="field.required" />
+                  </div>
+                  <div v-else-if="field.widget_type === 'radio' && field.widget_settings.options" class="radio-wrapper">
+                    <label v-for="opt in field.widget_settings.options" :key="opt">
+                      <input type="radio" :name="`field-${field.column_key}`" :value="opt" :required="field.required" />
+                      {{ opt }}
+                    </label>
+                  </div>
+                  <p v-if="field.help_text" class="help-text">{{ field.help_text }}</p>
+                </div>
+              </form>
+            </article>
+
+            <Transition name="column-editor-fade">
+              <aside v-if="selectedFormField" class="column-editor-modal form-field-editor-modal">
+                <section class="object-card">
+                  <div class="column-editor-head">
+                    <h4>Настройки выбранного поля</h4>
+                    <button class="small ghost" @click="closeSelectedFormField">Закрыть</button>
+                  </div>
+
+                  <p class="muted">Текущая таблица: {{ getFieldTableName(selectedFormField) }}</p>
+                  <input v-model="selectedFormField.field_label" placeholder="Заголовок поля" />
+                  <select v-model="selectedFormField.widget_type">
+                    <option value="text_input">text_input</option>
+                    <option value="textarea">textarea</option>
+                    <option value="number_input">number_input</option>
+                    <option value="date_input">date_input</option>
+                    <option value="datetime_input">datetime_input</option>
+                    <option value="select">select</option>
+                    <option value="multiselect">multiselect</option>
+                    <option value="list_input">list_input</option>
+                    <option value="checkbox">checkbox</option>
+                    <option value="radio">radio</option>
+                  </select>
+                  <select v-model.number="selectedFormField.table_id">
+                    <option v-for="table in allTableOptions.filter((item) => formTableSelection.includes(item.id))" :key="`sf-t-${table.id}`" :value="table.id">
+                      {{ table.name }}
+                    </option>
+                  </select>
+                  <input v-model="selectedFormField.placeholder" placeholder="Placeholder" />
+                  <input v-model="selectedFormField.help_text" placeholder="Подсказка" />
+                  <div v-if="supportsWidgetOptions(selectedFormField)" class="options-editor">
+                    <label>Варианты</label>
+                    <div class="option-row" v-for="(opt, optIndex) in getFieldOptions(selectedFormField)" :key="`opt-${optIndex}`">
+                      <input
+                        :value="opt"
+                        placeholder="Вариант"
+                        @input="updateFieldOptionAt(selectedFormField, optIndex, ($event.target as HTMLInputElement).value)"
+                      />
+                      <button class="small danger" @click="removeFieldOptionAt(selectedFormField, optIndex)">Удалить</button>
+                    </div>
+                    <div class="option-add-row">
+                      <input
+                        v-model="newWidgetOption"
+                        placeholder="Новый вариант"
+                        @keydown.enter.prevent="addOptionToSelectedField"
+                      />
+                      <button class="small" @click="addOptionToSelectedField">Добавить вариант</button>
+                    </div>
+                  </div>
+                  <label class="checkbox-inline">
+                    <input v-model="selectedFormField.required" type="checkbox" /> Обязательное
+                  </label>
+                  <button class="small danger" @click="removeSelectedFormField">Удалить поле</button>
+                </section>
+              </aside>
+            </Transition>
           </div>
         </section>
 
