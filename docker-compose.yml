@@ -28,6 +28,7 @@ services:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/low_code
       DB_STARTUP_MAX_RETRIES: "20"
       DB_STARTUP_RETRY_DELAY_SECONDS: "2"
+      CORS_ALLOWED_ORIGINS: "http://localhost:5173,http://172.16.50.85:5173,http://100.79.64.80:5173"
       JWT_SECRET_KEY: please_change_secret
       JWT_ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: "60"

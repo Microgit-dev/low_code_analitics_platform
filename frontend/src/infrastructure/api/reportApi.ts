@@ -76,6 +76,17 @@ export const reportApi = {
     return response.data;
   },
 
+  downloadConversionPrompt: async (token: string, workspaceId: number, tableId: number) => {
+    const response = await httpClient.get<Blob>(
+      `/workspaces/${workspaceId}/reports/prompt/conversion?table_id=${tableId}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: "blob",
+      }
+    );
+    return response.data;
+  },
+
   getPublicDashboard: async (reportId: number) => {
     const response = await httpClient.get<PublicDashboardData>(`/reports/${reportId}/dashboard`);
     return response.data;

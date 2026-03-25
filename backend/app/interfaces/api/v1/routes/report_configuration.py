@@ -1,4 +1,5 @@
 import logging
+import json
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
@@ -8,7 +9,7 @@ import zipfile
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.application.use_cases.workspace.manage_reports import (
@@ -147,6 +148,166 @@ def _assert_workspace_owner(session: Session, workspace_id: int, owner_id: int) 
     ).scalar()
     if not workspace:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+
+def _find_llm_bible_dir() -> Path | None:
+    source_path = Path(__file__).resolve()
+    checked_paths: set[str] = set()
+
+    for parent in source_path.parents:
+        candidate = parent / "data" / "llm_bible"
+        candidate_key = str(candidate)
+        if candidate_key in checked_paths:
+            continue
+        checked_paths.add(candidate_key)
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def _load_llm_bible_documents() -> list[tuple[str, str]]:
+    llm_bible_dir = _find_llm_bible_dir()
+    if not llm_bible_dir:
+        logger.warning("[prompt-conversion] llm_bible directory not found")
+        return []
+
+    docs: list[tuple[str, str]] = []
+    for file_path in sorted(llm_bible_dir.glob("*.txt"), key=lambda item: item.name):
+        try:
+            text = file_path.read_text(encoding="utf-8").strip()
+        except OSError as error:
+            logger.warning(
+                "[prompt-conversion] failed to read llm_bible file=%s error=%s",
+                file_path,
+                error,
+            )
+            continue
+        if text:
+            docs.append((file_path.name, text))
+            logger.info("[prompt-conversion] loaded llm_bible file=%s", file_path)
+
+    if not docs:
+        logger.warning("[prompt-conversion] llm_bible directory has no non-empty .txt files")
+    return docs
+
+
+def _format_preview_rows(preview_rows: list[dict[str, Any]]) -> str:
+    if not preview_rows:
+        return "- (no records found in selected table)"
+
+    lines: list[str] = []
+    for idx, row in enumerate(preview_rows, start=1):
+        payload = json.dumps(row, ensure_ascii=False, sort_keys=True)
+        if len(payload) > 1500:
+            payload = f"{payload[:1500]} ...<truncated>"
+        lines.append(f"- row_{idx}: {payload}")
+    return "\n".join(lines)
+
+
+def _build_conversion_prompt_text(
+    table: TableStructureModel,
+    total_rows: int,
+    preview_rows: list[dict[str, Any]],
+) -> str:
+    columns = table.columns_json or []
+    if columns:
+        columns_description = "\n".join(
+            [
+                (
+                    f"- key: {str(column.get('key') or '')}; "
+                    f"name: {str(column.get('name') or column.get('key') or '')}; "
+                    f"type: {str(column.get('type') or 'unknown')}; "
+                    f"required: {bool(column.get('required', False))}; "
+                    f"settings: {column.get('settings') if column.get('settings') is not None else '{}'}"
+                )
+                for column in columns
+                if isinstance(column, dict) and column.get("key")
+            ]
+        )
+    else:
+        columns_description = "- (нет колонок)"
+
+    llm_bible_documents = _load_llm_bible_documents()
+    if llm_bible_documents:
+        llm_bible_reference = "\n\n".join(
+            [
+                f"[BEGIN LLM_BIBLE FILE: {filename}]\n{content}\n[END LLM_BIBLE FILE: {filename}]"
+                for filename, content in llm_bible_documents
+            ]
+        )
+    else:
+        llm_bible_reference = "\n".join(
+            [
+                "[LLM_BIBLE FILES NOT FOUND]",
+                "Fallback summary:",
+                "- Use {{ aggregation_func(key[, condition]) }}.",
+                "- V4 arithmetic is supported: +, -, *, / with parentheses.",
+                "- Scalar selectors are supported: first(key[, condition]), last(key[, condition]).",
+                "- Date helpers are supported in conditions: date(day, month, year), add_years(date_value, years).",
+                "- Variables are supported: set(name, value), var(name).",
+                "- Use where(field, condition) for cross-column filtering.",
+                '- Division by zero/undefined division renders as "-".',
+            ]
+        )
+
+    data_preview = _format_preview_rows(preview_rows)
+
+    return "\n".join(
+        [
+            "PROMPT FOR LLM: REPORT PLACEHOLDER CONVERSION",
+            "Prompt version: 2026-03-25.v10",
+            "",
+            "Your task:",
+            "Fill empty report fields with expressions inside double curly braces {{ ... }}.",
+            "Each expression will be computed on rows of selected table_data_records.data_json.",
+            "",
+            "LLM bible reference (full documents):",
+            llm_bible_reference,
+            "",
+            "Expression syntax:",
+            "- {{ aggregation_func(key) }}",
+            "- {{ aggregation_func(key, condition_expr) }}",
+            "- {{ first(key) }} / {{ last(key) }}",
+            "- {{ add_years(date(25, 3, 2026), -1) }} (for condition arguments)",
+            "- {{ set(my_var, first(key)) }} then {{ var(my_var) }}",
+            "- {{ aggregation_expr + aggregation_expr }}",
+            "- {{ (aggregation_expr + aggregation_expr) / 2 }}",
+            "",
+            "Computation notes:",
+            "- If filtering by another column, use where(field, condition).",
+            "- For row count use count(*).",
+            "- Numeric aggregations use numeric-convertible values.",
+            "- Numeric conversion: bool=true->1, false->0; numeric strings are parsed; non-numeric values are ignored.",
+            "- Date conversion supports ISO date and ISO datetime (including Z suffix).",
+            "- Strings in conditions should be quoted.",
+            "",
+            "Selected table context:",
+            f"- table_id: {table.id}",
+            f"- table_name: {table.name}",
+            f"- table_description: {table.description or ''}",
+            "- columns:",
+            columns_description,
+            "",
+            "Selected table data description:",
+            f"- total_rows_in_table_data_records: {total_rows}",
+            f"- preview_rows_count: {len(preview_rows)}",
+            "- preview_rows_order: newest first by created_at",
+            "- preview_rows_data_json:",
+            data_preview,
+            "",
+            "Examples:",
+            "- {{ count(*) }}",
+            "- {{ sum(suffer_people) }}",
+            "- {{ first(населенный_пункт_наименование) }}",
+            '- {{ sum(suffer_people, where(status, eq("injured"))) }}',
+            "- {{ sum(suffer_people, where(region_id, eq(5))) }}",
+            '- {{ count(*, where(created_at, date_between("2026-03-01", "2026-03-31"))) }}',
+            "- {{ sum(suffer_people) + count(*) }}",
+            "",
+            "Output requirement:",
+            "For each empty report field provide exactly one expression in {{ ... }} and nothing else.",
+        ]
+    )
 
 
 @router.get("/reports/{report_id}/dashboard", response_model=PublicDashboardResponse)
@@ -461,6 +622,67 @@ def download_excel_report(
     return StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/workspaces/{workspace_id}/reports/prompt/conversion")
+def download_conversion_prompt(
+    workspace_id: int,
+    table_id: int = Query(..., ge=1),
+    current_user=Depends(get_current_user),
+    session: Session = Depends(get_db),
+):
+    _assert_workspace_owner(session, workspace_id, current_user.id)
+
+    table = session.execute(
+        select(TableStructureModel).where(
+            TableStructureModel.workspace_id == workspace_id,
+            TableStructureModel.id == table_id,
+        )
+    ).scalar()
+    if not table:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found")
+
+    total_rows = (
+        session.execute(
+            select(func.count())
+            .select_from(TableDataRecordModel)
+            .where(
+                TableDataRecordModel.workspace_id == workspace_id,
+                TableDataRecordModel.table_id == table_id,
+            )
+        )
+        .scalar_one()
+    )
+
+    preview_rows_raw = (
+        session.execute(
+            select(TableDataRecordModel.data_json)
+            .where(
+                TableDataRecordModel.workspace_id == workspace_id,
+                TableDataRecordModel.table_id == table_id,
+            )
+            .order_by(TableDataRecordModel.created_at.desc())
+            .limit(5)
+        )
+        .scalars()
+        .all()
+    )
+    preview_rows = [row for row in preview_rows_raw if isinstance(row, dict)]
+
+    prompt_text = _build_conversion_prompt_text(
+        table=table,
+        total_rows=int(total_rows),
+        preview_rows=preview_rows,
+    )
+    payload = BytesIO(prompt_text.encode("utf-8"))
+    payload.seek(0)
+
+    filename = f"prompt_conversion_table_{table.id}.txt"
+    return StreamingResponse(
+        payload,
+        media_type="text/plain; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

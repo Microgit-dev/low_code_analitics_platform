@@ -1,5 +1,5 @@
-Aggregation Functions for ODT Template Processing (V1 + V2 + V3)
-=================================================================
+Aggregation Functions for ODT Template Processing (V1 + V2 + V3 + V4 + V5 + V6 + V7)
+=====================================================================================
 
 Status
 ------
@@ -18,22 +18,33 @@ Base:
 With condition:
 - {{ aggregation_func(key, condition_expr) }}
 
+Composable arithmetic (V4):
+- {{ aggregation_expr + aggregation_expr }}
+- {{ (aggregation_expr + aggregation_expr) / 2 }}
+
 Examples:
 - {{ count(*) }}
 - {{ count(name) }}
 - {{ sum(count) }}
 - {{ sum(count, gt(6)) }}
 - {{ count(*, where(name, contains("hahah"))) }}
+- {{ sum(count) + sum(count, gt(6)) }}
+- {{ add(sum(count), count(*)) }}
+- {{ first(name) }}
 
 Formal Grammar (Simplified)
 ---------------------------
-expression := function_call
+expression := additive_expr
+additive_expr := multiplicative_expr (("+" | "-") multiplicative_expr)*
+multiplicative_expr := unary_expr (("*" | "/") unary_expr)*
+unary_expr := ("+" | "-") unary_expr | primary
+primary := function_call | IDENTIFIER | NUMBER | STRING | "*" | "(" expression ")"
 function_call := IDENTIFIER "(" [arg ("," arg)*] ")"
-arg := function_call | IDENTIFIER | NUMBER | STRING | "*"
+arg := expression
 
 Notes:
-- Nested function calls are allowed only as condition expressions.
-- Aggregation function itself must be the top-level function call.
+- Nested function calls are allowed in conditions and arithmetic expressions.
+- Top-level expression can be either a single aggregation or composed arithmetic.
 
 Aggregation Functions
 ---------------------
@@ -43,6 +54,10 @@ Supported:
 - avg
 - min
 - max
+
+Scalar selector functions (V5):
+- first
+- last
 
 Signatures:
 - count(*)
@@ -62,6 +77,19 @@ Rules:
 - count(*) is only valid for count.
 - sum/avg/min/max require a concrete field key (not *).
 - Aggregation accepts 1 or 2 arguments only.
+
+Scalar selector signatures:
+- first(key)
+- first(key, condition)
+- last(key)
+- last(key, condition)
+
+Scalar selector rules:
+- first returns the first non-empty value in row order.
+- last returns the last non-empty value in row order.
+- "non-empty" means value is not null and not empty string.
+- If nothing matched, result is empty string.
+- Scalar selectors can be used inside condition arguments, e.g. eq(first(...)).
 
 How Conditions Are Applied
 --------------------------
@@ -154,6 +182,51 @@ Regex notes:
 - Python regex syntax
 - invalid regex raises validation error
 
+V4
+--
+Arithmetic composition:
+- Infix operators: +, -, *, /
+- Grouping via parentheses: ( ... )
+- Function forms:
+  - add(x1, x2, ...)
+  - sub(x1, x2)
+  - mul(x1, x2, ...)
+  - div(x1, x2)
+
+Rules:
+- Each operand must evaluate to a numeric value.
+- Aggregation functions can be operands.
+- Division by zero or undefined division result renders as "-".
+- Standard operator precedence is used: * and / before + and -.
+
+V5
+--
+Row selector operators:
+- first(key[, condition])
+- last(key[, condition])
+
+V6
+--
+Date helper functions for condition arguments:
+- date(day, month, year)
+- add_years(date_value, years_delta)
+
+Examples:
+- add_years(date(25, 3, 2026), -1) -> 2025-03-25
+- add_years("2026-03-25", -1) -> 2025-03-25
+
+V7
+--
+Template variables:
+- set(name, value_expression)
+- var(name)
+
+Variable rules:
+- Variables are stored during template rendering and are available in subsequent placeholders.
+- set(...) returns empty string (use it as helper placeholder).
+- var(name) returns variable value or empty string if not set.
+- var(...) can be used inside conditions, e.g. eq(var(my_key)).
+
 Examples by Version
 -------------------
 V1:
@@ -170,6 +243,27 @@ V3:
 - {{ count(category, in("alpha", "beta")) }}
 - {{ count(category, not_in("alpha", "beta")) }}
 - {{ count(name, regex("^jjj")) }}
+
+V4:
+- {{ sum(count) + sum(count, gt(6)) }}
+- {{ sum(count) + count(*) * 2 }}
+- {{ (sum(count) + count(*)) / 2 }}
+- {{ add(sum(count), count(*)) }}
+- {{ div(sum(count), count(*)) }}
+
+V5:
+- {{ first(name) }}
+- {{ last(name) }}
+- {{ first(name, where(category, eq("beta"))) }}
+- {{ last(name, where(category, eq("alpha"))) }}
+
+V6:
+- {{ count(*, where(created_at, date_between(add_years(date(1, 3, 2026), -1), add_years(date(31, 3, 2026), -1)))) }}
+- {{ count(*, where(created_at, before(add_years("2026-01-01", -1)))) }}
+
+V7:
+- {{ set(base_name, first(name, where(category, eq("beta")))) }}
+- {{ count(*, where(name, eq(var(base_name)))) }}
 
 Extended Usage Examples (with Expected Results)
 -----------------------------------------------
@@ -221,6 +315,32 @@ V3 set and regex:
 - {{ count(name, regex("^jjj")) }} -> 1
 - {{ count(name, regex("hahah$")) }} -> 1
 
+V4 arithmetic:
+- {{ sum(count) + sum(count, gt(6)) }} -> 16418
+- {{ sum(count) - count(*) }} -> 8206
+- {{ count(*) * 2 }} -> 10
+- {{ sum(count) + count(*) * 2 }} -> 8221
+- {{ (sum(count) + count(*)) / 2 }} -> 4108
+- {{ add(sum(count), count(*)) }} -> 8216
+- {{ sub(sum(count), count(*)) }} -> 8206
+- {{ mul(count(*), 3) }} -> 15
+- {{ div(sum(count), count(*)) }} -> 1642.2
+
+V5 scalar selectors:
+- {{ first(name) }} -> "jjj hahah write"
+- {{ last(name) }} -> "abc hahah"
+- {{ first(name, where(category, eq("beta"))) }} -> "other"
+- {{ last(name, where(category, eq("alpha"))) }} -> "jjj hahah write"
+
+V6 date helper usage:
+- {{ count(*, where(created_at, date_between(add_years(date(22, 3, 2027), -1), add_years(date(25, 3, 2027), -1)))) }} -> 3
+- {{ count(*, where(created_at, before(add_years(date(1, 1, 2027), -1)))) }} -> 0
+
+V7 variables:
+- {{ set(base_name, first(name, where(category, eq("beta")))) }} -> "" (stores "other")
+- {{ var(base_name) }} -> "other"
+- {{ count(*, where(name, eq(var(base_name)))) }} -> 1
+
 Recommended templates:
 - Total rows with business filter:
   {{ count(*, where(status, eq("active"))) }}
@@ -249,6 +369,9 @@ Invalid condition signature:
 Invalid regex:
 - {{ count(name, regex("[")) }}
 
+Division behavior:
+- {{ sum(count) / 0 }} -> "-"
+
 Best Practices for LLM/Agents
 -----------------------------
 - Use explicit where(...) when filtering by a field different from aggregation key.
@@ -256,3 +379,4 @@ Best Practices for LLM/Agents
 - Use quoted strings for text literals.
 - Keep each {{ ... }} expression in a single contiguous text segment in ODT.
 - Prefer simple readable conditions over deeply nested logic.
+- For combined metrics, use V4 arithmetic expressions to avoid splitting logic across placeholders.

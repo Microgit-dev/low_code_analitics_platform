@@ -74,6 +74,10 @@ export class ReportUseCase {
     return reportApi.calculateByTemplate(this.token, workspaceId, tableId, file);
   }
 
+  async downloadConversionPrompt(workspaceId: number, tableId: number): Promise<Blob> {
+    return reportApi.downloadConversionPrompt(this.token, workspaceId, tableId);
+  }
+
   static async getPublicDashboard(reportId: number): Promise<PublicDashboardData> {
     return reportApi.getPublicDashboard(reportId);
   }

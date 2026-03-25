@@ -1,5 +1,6 @@
 import logging
 import time
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -30,9 +31,28 @@ from app.interfaces.api.v1.routes.workspace import router as workspace_router
 app = FastAPI(title=settings.app_name, debug=settings.debug)
 logger = logging.getLogger("uvicorn.error")
 
+
+def _normalize_cors_origin(raw_origin: str) -> str:
+    candidate = raw_origin.strip()
+    if not candidate or candidate == "*":
+        return candidate
+    parsed = urlparse(candidate)
+    if parsed.scheme and parsed.netloc:
+        return f"{parsed.scheme}://{parsed.netloc}"
+    return candidate
+
+
+cors_origins = [
+    normalized
+    for normalized in (_normalize_cors_origin(origin) for origin in settings.cors_allowed_origins.split(","))
+    if normalized
+]
+allow_all_origins = "*" in cors_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in settings.cors_allowed_origins.split(",") if origin.strip()],
+    allow_origins=[] if allow_all_origins else cors_origins,
+    allow_origin_regex=".*" if allow_all_origins else None,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

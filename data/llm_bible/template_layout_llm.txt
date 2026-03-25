@@ -1,0 +1,69 @@
+Template Layout Guide for ODT Reports
+=====================================
+
+Purpose
+-------
+This file describes how report templates should be written.
+It explains where expressions must be placed and how values are computed from table data.
+
+Core Rule
+---------
+Any value that should be calculated dynamically must be placed inside double curly braces:
+- {{ ... }}
+
+Inside {{ ... }} you must put one valid expression (single aggregation or composed arithmetic expression).
+
+How Computation Works
+---------------------
+1) User selects a source table.
+2) System reads rows from table_data_records.data_json for that table.
+3) Each expression inside {{ ... }} is evaluated against those rows.
+4) Expression result is inserted into the template text.
+5) Text outside {{ ... }} remains unchanged.
+
+Expression Syntax Source
+------------------------
+This file does not define full expression syntax.
+Full syntax and supported functions/operators are defined in:
+- aggregation_function_llm.txt
+
+Authoring Rules
+---------------
+1) Keep each expression fully inside one pair of braces.
+2) Do not split a single expression into multiple text fragments.
+3) Use plain expression format from aggregation_function_llm.txt.
+4) Use valid field keys from the selected table.
+5) If filtering by another column, use where(field, condition).
+
+Template Example
+----------------
+Static text:
+- "Report for incidents"
+
+Dynamic values:
+- "Total records: {{ count(*) }}"
+- "Total sufferers: {{ sum(suffer_people) }}"
+- "Sufferers with status injured: {{ sum(suffer_people, where(status, eq(\"injured\"))) }}"
+- "Owner from first row: {{ first(owner_name) }}"
+- "Combined KPI: {{ sum(suffer_people) + count(*) }}"
+
+What Is Not Allowed
+-------------------
+- Empty braces: {{ }}
+- Free-form text instead of expression inside braces
+- Unsupported functions/operators not listed in aggregation_function_llm.txt
+
+Recommended Workflow
+--------------------
+1) Define report text and labels.
+2) Insert placeholders {{ ... }} where computed values are needed.
+3) Validate expressions against aggregation_function_llm.txt.
+4) Run template calculation using selected table.
+5) Review output values.
+
+Quick Reminder
+--------------
+- {{ ... }} = dynamic computed value
+- outside {{ ... }} = static text
+- expression rules = aggregation_function_llm.txt
+- arithmetic between aggregations is allowed in V4

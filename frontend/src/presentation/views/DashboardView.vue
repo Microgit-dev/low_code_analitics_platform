@@ -1575,72 +1575,35 @@ const closePromptModal = () => {
   promptError.value = ''
 }
 
-const buildConversionPrompt = (table: TableStructure): string => {
-  const columnsDescription = table.columns
-    .map((column) => {
-      const settings = column.settings && Object.keys(column.settings).length > 0
-        ? `; settings: ${JSON.stringify(column.settings)}`
-        : ''
-      return `- key: ${column.key}; name: ${column.name}; type: ${column.type}; required: ${column.required}${settings}`
-    })
-    .join('\n')
+const downloadConversionPrompt = async () => {
+  if (!selectedWorkspace.value) {
+    promptError.value = 'Сначала выберите workspace.'
+    return
+  }
 
-  return [
-    'Ты заполняешь пустые поля отчета агрегирующими выражениями.',
-    '',
-    'Контекст таблицы:',
-    `- table_name: ${table.name}`,
-    `- table_id: ${table.id}`,
-    '- columns:',
-    columnsDescription || '- (нет колонок)',
-    '',
-    'Синтаксис, который разрешен:',
-    '- {{ aggregation_func(key) }}',
-    '- {{ aggregation_func(key, condition_expr) }}',
-    '',
-    'Разрешенные aggregation_func:',
-    '- count, sum, avg, min, max',
-    '',
-    'Разрешенные условия:',
-    '- V1: gt, gte, lt, lte, eq, neq, between, is_null, not_null, contains, starts_with, ends_with, and, or, not, where',
-    '- V2: before, after, date_between',
-    '- V3: in, not_in, regex',
-    '',
-    'Правила:',
-    '- Если нужно фильтровать по другой колонке, используй where(field, condition).',
-    '- Для количества строк используй count(*).',
-    '- Для строковых литералов используй кавычки.',
-    '- Возвращай только выражения в {{ ... }} без пояснений.',
-    '',
-    'Примеры:',
-    '- {{ sum(suffer_people, where(status, eq("injured"))) }}',
-    '- {{ sum(suffer_people, where(region_id, eq(5))) }}',
-    '- {{ count(*, where(created_at, date_between("2026-03-01", "2026-03-31"))) }}',
-    '',
-    'Задача:',
-    '- Для каждого пустого поля отчета подбери корректное выражение.',
-  ].join('\n')
-}
-
-const downloadConversionPrompt = () => {
   const table = tableStructures.value.find((item) => item.id === promptTableId.value)
   if (!table) {
     promptError.value = 'Выберите таблицу для генерации промпта.'
     return
   }
 
-  const promptText = buildConversionPrompt(table)
-  const blob = new Blob([promptText], { type: 'text/plain;charset=utf-8' })
-  const url = window.URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  const safeName = slugify(table.name) || `table_${table.id}`
-  anchor.href = url
-  anchor.download = `prompt_conversion_${safeName}.txt`
-  document.body.appendChild(anchor)
-  anchor.click()
-  document.body.removeChild(anchor)
-  window.URL.revokeObjectURL(url)
-  closePromptModal()
+  promptError.value = ''
+  try {
+    const blob = await reportUseCase.downloadConversionPrompt(selectedWorkspace.value.id, table.id)
+    const url = window.URL.createObjectURL(blob)
+    const anchor = document.createElement('a')
+    const safeName = slugify(table.name) || `table_${table.id}`
+    anchor.href = url
+    anchor.download = `prompt_conversion_${safeName}.txt`
+    document.body.appendChild(anchor)
+    anchor.click()
+    document.body.removeChild(anchor)
+    window.URL.revokeObjectURL(url)
+    closePromptModal()
+  } catch (error) {
+    console.error('Failed to download conversion prompt', error)
+    promptError.value = 'Не удалось скачать промпт с сервиса.'
+  }
 }
 
 const isOdtFile = (file: File): boolean =>
