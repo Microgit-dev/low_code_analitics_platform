@@ -73,15 +73,16 @@ label {
 
 input {
   border: 1px solid var(--line);
-  background: #f8faff;
+  background: var(--bg-input);
+  color: var(--text-main);
   padding: 10px 12px;
   border-radius: 12px;
 }
 
 button {
   border: none;
-  background: linear-gradient(140deg, #1e63d8, #2b7df4);
-  color: var(--text-main);
+  background: var(--button-auth);
+  color: var(--accent-contrast);
   font-weight: 700;
   padding: 11px 14px;
   border-radius: 12px;

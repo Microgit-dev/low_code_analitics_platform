@@ -38,6 +38,7 @@ type WorkspaceTab = 'details' | 'tables' | 'forms' | 'data' | 'import' | 'report
 type TablePosition = { x: number; y: number }
 type ImportTargetUi = ImportTargetConfig & { localId: number }
 type ReportCreationKind = 'dashboard' | 'table_export'
+const TABLE_LAYOUT_STORAGE_KEY = 'dashboard-table-layout'
 
 const workspaces = ref<Workspace[]>([])
 const loading = ref(false)
@@ -62,6 +63,7 @@ const activeTableId = ref<number | null>(null)
 const selectedColumnRef = ref<{ tableId: number; columnKey: string } | null>(null)
 const tablePositions = ref<Record<number, TablePosition>>({})
 const tableDragging = ref<{ tableId: number; offsetX: number; offsetY: number } | null>(null)
+const schemaCanvasWrapRef = ref<HTMLElement | null>(null)
 
 const newTableName = ref('')
 const newTableDescription = ref('')
@@ -156,6 +158,43 @@ const selectedWorkspace = computed(() => {
   return workspaces.value.find((workspace) => workspace.id === selectedWorkspaceId.value) ?? null
 })
 
+const tableLayoutStorageKey = computed(() =>
+  selectedWorkspace.value ? `${TABLE_LAYOUT_STORAGE_KEY}:${selectedWorkspace.value.id}` : null
+)
+
+const loadStoredTablePositions = (): Record<number, TablePosition> => {
+  if (typeof window === 'undefined' || !tableLayoutStorageKey.value) return {}
+
+  try {
+    const raw = localStorage.getItem(tableLayoutStorageKey.value)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, TablePosition>
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        ([, position]) =>
+          position &&
+          typeof position.x === 'number' &&
+          Number.isFinite(position.x) &&
+          typeof position.y === 'number' &&
+          Number.isFinite(position.y)
+      )
+        .map(([tableId, position]) => [Number(tableId), position])
+    )
+  } catch {
+    return {}
+  }
+}
+
+const persistTablePositions = () => {
+  if (typeof window === 'undefined' || !tableLayoutStorageKey.value) return
+
+  try {
+    localStorage.setItem(tableLayoutStorageKey.value, JSON.stringify(tablePositions.value))
+  } catch {
+    // ignore storage write failures
+  }
+}
+
 const nextWorkspaceName = computed(() => `WorkSpace ${workspaces.value.length + 1}`)
 
 const workspaceStats = computed(() => {
@@ -204,6 +243,28 @@ const canSaveWorkspaceDetails = computed(() => {
 const activeTable = computed(() => {
   if (activeTableId.value === null) return null
   return tableStructures.value.find((table) => table.id === activeTableId.value) ?? null
+})
+
+const tableEditorName = computed({
+  get: () => activeTable.value?.name ?? newTableName.value,
+  set: (value: string) => {
+    if (activeTable.value) {
+      activeTable.value.name = value
+      return
+    }
+    newTableName.value = value
+  }
+})
+
+const tableEditorDescription = computed({
+  get: () => activeTable.value?.description ?? newTableDescription.value,
+  set: (value: string) => {
+    if (activeTable.value) {
+      activeTable.value.description = value
+      return
+    }
+    newTableDescription.value = value
+  }
 })
 
 const selectedDataTable = computed(() => {
@@ -324,6 +385,7 @@ const loadSchema = async () => {
   try {
     tableStructures.value = await tableSchemaUseCase.listTables(authStore.token, selectedWorkspace.value.id)
     relations.value = await tableSchemaUseCase.listRelations(authStore.token, selectedWorkspace.value.id)
+    const storedPositions = loadStoredTablePositions()
     if (tableStructures.value.length > 0) {
       const hasActive = tableStructures.value.some((table) => table.id === activeTableId.value)
       activeTableId.value = hasActive ? activeTableId.value : tableStructures.value[0].id
@@ -356,12 +418,13 @@ const loadSchema = async () => {
 
     const nextPositions: Record<number, TablePosition> = {}
     for (const [index, table] of tableStructures.value.entries()) {
-      nextPositions[table.id] = tablePositions.value[table.id] ?? {
-        x: 36 + (index % 3) * 310,
-        y: 36 + Math.floor(index / 3) * 260
+      nextPositions[table.id] = storedPositions[table.id] ?? tablePositions.value[table.id] ?? {
+        x: 20 + (index % 3) * 300,
+        y: 20 + Math.floor(index / 3) * 260
       }
     }
     tablePositions.value = nextPositions
+    persistTablePositions()
   } catch {
     schemaError.value = 'Не удалось загрузить low-code структуры.'
   } finally {
@@ -548,27 +611,37 @@ const getTablePosition = (tableId: number): TablePosition => {
 
 const onCanvasPointerMove = (event: PointerEvent) => {
   const drag = tableDragging.value
-  if (!drag) return
+  const canvasEl = schemaCanvasWrapRef.value
+  if (!drag || !canvasEl) return
+
+  const canvasRect = canvasEl.getBoundingClientRect()
+  const nextX = event.clientX - canvasRect.left - drag.offsetX
+  const nextY = event.clientY - canvasRect.top - drag.offsetY
 
   tablePositions.value = {
     ...tablePositions.value,
     [drag.tableId]: {
-      x: Math.max(16, event.clientX - drag.offsetX),
-      y: Math.max(16, event.clientY - drag.offsetY)
+      x: Math.max(20, nextX),
+      y: Math.max(20, nextY)
     }
   }
+  persistTablePositions()
 }
 
 const stopTableDrag = () => {
   tableDragging.value = null
 }
 
-const onTableGripPointerDown = (event: PointerEvent, tableId: number) => {
+const onTableCardPointerDown = (event: PointerEvent, tableId: number) => {
+  const card = event.currentTarget as HTMLElement | null
+  if (!card) return
+
+  const cardRect = card.getBoundingClientRect()
   const position = getTablePosition(tableId)
   tableDragging.value = {
     tableId,
-    offsetX: event.clientX - position.x,
-    offsetY: event.clientY - position.y
+    offsetX: event.clientX - cardRect.left,
+    offsetY: event.clientY - cardRect.top
   }
   selectTable(tableId)
 }
@@ -1962,7 +2035,6 @@ onBeforeUnmount(() => {
 <template>
   <main class="dashboard">
     <DashboardSidebar
-      :auth-email="authStore.me?.email"
       :active-tab="workspaceTab"
       @nav-click="onSidebarNavClick"
       @open-profile="openUserModal"
@@ -2000,71 +2072,32 @@ onBeforeUnmount(() => {
         </DashboardTileActions>
 
         <section v-if="workspaceTab === 'tables'" class="designer">
-          <div class="designer-header">
-            <h3>Low-code структуры таблиц</h3>
-            <p>SQL Canvas: перемещайте таблицы по полю и переносите колонки drag-and-drop между таблицами.</p>
-          </div>
-
-          <div class="create-table">
-            <input v-model="newTableName" type="text" placeholder="Новая таблица: название" maxlength="255" />
-            <input v-model="newTableDescription" type="text" placeholder="Описание таблицы" maxlength="255" />
-            <button @click="createTable">Добавить таблицу</button>
-          </div>
-
-          <UiStatusText v-if="schemaLoading">Загрузка структуры...</UiStatusText>
-          <UiStatusText v-if="schemaError" variant="error">{{ schemaError }}</UiStatusText>
-
-          <div class="schema-layout">
-            <div class="schema-canvas-wrap">
-              <div class="schema-canvas">
-                <article
-                  v-for="table in tableStructures"
-                  :key="table.id"
-                  class="table-card"
-                  :class="{ active: activeTableId === table.id }"
-                  :style="{ left: `${getTablePosition(table.id).x}px`, top: `${getTablePosition(table.id).y}px` }"
-                  @dragover.prevent
-                  @drop="onDropColumnToTable(table.id)"
-                >
-                  <div class="table-head" @click="selectTable(table.id)">
-                    <button class="table-grip" @pointerdown.prevent="onTableGripPointerDown($event, table.id)">::: </button>
-                    <strong>{{ table.name }}</strong>
-                  </div>
-                  <p class="table-sub">{{ table.description || 'Без описания' }}</p>
-
-                  <ul class="column-list">
-                    <li
-                      v-for="column in table.columns"
-                      :key="column.key"
-                      class="column-item"
-                      draggable="true"
-                      @dragstart="startDraggingColumn(table.id, column.key)"
-                      @dragend="dragState = null"
-                      @click="selectColumn(table.id, column.key)"
-                    >
-                      <div>
-                        <strong>{{ column.name }}</strong>
-                        <span>{{ column.key }}</span>
-                      </div>
-                      <em>{{ column.type }}</em>
-                    </li>
-                  </ul>
-                </article>
-              </div>
-            </div>
-
-            <aside class="object-sidebar">
-              <section v-if="activeTable" class="object-card">
-                <h4>Выделенная таблица</h4>
-                <input v-model="activeTable.name" placeholder="Имя таблицы" />
-                <input v-model="activeTable.description" placeholder="Описание таблицы" />
+          <div class="table-workspace">
+            <aside class="table-editor-pane">
+              <section class="object-card table-editor-card">
+                <h3>{{ activeTable ? activeTable.name : 'Создать таблицу' }}</h3>
+                <p class="muted">
+                  {{ activeTable ? 'Редактируйте таблицу и её описание.' : 'Добавьте новую таблицу в workspace.' }}
+                </p>
+                <input
+                  v-model="tableEditorName"
+                  :placeholder="activeTable ? 'Имя таблицы' : 'Новая таблица: название'"
+                  maxlength="255"
+                />
+                <textarea
+                  v-model="tableEditorDescription"
+                  :placeholder="activeTable ? 'Описание таблицы' : 'Описание таблицы'"
+                  rows="4"
+                  maxlength="255"
+                />
                 <DashboardTileActions>
-                  <button class="small" @click="saveTable(activeTable)">Сохранить таблицу</button>
-                  <button class="small danger" @click="deleteActiveTable">Удалить таблицу</button>
+                  <button v-if="activeTable" class="small" @click="saveTable(activeTable)">Сохранить таблицу</button>
+                  <button v-else class="small" @click="createTable">Добавить таблицу</button>
+                  <button v-if="activeTable" class="small danger" @click="deleteActiveTable">Удалить таблицу</button>
                 </DashboardTileActions>
               </section>
 
-              <section class="object-card" v-if="activeTable">
+              <section class="object-card table-editor-card" v-if="activeTable">
                 <h4>Добавить колонку</h4>
                 <div class="new-column-form">
                   <input v-model="newColumnName" placeholder="Название колонки" />
@@ -2135,105 +2168,55 @@ onBeforeUnmount(() => {
 
                 <button class="small" @click="addColumnToActiveTable">Добавить в таблицу</button>
               </section>
-
-              <section v-if="selectedColumn && selectedColumnParent" class="object-card">
-                <h4>Выделенная колонка</h4>
-                <p class="muted">Таблица: {{ selectedColumnParent.name }}</p>
-                <input v-model="selectedColumn.name" placeholder="Название" />
-                <input v-model="selectedColumn.key" placeholder="Ключ" />
-                <select v-model="selectedColumn.type">
-                  <option value="text">text</option>
-                  <option value="number">number</option>
-                  <option value="boolean">boolean</option>
-                  <option value="date">date</option>
-                  <option value="datetime">datetime</option>
-                  <option value="enum">enum</option>
-                  <option value="list">list</option>
-                  <option value="geoPoint">geoPoint</option>
-                  <option value="geoPolygon">geoPolygon</option>
-                </select>
-                <label class="checkbox-inline"><input v-model="selectedColumn.required" type="checkbox" />required</label>
-                <div v-if="selectedColumn.type === 'number'" class="type-settings">
-                  <label class="checkbox-inline">
-                    <input
-                      :checked="getSelectedNumberSetting('isId', false)"
-                      type="checkbox"
-                      @change="onSelectedColumnIsIdChange(($event.target as HTMLInputElement).checked)"
-                    />
-                    Использовать как ID
-                  </label>
-                  <label class="checkbox-inline">
-                    <input
-                      :checked="getSelectedNumberSetting('autoIncrement', false)"
-                      type="checkbox"
-                      @change="setSelectedNumberSetting('autoIncrement', ($event.target as HTMLInputElement).checked)"
-                    />
-                    Автоинкремент
-                  </label>
-                  <label class="setting-label">Стартовое значение</label>
-                  <input
-                    :value="getSelectedNumberSetting('autoIncrementStart', 1)"
-                    type="number"
-                    min="1"
-                    placeholder="Стартовое значение"
-                    :disabled="!getSelectedNumberSetting('autoIncrement', false)"
-                    @input="setSelectedNumberSetting('autoIncrementStart', Math.max(1, Number(($event.target as HTMLInputElement).value) || 1))"
-                  />
-                  <label class="setting-label">Шаг инкремента</label>
-                  <input
-                    :value="getSelectedNumberSetting('autoIncrementStep', 1)"
-                    type="number"
-                    min="1"
-                    placeholder="Шаг"
-                    :disabled="!getSelectedNumberSetting('autoIncrement', false)"
-                    @input="setSelectedNumberSetting('autoIncrementStep', Math.max(1, Number(($event.target as HTMLInputElement).value) || 1))"
-                  />
-                </div>
-                <DashboardTileActions>
-                  <button class="small" @click="saveSelectedColumn">Сохранить</button>
-                  <button class="small danger" @click="removeColumnFromActiveTable(selectedColumn.key)">Удалить</button>
-                </DashboardTileActions>
-              </section>
-
-              <section class="object-card relations">
-                <h4>Связи таблиц</h4>
-                <div class="relation-form">
-                  <input v-model="relationName" placeholder="Название связи" />
-                  <select v-model="relationSourceTableId">
-                    <option value="">Источник</option>
-                    <option v-for="table in allTableOptions" :key="`s-${table.id}`" :value="String(table.id)">{{ table.name }}</option>
-                  </select>
-                  <select v-model="relationSourceColumn">
-                    <option value="">Колонка источника</option>
-                    <option v-for="column in relationSourceColumns" :key="`sc-${column.key}`" :value="column.key">{{ column.name }}</option>
-                  </select>
-                  <select v-model="relationTargetTableId">
-                    <option value="">Цель</option>
-                    <option v-for="table in allTableOptions" :key="`t-${table.id}`" :value="String(table.id)">{{ table.name }}</option>
-                  </select>
-                  <select v-model="relationTargetColumn">
-                    <option value="">Колонка цели</option>
-                    <option v-for="column in relationTargetColumns" :key="`tc-${column.key}`" :value="column.key">{{ column.name }}</option>
-                  </select>
-                  <select v-model="relationType">
-                    <option value="one_to_one">one_to_one</option>
-                    <option value="one_to_many">one_to_many</option>
-                    <option value="many_to_many">many_to_many</option>
-                  </select>
-                  <button @click="createRelation">Добавить связь</button>
-                </div>
-
-                <ul class="relation-list">
-                  <li v-for="relation in relations" :key="relation.id">
-                    <div>
-                      <strong>{{ relation.name }}</strong>
-                      <span>{{ relation.relation_type }}: {{ relation.source_table_id }} -> {{ relation.target_table_id }}</span>
-                    </div>
-                    <button class="small danger" @click="deleteRelation(relation.id)">Удалить</button>
-                  </li>
-                </ul>
-              </section>
             </aside>
+
+            <div class="table-canvas-shell">
+              <div class="designer-header">
+                <h3>Low-code структуры таблиц</h3>
+                <p>Перемещайте таблицы по полю и переносите колонки drag-and-drop между таблицами.</p>
+              </div>
+
+              <UiStatusText v-if="schemaLoading">Загрузка структуры...</UiStatusText>
+              <UiStatusText v-if="schemaError" variant="error">{{ schemaError }}</UiStatusText>
+
+              <div ref="schemaCanvasWrapRef" class="schema-canvas-wrap">
+                <div class="schema-canvas">
+                  <article
+                    v-for="table in tableStructures"
+                    :key="table.id"
+                    class="table-card"
+                    :class="{ active: activeTableId === table.id }"
+                    :style="{ left: `${getTablePosition(table.id).x}px`, top: `${getTablePosition(table.id).y}px` }"
+                    @pointerdown.left="onTableCardPointerDown($event, table.id)"
+                    @dragover.prevent
+                    @drop="onDropColumnToTable(table.id)"
+                  >
+                    <div class="table-head" @click="selectTable(table.id)">
+                      <strong>{{ table.name }}</strong>
+                    </div>
+                    <p class="table-sub">{{ table.description || 'Без описания' }}</p>
+
+                  <ul class="column-list">
+                      <li
+                        v-for="column in table.columns"
+                        :key="column.key"
+                        class="column-item"
+                        draggable="true"
+                        @dragstart="startDraggingColumn(table.id, column.key)"
+                        @dragend="dragState = null"
+                        @click="selectColumn(table.id, column.key)"
+                      >
+                        <div>
+                          <strong>{{ column.name }}</strong>
+                          <span>{{ column.key }}</span>
+                        </div>
+                        <em>{{ column.type }}</em>
+                      </li>
+                    </ul>
+                  </article>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -2798,9 +2781,12 @@ onBeforeUnmount(() => {
         @change-password="changePassword"
       />
 
-      <article v-else class="empty-content">
-        <h2>Выберите workspace</h2>
-        <p>Создайте новое пространство в боковой панели или выберите существующее из списка.</p>
+      <article v-if="!selectedWorkspace" class="empty-content">
+        <h2>У вас пока нет workspace</h2>
+        <p>Создайте первое пространство, чтобы начать работу с таблицами, формами, импортом и отчетами.</p>
+        <div class="empty-content-actions">
+          <button @click="openCreateWorkspaceModal">Создать workspace</button>
+        </div>
       </article>
     </section>
   </main>

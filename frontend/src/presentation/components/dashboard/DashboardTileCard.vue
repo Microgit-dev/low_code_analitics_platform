@@ -25,25 +25,27 @@ defineProps<{
 
 <style scoped>
 .dashboard-tile-card {
-  border: 1.5px solid #d3dee2;
+  border: 1.5px solid var(--line);
   border-radius: 14px;
   padding: 14px;
-  background: #ffffff;
-  display: grid;
+  background: var(--bg-panel);
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   transition: transform 0.16s ease, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  align-self: start;
 }
 
 .dashboard-tile-card:hover {
-  background: #f8fcfd;
-  border-color: #8eacb1;
+  background: var(--bg-soft);
+  border-color: var(--line-strong);
   transform: translateY(-1px);
 }
 
 .dashboard-tile-card.active {
-  background: #f5fafb;
-  border-color: #8eacb1;
-  box-shadow: 0 4px 16px rgba(142, 172, 177, 0.2);
+  background: var(--bg-soft);
+  border-color: var(--accent-soft);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .dashboard-tile-card-header {
@@ -62,7 +64,8 @@ defineProps<{
 }
 
 .dashboard-tile-card-body {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 6px;
 }
 

@@ -1,38 +1,78 @@
 @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --bg: #eaf2f4;
+  --bg: #f3f6f8;
   --bg-panel: #ffffff;
-  --bg-soft: #f3f9fa;
+  --bg-soft: #eef4f6;
   --bg-elevated: #ffffff;
-  --text-main: #3c3f52;
-  --workspace-tile-title: #3c3f52;
-  --text-muted: #6f7f91;
-  --accent: #2f8486;
-  --accent-soft: #58a4a6;
-  --line: #d3dee2;
-  --line-strong: #b8cbd1;
+  --bg-input: #ffffff;
+  --bg-glass: transparent;
+  --bg-glass-strong: transparent;
+  --bg-tab: #ffffff;
+  --bg-tab-soft: #edf3f5;
+  --bg-hover: rgba(226, 234, 238, 0.9);
+  --bg-grid: #f1f5f7;
+  --sidebar-shell: #ffffff;
+  --sidebar-border: #dde5e9;
+  --sidebar-hover: #edf3f5;
+  --sidebar-active: #dce6eb;
+  --sidebar-label-bg: #dce6eb;
+  --sidebar-label-text: #58607a;
+  --text-main: #5f627d;
+  --workspace-tile-title: #5f627d;
+  --text-muted: #8f95aa;
+  --accent: #4f8f94;
+  --accent-soft: #6aa4a8;
+  --accent-contrast: #ffffff;
+  --line: #d8e0e5;
+  --line-strong: #c8d5db;
   --ok: #1f8f5f;
   --danger: #c1384f;
+  --warning: #8b621f;
+  --button-primary: linear-gradient(140deg, #4f8f94, #5da0a5);
+  --button-primary-shadow: rgba(79, 143, 148, 0.22);
+  --button-danger: linear-gradient(140deg, #d93c56, #c72e48);
+  --button-success: linear-gradient(140deg, #1f8f5f, #2ca86f);
+  --button-auth: linear-gradient(140deg, #1e63d8, #2b7df4);
   --shadow-soft: 0 10px 24px rgba(26, 44, 74, 0.1);
   --shadow-strong: 0 24px 48px rgba(26, 44, 74, 0.15);
   font-family: 'Montserrat', 'Segoe UI', sans-serif;
 }
 
 :root[data-theme='dark'] {
-  --bg: #090f1a;
-  --bg-panel: #121d30;
-  --bg-soft: #0f1828;
-  --bg-elevated: #1a2740;
-  --text-main: #dfeaff;
-  --workspace-tile-title: #d4e5ff;
-  --text-muted: #8fa6c8;
-  --accent: #4d8bff;
-  --accent-soft: #77a8ff;
-  --line: #2a3f61;
-  --line-strong: #3a567e;
+  --bg: #08111f;
+  --bg-panel: #0f1c31;
+  --bg-soft: #11223b;
+  --bg-elevated: #142742;
+  --bg-input: #162a45;
+  --bg-glass: rgba(11, 23, 40, 0.94);
+  --bg-glass-strong: rgba(10, 21, 37, 0.96);
+  --bg-tab: #162842;
+  --bg-tab-soft: #102036;
+  --bg-hover: rgba(43, 83, 126, 0.36);
+  --bg-grid: #10233b;
+  --sidebar-shell: rgba(9, 21, 38, 0.96);
+  --sidebar-border: rgba(31, 55, 86, 0.82);
+  --sidebar-hover: rgba(27, 56, 92, 0.62);
+  --sidebar-active: #183459;
+  --sidebar-label-bg: #163253;
+  --sidebar-label-text: #93f5e8;
+  --text-main: #d7e2f2;
+  --workspace-tile-title: #e3eefc;
+  --text-muted: #7f98b7;
+  --accent: #52e3d3;
+  --accent-soft: #7df0e4;
+  --accent-contrast: #071420;
+  --line: #1a3554;
+  --line-strong: #26486f;
   --ok: #34d399;
   --danger: #fb7185;
+  --warning: #f6c87a;
+  --button-primary: linear-gradient(140deg, #4ad9cb, #64f1df);
+  --button-primary-shadow: rgba(82, 227, 211, 0.22);
+  --button-danger: linear-gradient(140deg, #b93a5a, #e15d7a);
+  --button-success: linear-gradient(140deg, #16805d, #2c9f74);
+  --button-auth: linear-gradient(140deg, #36cdbd, #63ebd9);
   --shadow-soft: 0 14px 30px rgba(0, 0, 0, 0.46);
   --shadow-strong: 0 28px 56px rgba(0, 0, 0, 0.56);
 }
@@ -44,21 +84,17 @@
 body {
   margin: 0;
   color: var(--text-main);
-  background:
-    radial-gradient(circle at 8% 14%, rgba(86, 160, 163, 0.2) 0%, transparent 38%),
-    radial-gradient(circle at 88% 10%, rgba(47, 132, 134, 0.14) 0%, transparent 34%),
-    radial-gradient(circle at 56% 90%, rgba(145, 177, 186, 0.14) 0%, transparent 42%),
-    linear-gradient(180deg, #f2f8fa 0%, #e7f0f3 100%);
+  background: #f3f6f8;
   min-height: 100vh;
   transition: background 0.3s ease, color 0.3s ease;
 }
 
 :root[data-theme='dark'] body {
   background:
-    radial-gradient(circle at 10% 12%, rgba(77, 139, 255, 0.22) 0%, transparent 40%),
-    radial-gradient(circle at 84% 8%, rgba(103, 168, 255, 0.14) 0%, transparent 34%),
-    radial-gradient(circle at 58% 92%, rgba(77, 125, 220, 0.2) 0%, transparent 42%),
-    linear-gradient(180deg, #080d17 0%, #0f1a2d 100%);
+    radial-gradient(circle at 12% 10%, rgba(82, 227, 211, 0.08) 0%, transparent 34%),
+    radial-gradient(circle at 88% 12%, rgba(63, 120, 180, 0.1) 0%, transparent 30%),
+    radial-gradient(circle at 52% 100%, rgba(38, 72, 111, 0.2) 0%, transparent 38%),
+    linear-gradient(180deg, #07111e 0%, #0b1627 100%);
 }
 
 a {
