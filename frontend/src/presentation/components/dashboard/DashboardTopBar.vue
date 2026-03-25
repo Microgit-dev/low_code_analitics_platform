@@ -38,6 +38,14 @@ const emit = defineEmits<{
     </div>
 
     <div class="bar-actions">
+      <button
+        class="bar-btn"
+        :class="{ active: props.activeTab === 'details' }"
+        @click="emit('go-details')"
+      >
+        <span>Детали workspace</span>
+      </button>
+
       <template v-if="props.activeTab === 'tables'">
         <button class="bar-btn feature" @click="emit('go-import')">
           <span>Импортировать таблицу</span>
@@ -107,6 +115,11 @@ const emit = defineEmits<{
   color: var(--accent-contrast);
   transition: filter 0.15s;
   white-space: nowrap;
+}
+
+.bar-btn.active {
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  filter: brightness(0.95);
 }
 
 .bar-btn svg {
