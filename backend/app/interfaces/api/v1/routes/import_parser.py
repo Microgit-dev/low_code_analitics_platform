@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict
+from datetime import datetime, timedelta
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, Literal
@@ -48,6 +50,8 @@ class ImportTargetConfig(BaseModel):
     table_name: str | None = None
     table_description: str | None = None
     column_mappings: dict[str, str | None] = Field(default_factory=dict)
+    column_names: dict[str, str | None] = Field(default_factory=dict)
+    column_types: dict[str, str | None] = Field(default_factory=dict)
     map_section_to_field: bool = False
     section_field_name: str = "Общая колонка"
 
@@ -116,16 +120,198 @@ def _coerce_structure(overrides: ScanOptions, detected: SheetStructure, max_row:
 
 
 def _infer_column_type(values: list[Any]) -> str:
-    non_empty = [value for value in values if value not in (None, "")]
-    if not non_empty:
+    non_empty_values = [value for value in values if value not in (None, "")]
+    if not non_empty_values:
         return "text"
-    if any(isinstance(value, list) for value in non_empty):
+
+    numeric_values: list[float] = []
+    for value in non_empty_values:
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            numeric_values.append(float(value))
+            continue
+        if isinstance(value, str) and re.fullmatch(r"[-+]?\d+(?:[\.,]\d+)?", value.strip()):
+            try:
+                numeric_values.append(float(value.strip().replace(",", ".")))
+            except ValueError:
+                pass
+
+    # Treat numeric columns as date/time only when the column strongly looks like Excel serial date/time.
+    if numeric_values and len(numeric_values) >= 3 and len(numeric_values) / len(non_empty_values) >= 0.85:
+        date_serial_hits = sum(1 for value in numeric_values if 30000 <= value <= 70000 and abs(value - round(value)) < 1e-9)
+        datetime_serial_hits = sum(1 for value in numeric_values if 30000 <= value <= 70000 and abs(value - round(value)) >= 1e-9)
+        time_serial_hits = sum(1 for value in numeric_values if 0 <= value < 1)
+
+        if date_serial_hits / len(numeric_values) >= 0.9:
+            return "date"
+        if datetime_serial_hits / len(numeric_values) >= 0.8 or time_serial_hits / len(numeric_values) >= 0.9:
+            return "datetime"
+
+    type_counts: dict[str, int] = {
+        "text": 0,
+        "number": 0,
+        "boolean": 0,
+        "date": 0,
+        "datetime": 0,
+        "list": 0,
+    }
+
+    for value in values:
+        inferred = _infer_value_type(value)
+        if inferred is None:
+            continue
+        type_counts[inferred] = type_counts.get(inferred, 0) + 1
+
+    total = sum(type_counts.values())
+    if total == 0:
+        return "text"
+
+    priority = {
+        "datetime": 6,
+        "date": 5,
+        "number": 4,
+        "boolean": 3,
+        "list": 2,
+        "text": 1,
+    }
+    return max(type_counts.items(), key=lambda item: (item[1], priority.get(item[0], 0)))[0]
+
+
+def _excel_serial_to_datetime(value: float) -> datetime | None:
+    if value < 0:
+        return None
+    base = datetime(1899, 12, 30)
+    try:
+        return base + timedelta(days=value)
+    except OverflowError:
+        return None
+
+
+def _parse_datetime_value(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return _excel_serial_to_datetime(float(value))
+
+    if not isinstance(value, str):
+        return None
+
+    prepared = value.strip()
+    if not prepared:
+        return None
+
+    ru_date_time = re.fullmatch(
+        r"(?P<day>\d{1,2})\.(?P<month>\d{1,2})\.(?P<year>\d{4})(?:\s+(?P<hour>\d{1,2}):(?P<minute>\d{2})(?::(?P<second>\d{2}))?)?",
+        prepared,
+    )
+    if ru_date_time:
+        try:
+            return datetime(
+                int(ru_date_time.group("year")),
+                int(ru_date_time.group("month")),
+                int(ru_date_time.group("day")),
+                int(ru_date_time.group("hour") or 0),
+                int(ru_date_time.group("minute") or 0),
+                int(ru_date_time.group("second") or 0),
+            )
+        except ValueError:
+            return None
+
+    time_only = re.fullmatch(r"(?P<hour>\d{1,2}):(?P<minute>\d{2})(?::(?P<second>\d{2}))?", prepared)
+    if time_only:
+        today = datetime.utcnow()
+        try:
+            return datetime(
+                today.year,
+                today.month,
+                today.day,
+                int(time_only.group("hour")),
+                int(time_only.group("minute")),
+                int(time_only.group("second") or 0),
+            )
+        except ValueError:
+            return None
+
+    number_like = re.fullmatch(r"\d+(?:[\.,]\d+)?", prepared)
+    if number_like:
+        numeric = float(prepared.replace(",", "."))
+        parsed = _excel_serial_to_datetime(numeric)
+        if parsed is not None:
+            return parsed
+
+    for fmt in (
+        "%d.%m.%Y",
+        "%d.%m.%Y %H:%M",
+        "%d.%m.%Y %H:%M:%S",
+        "%Y-%m-%d",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%H:%M",
+        "%H:%M:%S",
+    ):
+        try:
+            return datetime.strptime(prepared, fmt)
+        except ValueError:
+            continue
+
+    try:
+        return datetime.fromisoformat(prepared)
+    except ValueError:
+        return None
+
+
+def _infer_value_type(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+
+    if isinstance(value, list):
         return "list"
-    if all(isinstance(value, bool) for value in non_empty):
+
+    if isinstance(value, bool):
         return "boolean"
-    if all(isinstance(value, (int, float)) for value in non_empty):
+
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
         return "number"
+
+    if isinstance(value, str):
+        prepared = value.strip()
+        if not prepared:
+            return None
+
+        lowered = prepared.lower()
+        if lowered in {"true", "false", "yes", "no", "да", "нет", "0", "1"}:
+            return "boolean"
+
+        if re.fullmatch(r"[-+]?\d+(?:[\.,]\d+)?", prepared):
+            return "number"
+
+        parsed = _parse_datetime_value(prepared)
+        if parsed is not None:
+            if re.fullmatch(r"\d{1,2}:\d{2}(?::\d{2})?", prepared):
+                return "datetime"
+            if parsed.time() == datetime.min.time() and not re.search(r"\d{1,2}:\d{2}", prepared):
+                return "date"
+            return "datetime"
+
+        return "text"
+
     return "text"
+
+
+def _format_preview_value(value: Any, detected_type: str) -> Any:
+    if detected_type not in {"date", "datetime"}:
+        return value
+
+    parsed = _parse_datetime_value(value)
+    if parsed is None:
+        return value
+
+    if detected_type == "date":
+        return parsed.date().isoformat()
+
+    return parsed.strftime("%H:%M:%S")
 
 
 def _normalize_key(value: str) -> str:
@@ -175,9 +361,11 @@ def _build_scan_payload(file_path: Path, options: ScanOptions) -> dict[str, Any]
         field_keys.insert(0, "Общая колонка")
 
     detected_columns: list[dict[str, Any]] = []
+    detected_type_by_source_key: dict[str, str] = {}
     for key in field_keys:
         sample_values = [row.get(key) for row in rows[:100]]
         detected_type = _infer_column_type(sample_values)
+        detected_type_by_source_key[key] = detected_type
         settings: dict[str, Any] = {}
         if detected_type == "list":
             settings = {
@@ -193,6 +381,13 @@ def _build_scan_payload(file_path: Path, options: ScanOptions) -> dict[str, Any]
                 "settings": settings,
             }
         )
+
+    preview_rows: list[dict[str, Any]] = []
+    for row in rows[:200]:
+        converted_row: dict[str, Any] = dict(row)
+        for source_key, detected_type in detected_type_by_source_key.items():
+            converted_row[source_key] = _format_preview_value(row.get(source_key), detected_type)
+        preview_rows.append(converted_row)
 
     return {
         "sheet_name": sheet.name,
@@ -214,7 +409,7 @@ def _build_scan_payload(file_path: Path, options: ScanOptions) -> dict[str, Any]
             "sections_count": len(sections),
             "detected_sections": [section.value for section in sections[:50]],
         },
-        "preview_rows": rows[:200],
+        "preview_rows": preview_rows,
         "rows": rows,
         "detected_columns": detected_columns,
     }
@@ -268,6 +463,16 @@ def _convert_value_for_column(value: Any, target_column: dict[str, Any], delimit
                 return True
             if lowered in {"false", "0", "no", "нет"}:
                 return False
+
+    if col_type in {"date", "datetime"}:
+        parsed = _parse_datetime_value(value)
+        if parsed is None:
+            return None
+
+        if col_type == "date":
+            return parsed.date().isoformat()
+
+        return parsed.strftime("%H:%M:%S")
 
     return value
 
@@ -382,13 +587,15 @@ def apply_import_file(
                     if not mapped:
                         continue
                     safe_mapped = _normalize_key(mapped)
-                    col_type = detected["suggested_type"]
+                    column_name = (target.column_names.get(source_key) or detected["suggested_name"]).strip()
+                    selected_type = target.column_types.get(source_key)
+                    col_type = selected_type or detected["suggested_type"]
                     if col_type not in {"text", "number", "boolean", "date", "datetime", "enum", "list", "geoPoint", "geoPolygon"}:
                         col_type = "text"
                     new_columns.append(
                         {
                             "key": safe_mapped,
-                            "name": detected["suggested_name"],
+                            "name": column_name or detected["suggested_name"],
                             "type": col_type,
                             "required": False,
                             "settings": detected.get("settings", {}),

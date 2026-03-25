@@ -9,7 +9,7 @@ from app.domain.entities.user import User
 from app.infrastructure.repositories.sqlalchemy_user_repository import SQLAlchemyUserRepository
 from app.interfaces.api.dependencies.auth import get_current_user
 from app.interfaces.api.dependencies.db import get_db
-from app.interfaces.api.v1.schemas.auth import AuthResponse, LoginRequest, RegisterRequest, UserResponse
+from app.interfaces.api.v1.schemas.auth import AuthResponse, ChangePasswordRequest, LoginRequest, RegisterRequest, UserResponse
 
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -43,6 +43,32 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> AuthResponse:
     return AuthResponse(access_token=token)
 
 
+@router.post("/refresh", response_model=AuthResponse)
+def refresh(current_user: User = Depends(get_current_user)) -> AuthResponse:
+    token_service = TokenService()
+    token = token_service.create_access_token(current_user.id)
+    return AuthResponse(access_token=token)
+
+
 @router.get("/me", response_model=UserResponse)
 def me(current_user: User = Depends(get_current_user)) -> UserResponse:
     return UserResponse(id=current_user.id, email=current_user.email)
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(
+    payload: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    password_hasher = PasswordHasher()
+    if not password_hasher.verify(payload.current_password, current_user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+
+    if payload.current_password == payload.new_password:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be different")
+
+    user_repo = SQLAlchemyUserRepository(db)
+    updated = user_repo.update_password_hash(current_user.id, password_hasher.hash(payload.new_password))
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")

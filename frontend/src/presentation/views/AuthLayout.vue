@@ -26,13 +26,13 @@
 
 .hero {
   background:
-    radial-gradient(circle at 84% 20%, rgba(255, 255, 255, 0.18) 0%, transparent 38%),
-    linear-gradient(135deg, #2f5f78 0%, #2f6f80 45%, #2e8d78 100%);
+    radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.24) 0%, transparent 38%),
+    linear-gradient(140deg, #1e63d8 0%, #2f76ea 48%, #33a6b1 100%);
   border-radius: 22px;
   padding: 42px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 16px 30px rgba(31, 65, 72, 0.25);
-  color: #eaf9fb;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  box-shadow: 0 24px 40px rgba(34, 60, 120, 0.27);
+  color: #edf5ff;
 }
 
 .hero h1 {
@@ -44,15 +44,27 @@
 .hero p {
   margin-top: 16px;
   max-width: 480px;
-  color: #c8e4ea;
+  color: #d8e7ff;
 }
 
 .card {
   background: var(--bg-panel);
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: 22px;
   padding: 28px;
-  box-shadow: 0 14px 24px rgba(31, 42, 44, 0.08);
+  box-shadow: var(--shadow-soft);
+}
+
+:global(:root[data-theme='dark']) .hero {
+  background:
+    radial-gradient(circle at 82% 18%, rgba(255, 255, 255, 0.08) 0%, transparent 38%),
+    linear-gradient(140deg, #13274a 0%, #1f4b8f 46%, #245f88 100%);
+  border-color: rgba(116, 157, 228, 0.22);
+  box-shadow: 0 24px 44px rgba(0, 0, 0, 0.4);
+}
+
+:global(:root[data-theme='dark']) .hero p {
+  color: #c8daf8;
 }
 
 @media (max-width: 900px) {

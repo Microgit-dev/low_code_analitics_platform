@@ -2,13 +2,13 @@ import { defineStore } from 'pinia'
 
 import type { User } from '../../domain/entities/Auth'
 import { AuthUseCase } from '../../application/usecases/AuthUseCase'
+import { clearStoredToken, getStoredToken, setStoredToken } from '../../infrastructure/auth/tokenStorage'
 
 const authUseCase = new AuthUseCase()
-const TOKEN_KEY = 'low_code_token'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
-    token: localStorage.getItem(TOKEN_KEY) as string | null,
+    token: getStoredToken(),
     me: null as User | null,
     loading: false,
     error: ''
@@ -61,15 +61,32 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
+    async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+      if (!this.token) {
+        throw new Error('Not authenticated')
+      }
+
+      this.loading = true
+      this.error = ''
+      try {
+        await authUseCase.changePassword(this.token, currentPassword, newPassword)
+      } catch (error: unknown) {
+        this.error = 'Не удалось изменить пароль'
+        throw error
+      } finally {
+        this.loading = false
+      }
+    },
+
     setToken(token: string): void {
       this.token = token
-      localStorage.setItem(TOKEN_KEY, token)
+      setStoredToken(token)
     },
 
     logout(): void {
       this.token = null
       this.me = null
-      localStorage.removeItem(TOKEN_KEY)
+      clearStoredToken()
     }
   }
 })

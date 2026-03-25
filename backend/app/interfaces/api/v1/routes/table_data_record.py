@@ -11,6 +11,7 @@ from app.application.use_cases.workspace.manage_table_data import (
     TableDataRecordNotFoundError,
     UpdateTableDataRecordUseCase,
 )
+from app.domain.entities.table_data_record import TableDataRecord
 from app.domain.repositories.form_configuration_repository import TableDataRecordRepository
 from app.infrastructure.repositories.sqlalchemy_form_configuration_repository import (
     SQLAlchemyTableDataRecordRepository,
@@ -115,6 +116,44 @@ def submit_form_data(
         )
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.put("/workspaces/{workspace_id}/tables/{table_id}/data/{record_id}")
+def update_table_data_record(
+    workspace_id: int,
+    table_id: int,
+    record_id: int,
+    payload: FormSubmissionRequest,
+    current_user=Depends(get_current_user),
+    repo: TableDataRecordRepository = Depends(get_data_repo),
+):
+    """Обновить запись (только авторизованный пользователь)"""
+    use_case = UpdateTableDataRecordUseCase(repo)
+    try:
+        record = use_case.execute(
+            TableDataRecord(
+                id=record_id,
+                workspace_id=workspace_id,
+                table_id=table_id,
+                data=payload.data,
+                submitter_email=payload.submitter_email,
+            ),
+            current_user.id,
+        )
+        return TableDataRecordResponse(
+            id=record.id,
+            workspace_id=record.workspace_id,
+            table_id=record.table_id,
+            data=record.data,
+            submitter_email=record.submitter_email,
+            submitted_at=record.submitted_at,
+            created_at=record.created_at,
+            updated_at=record.updated_at,
+        )
+    except PermissionError:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+    except TableDataRecordNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Record not found")
 
 
 @router.delete(

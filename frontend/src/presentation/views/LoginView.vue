@@ -73,18 +73,19 @@ label {
 
 input {
   border: 1px solid var(--line);
-  background: #edf4f5;
+  background: var(--bg-input);
+  color: var(--text-main);
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: 12px;
 }
 
 button {
   border: none;
-  background: var(--accent);
-  color: #fff;
+  background: var(--button-auth);
+  color: var(--accent-contrast);
   font-weight: 700;
   padding: 11px 14px;
-  border-radius: 10px;
+  border-radius: 12px;
   margin-top: 4px;
 }
 

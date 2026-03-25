@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { FormBuilderUseCase } from '../../application/usecases/FormBuilderUseCase'
@@ -13,6 +13,18 @@ import type { ColumnType, TableRelation, TableStructure } from '../../domain/ent
 import type { FormConfiguration, FormField, WidgetType } from '../../domain/entities/FormBuilder'
 import type { DashboardChartConfig, DashboardMetricConfig, ReportConfiguration, ReportType } from '../../domain/entities/Report'
 import { useAuthStore } from '../stores/authStore'
+import UiMultiSelect from '../components/common/UiMultiSelect.vue'
+import UiSectionHeader from '../components/common/UiSectionHeader.vue'
+import UiStatusText from '../components/common/UiStatusText.vue'
+import DashboardDataSection from '../components/dashboard/DashboardDataSection.vue'
+import DashboardImportSection from '../components/dashboard/DashboardImportSection.vue'
+import DashboardSidebar from '../components/dashboard/DashboardSidebar.vue'
+import DashboardTopBar from '../components/dashboard/DashboardTopBar.vue'
+import DashboardTemplateModal from '../components/dashboard/DashboardTemplateModal.vue'
+import DashboardTileActions from '../components/dashboard/DashboardTileActions.vue'
+import DashboardTileCard from '../components/dashboard/DashboardTileCard.vue'
+import DashboardUserModal from '../components/dashboard/DashboardUserModal.vue'
+import DashboardWorkspaceModal from '../components/dashboard/DashboardWorkspaceModal.vue'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -25,6 +37,15 @@ const reportUseCase = new ReportUseCase(authStore.token || '')
 type WorkspaceTab = 'details' | 'tables' | 'forms' | 'data' | 'import' | 'reports'
 type TablePosition = { x: number; y: number }
 type ImportTargetUi = ImportTargetConfig & { localId: number }
+type ImportPreviewColumn = {
+  id: string
+  sourceKey: string
+  outputKey: string
+  outputName: string
+  outputType: string
+}
+type ReportCreationKind = 'dashboard' | 'table_export'
+const TABLE_LAYOUT_STORAGE_KEY = 'dashboard-table-layout'
 
 const workspaces = ref<Workspace[]>([])
 const loading = ref(false)
@@ -36,6 +57,13 @@ const workspaceTab = ref<WorkspaceTab>('tables')
 const workspaceName = ref('')
 const workspaceDescription = ref('')
 const selectedWorkspaceId = ref<number | null>(null)
+const createWorkspaceModalOpen = ref(false)
+const workspaceCreateError = ref('')
+const userModalOpen = ref(false)
+const passwordChangeError = ref('')
+const editWorkspaceName = ref('')
+const editWorkspaceDescription = ref('')
+const savingWorkspaceDetails = ref(false)
 
 const tableStructures = ref<TableStructure[]>([])
 const relations = ref<TableRelation[]>([])
@@ -43,6 +71,7 @@ const activeTableId = ref<number | null>(null)
 const selectedColumnRef = ref<{ tableId: number; columnKey: string } | null>(null)
 const tablePositions = ref<Record<number, TablePosition>>({})
 const tableDragging = ref<{ tableId: number; offsetX: number; offsetY: number } | null>(null)
+const schemaCanvasWrapRef = ref<HTMLElement | null>(null)
 
 const newTableName = ref('')
 const newTableDescription = ref('')
@@ -67,6 +96,17 @@ const relationSourceColumn = ref('')
 const relationTargetColumn = ref('')
 
 const dragState = ref<{ sourceTableId: number; columnKey: string } | null>(null)
+const COLUMN_TYPE_OPTIONS: ColumnType[] = [
+  'text',
+  'number',
+  'boolean',
+  'date',
+  'datetime',
+  'enum',
+  'list',
+  'geoPoint',
+  'geoPolygon'
+]
 
 // Form Builder state
 const formConfigurations = ref<FormConfiguration[]>([])
@@ -74,6 +114,9 @@ const selectedFormId = ref<number | null>(null)
 const formEditorOpen = ref(false)
 const formLoading = ref(false)
 const formError = ref('')
+const formSaving = ref(false)
+const formSaveError = ref('')
+const formSavedSnapshot = ref('')
 const formFieldDragIndex = ref<number | null>(null)
 const selectedFormFieldIndex = ref<number | null>(null)
 const formTableSelection = ref<number[]>([])
@@ -102,8 +145,12 @@ const importDataRowEnd = ref<number | null>(null)
 const importListDelimiters = ref(',;|\\n')
 const importTargets = ref<ImportTargetUi[]>([])
 const importTargetSeq = ref(1)
+const importPreviewTargetLocalId = ref<number | null>(null)
 const importShowAllSeparators = ref(false)
 const importRequiresRescan = ref(false)
+const importRescanTimer = ref<number | null>(null)
+const importToastMessage = ref('')
+const importToastTimer = ref<number | null>(null)
 const IMPORT_KEY_MAX_LENGTH = 64
 
 // Reports state
@@ -112,10 +159,13 @@ const reportsLoading = ref(false)
 const reportsError = ref('')
 const selectedReportId = ref<number | null>(null)
 
+const reportCreateModalOpen = ref(false)
+const reportCreateKind = ref<ReportCreationKind>('dashboard')
+const reportCreateSelectedTableIds = ref<number[]>([])
 const reportEditorOpen = ref(false)
 const reportName = ref('')
 const reportDescription = ref('')
-const reportType = ref<ReportType>('excel_export')
+const reportType = ref<ReportType>('table_export')
 const reportIsPublished = ref(false)
 const reportTableId = ref<number | null>(null)
 const reportRecentLimit = ref(10)
@@ -138,9 +188,113 @@ const selectedWorkspace = computed(() => {
   return workspaces.value.find((workspace) => workspace.id === selectedWorkspaceId.value) ?? null
 })
 
+const tableLayoutStorageKey = computed(() =>
+  selectedWorkspace.value ? `${TABLE_LAYOUT_STORAGE_KEY}:${selectedWorkspace.value.id}` : null
+)
+
+const loadStoredTablePositions = (): Record<number, TablePosition> => {
+  if (typeof window === 'undefined' || !tableLayoutStorageKey.value) return {}
+
+  try {
+    const raw = localStorage.getItem(tableLayoutStorageKey.value)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as Record<string, TablePosition>
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        ([, position]) =>
+          position &&
+          typeof position.x === 'number' &&
+          Number.isFinite(position.x) &&
+          typeof position.y === 'number' &&
+          Number.isFinite(position.y)
+      )
+        .map(([tableId, position]) => [Number(tableId), position])
+    )
+  } catch {
+    return {}
+  }
+}
+
+const persistTablePositions = () => {
+  if (typeof window === 'undefined' || !tableLayoutStorageKey.value) return
+
+  try {
+    localStorage.setItem(tableLayoutStorageKey.value, JSON.stringify(tablePositions.value))
+  } catch {
+    // ignore storage write failures
+  }
+}
+
+const nextWorkspaceName = computed(() => `WorkSpace ${workspaces.value.length + 1}`)
+
+const workspaceStats = computed(() => {
+  const tableCount = tableStructures.value.length
+  const columnCount = tableStructures.value.reduce((total, table) => total + table.columns.length, 0)
+  const formCount = formConfigurations.value.length
+  const reportCount = reports.value.length
+  const relationCount = relations.value.length
+  return {
+    tableCount,
+    columnCount,
+    formCount,
+    reportCount,
+    relationCount,
+    avgColumnsPerTable: tableCount > 0 ? Math.round((columnCount / tableCount) * 10) / 10 : 0
+  }
+})
+
+const statsMaxColumns = computed(() => {
+  const max = Math.max(...tableStructures.value.map((table) => table.columns.length), 0)
+  return max || 1
+})
+
+const tableColumnStats = computed(() =>
+  tableStructures.value
+    .map((table) => ({
+      id: table.id,
+      name: table.name,
+      columns: table.columns.length,
+      widthPercent: Math.max(8, Math.round((table.columns.length / statsMaxColumns.value) * 100))
+    }))
+    .slice(0, 8)
+)
+
+const canSaveWorkspaceDetails = computed(() => {
+  const workspace = selectedWorkspace.value
+  if (!workspace || savingWorkspaceDetails.value) return false
+
+  const nextName = editWorkspaceName.value.trim()
+  const nextDescription = editWorkspaceDescription.value.trim()
+  const currentDescription = workspace.description ?? ''
+
+  return nextName.length >= 2 && (nextName !== workspace.name || nextDescription !== currentDescription)
+})
+
 const activeTable = computed(() => {
   if (activeTableId.value === null) return null
   return tableStructures.value.find((table) => table.id === activeTableId.value) ?? null
+})
+
+const tableEditorName = computed({
+  get: () => activeTable.value?.name ?? newTableName.value,
+  set: (value: string) => {
+    if (activeTable.value) {
+      activeTable.value.name = value
+      return
+    }
+    newTableName.value = value
+  }
+})
+
+const tableEditorDescription = computed({
+  get: () => activeTable.value?.description ?? newTableDescription.value,
+  set: (value: string) => {
+    if (activeTable.value) {
+      activeTable.value.description = value
+      return
+    }
+    newTableDescription.value = value
+  }
 })
 
 const selectedDataTable = computed(() => {
@@ -153,13 +307,94 @@ const selectedReport = computed(() => {
   return reports.value.find((report) => report.id === selectedReportId.value) ?? null
 })
 
+const reportCreateSelectedTables = computed(() => {
+  const selected = new Set(reportCreateSelectedTableIds.value)
+  return tableStructures.value.filter((table) => selected.has(table.id))
+})
+
 const selectedReportTable = computed(() => {
   if (reportTableId.value === null) return null
   return tableStructures.value.find((table) => table.id === reportTableId.value) ?? null
 })
 
 const importSourceKeys = computed(() => importScanResult.value?.detected_columns.map((col) => col.source_key) ?? [])
-const importPreviewRows = computed(() => (importScanResult.value?.preview_rows ?? []).slice(0, 30))
+const importPreviewTarget = computed(() => {
+  if (importTargets.value.length === 0) return null
+  return (
+    importTargets.value.find((target) => target.localId === importPreviewTargetLocalId.value) ??
+    importTargets.value[0]
+  )
+})
+const importPreviewTargetOptions = computed(() =>
+  importTargets.value.map((target, index) => ({
+    localId: target.localId,
+    label:
+      target.mode === 'existing'
+        ? `Цель ${index + 1}: существующая таблица`
+        : `Цель ${index + 1}: новая таблица ${target.table_name?.trim() ? `(${target.table_name.trim()})` : ''}`.trim()
+  }))
+)
+const importPreviewColumns = computed<ImportPreviewColumn[]>(() => {
+  if (!importScanResult.value || !importPreviewTarget.value) return []
+
+  const target = importPreviewTarget.value
+  const columns: ImportPreviewColumn[] = []
+
+  if (target.mode === 'existing') {
+    const table = tableStructures.value.find((item) => item.id === target.table_id)
+    if (!table) return []
+
+    importSourceKeys.value.forEach((sourceKey, index) => {
+      const mappedKey = target.column_mappings[sourceKey]
+      if (!mappedKey) return
+
+      const targetColumn = table.columns.find((column) => column.key === mappedKey)
+      if (!targetColumn) return
+
+      columns.push({
+        id: `${sourceKey}:${mappedKey}:${index}`,
+        sourceKey,
+        outputKey: targetColumn.key,
+        outputName: targetColumn.name,
+        outputType: targetColumn.type
+      })
+    })
+
+    return columns
+  }
+
+  importSourceKeys.value.forEach((sourceKey, index) => {
+    const mappedValue = target.column_mappings[sourceKey]
+    if (!mappedValue) return
+
+    const normalizedKey = normalizeImportKey(mappedValue)
+    if (!normalizedKey) return
+
+    const detected = importScanResult.value?.detected_columns.find((column) => column.source_key === sourceKey)
+    const outputType = normalizeImportColumnType(target.column_types?.[sourceKey] || detected?.suggested_type)
+
+    columns.push({
+      id: `${sourceKey}:${normalizedKey}:${index}`,
+      sourceKey,
+      outputKey: normalizedKey,
+      outputName: target.column_names?.[sourceKey]?.trim() || detected?.suggested_name || sourceKey,
+      outputType
+    })
+  })
+
+  return columns
+})
+const importPreviewRows = computed<Record<string, string>[]>(() => {
+  if (!importScanResult.value || importPreviewColumns.value.length === 0) return []
+
+  return (importScanResult.value.preview_rows ?? []).slice(0, 30).map((sourceRow) => {
+    const row: Record<string, string> = {}
+    importPreviewColumns.value.forEach((column) => {
+      row[column.id] = formatImportValueByType(sourceRow[column.sourceKey], column.outputType)
+    })
+    return row
+  })
+})
 const importDetectedSeparators = computed(() => importScanResult.value?.artifacts.detected_sections ?? [])
 const importVisibleSeparators = computed(() =>
   importShowAllSeparators.value ? importDetectedSeparators.value : importDetectedSeparators.value.slice(0, 3)
@@ -178,6 +413,16 @@ const selectedColumn = computed(() => {
   const parent = selectedColumnParent.value
   if (!parent) return null
   return parent.columns.find((column) => column.key === selectedColumnRef.value?.columnKey) ?? null
+})
+
+const selectedColumnCanSave = computed(() => {
+  if (!selectedColumn.value || !selectedColumnParent.value) return false
+  const nextKey = selectedColumn.value.key.trim()
+  const nextName = selectedColumn.value.name.trim()
+  if (!nextKey || !nextName) return false
+
+  const duplicates = selectedColumnParent.value.columns.filter((column) => column.key === nextKey)
+  return duplicates.length <= 1
 })
 
 const allTableOptions = computed(() => tableStructures.value.map((table) => ({ id: table.id, name: table.name })))
@@ -256,6 +501,7 @@ const loadSchema = async () => {
   try {
     tableStructures.value = await tableSchemaUseCase.listTables(authStore.token, selectedWorkspace.value.id)
     relations.value = await tableSchemaUseCase.listRelations(authStore.token, selectedWorkspace.value.id)
+    const storedPositions = loadStoredTablePositions()
     if (tableStructures.value.length > 0) {
       const hasActive = tableStructures.value.some((table) => table.id === activeTableId.value)
       activeTableId.value = hasActive ? activeTableId.value : tableStructures.value[0].id
@@ -288,12 +534,13 @@ const loadSchema = async () => {
 
     const nextPositions: Record<number, TablePosition> = {}
     for (const [index, table] of tableStructures.value.entries()) {
-      nextPositions[table.id] = tablePositions.value[table.id] ?? {
-        x: 36 + (index % 3) * 310,
-        y: 36 + Math.floor(index / 3) * 260
+      nextPositions[table.id] = storedPositions[table.id] ?? tablePositions.value[table.id] ?? {
+        x: 20 + (index % 3) * 300,
+        y: 20 + Math.floor(index / 3) * 260
       }
     }
     tablePositions.value = nextPositions
+    persistTablePositions()
   } catch {
     schemaError.value = 'Не удалось загрузить low-code структуры.'
   } finally {
@@ -301,14 +548,68 @@ const loadSchema = async () => {
   }
 }
 
-const createWorkspace = async () => {
-  if (!authStore.token || !workspaceName.value.trim()) return
+const createWorkspace = async (): Promise<Workspace | null> => {
+  if (!authStore.token || !workspaceName.value.trim()) return null
 
-  await workspaceUseCase.create(authStore.token, workspaceName.value.trim(), workspaceDescription.value.trim())
-  workspaceName.value = ''
-  workspaceDescription.value = ''
-  await loadWorkspaces()
-  await loadSchema()
+  workspaceCreateError.value = ''
+  try {
+    const createdWorkspace = await workspaceUseCase.create(
+      authStore.token,
+      workspaceName.value.trim(),
+      workspaceDescription.value.trim()
+    )
+    workspaceName.value = ''
+    workspaceDescription.value = ''
+    await loadWorkspaces()
+    selectedWorkspaceId.value = createdWorkspace.id
+    workspaceTab.value = 'tables'
+    await loadSchema()
+    return createdWorkspace
+  } catch (error: any) {
+    workspaceCreateError.value = error?.response?.data?.detail || 'Не удалось создать workspace'
+    return null
+  }
+}
+
+const openCreateWorkspaceModal = () => {
+  workspaceCreateError.value = ''
+  createWorkspaceModalOpen.value = true
+}
+
+const closeCreateWorkspaceModal = () => {
+  workspaceCreateError.value = ''
+  createWorkspaceModalOpen.value = false
+}
+
+const createWorkspaceAndClose = async () => {
+  const created = await createWorkspace()
+  if (created) {
+    closeCreateWorkspaceModal()
+  }
+}
+
+const saveWorkspaceDetails = async () => {
+  if (!authStore.token || !selectedWorkspace.value || !canSaveWorkspaceDetails.value) return
+
+  savingWorkspaceDetails.value = true
+  try {
+    const updatedWorkspace = await workspaceUseCase.update(
+      authStore.token,
+      selectedWorkspace.value.id,
+      editWorkspaceName.value.trim(),
+      editWorkspaceDescription.value.trim() || undefined
+    )
+
+    const targetIndex = workspaces.value.findIndex((workspace) => workspace.id === updatedWorkspace.id)
+    if (targetIndex !== -1) {
+      workspaces.value[targetIndex] = updatedWorkspace
+    }
+
+    editWorkspaceName.value = updatedWorkspace.name
+    editWorkspaceDescription.value = updatedWorkspace.description ?? ''
+  } finally {
+    savingWorkspaceDetails.value = false
+  }
 }
 
 const deleteWorkspace = async () => {
@@ -340,6 +641,86 @@ const selectWorkspace = async (workspaceId: number) => {
   await loadSchema()
 }
 
+const deleteWorkspaceById = async (workspaceId: number) => {
+  if (!authStore.token || deleting.value) return
+  const workspace = workspaces.value.find((item) => item.id === workspaceId)
+  if (!workspace) return
+
+  const shouldDelete = window.confirm(
+    `Удалить workspace \"${workspace.name}\"? Это действие нельзя отменить.`
+  )
+  if (!shouldDelete) return
+
+  deleting.value = true
+  try {
+    await workspaceUseCase.delete(authStore.token, workspaceId)
+    await loadWorkspaces()
+    await loadSchema()
+  } finally {
+    deleting.value = false
+  }
+}
+
+const onSidebarNavClick = async (tab: 'tables' | 'forms' | 'data' | 'reports') => {
+  if (tab === 'tables') {
+    workspaceTab.value = 'tables'
+    return
+  }
+
+  if (tab === 'forms') {
+    await goToFormsTab()
+    return
+  }
+
+  if (tab === 'data') {
+    await goToDataTab()
+    return
+  }
+
+  await goToReportsTab()
+}
+
+const onTopBarCreateWorkspace = async (payload: { name: string; description: string }) => {
+  workspaceName.value = payload.name
+  workspaceDescription.value = payload.description
+  await createWorkspaceAndClose()
+  if (workspaceCreateError.value) {
+    alert(workspaceCreateError.value)
+  }
+}
+
+const goToDetailsTab = async () => {
+  workspaceTab.value = 'details'
+  if (selectedWorkspace.value) {
+    await Promise.all([loadForms(), loadReports()])
+  }
+}
+
+const openUserModal = () => {
+  passwordChangeError.value = ''
+  userModalOpen.value = true
+}
+
+const closeUserModal = () => {
+  userModalOpen.value = false
+}
+
+const changePassword = async (payload: { currentPassword: string; newPassword: string }) => {
+  passwordChangeError.value = ''
+  try {
+    await authStore.changePassword(payload.currentPassword, payload.newPassword)
+  } catch (error: any) {
+    passwordChangeError.value = error?.response?.data?.detail || authStore.error || 'Не удалось сменить пароль.'
+  }
+}
+
+const onTopBarCreateTable = async () => {
+  if (!newTableName.value.trim()) {
+    newTableName.value = `Таблица ${tableStructures.value.length + 1}`
+  }
+  await createTable()
+}
+
 const selectTable = (tableId: number) => {
   activeTableId.value = tableId
   selectedColumnRef.value = null
@@ -353,6 +734,10 @@ const selectColumn = (tableId: number, columnKey: string) => {
   selectedColumnRef.value = { tableId, columnKey }
 }
 
+const closeColumnEditor = () => {
+  selectedColumnRef.value = null
+}
+
 const getTablePosition = (tableId: number): TablePosition => {
   const fallback = { x: 40, y: 40 }
   if (!tablePositions.value[tableId]) {
@@ -363,27 +748,37 @@ const getTablePosition = (tableId: number): TablePosition => {
 
 const onCanvasPointerMove = (event: PointerEvent) => {
   const drag = tableDragging.value
-  if (!drag) return
+  const canvasEl = schemaCanvasWrapRef.value
+  if (!drag || !canvasEl) return
+
+  const canvasRect = canvasEl.getBoundingClientRect()
+  const nextX = event.clientX - canvasRect.left - drag.offsetX
+  const nextY = event.clientY - canvasRect.top - drag.offsetY
 
   tablePositions.value = {
     ...tablePositions.value,
     [drag.tableId]: {
-      x: Math.max(16, event.clientX - drag.offsetX),
-      y: Math.max(16, event.clientY - drag.offsetY)
+      x: Math.max(20, nextX),
+      y: Math.max(20, nextY)
     }
   }
+  persistTablePositions()
 }
 
 const stopTableDrag = () => {
   tableDragging.value = null
 }
 
-const onTableGripPointerDown = (event: PointerEvent, tableId: number) => {
+const onTableCardPointerDown = (event: PointerEvent, tableId: number) => {
+  const card = event.currentTarget as HTMLElement | null
+  if (!card) return
+
+  const cardRect = card.getBoundingClientRect()
   const position = getTablePosition(tableId)
   tableDragging.value = {
     tableId,
-    offsetX: event.clientX - position.x,
-    offsetY: event.clientY - position.y
+    offsetX: event.clientX - cardRect.left,
+    offsetY: event.clientY - cardRect.top
   }
   selectTable(tableId)
 }
@@ -391,7 +786,68 @@ const onTableGripPointerDown = (event: PointerEvent, tableId: number) => {
 const saveSelectedColumn = async () => {
   const parent = selectedColumnParent.value
   if (!parent) return
+
+  const key = selectedColumn.value?.key.trim() || ''
+  const name = selectedColumn.value?.name.trim() || ''
+  if (!key || !name) {
+    alert('Название и ключ столбца обязательны.')
+    return
+  }
+
+  const duplicates = parent.columns.filter((column) => column.key === key)
+  if (duplicates.length > 1) {
+    alert('Ключ столбца должен быть уникальным в рамках таблицы.')
+    return
+  }
+
+  if (selectedColumn.value) {
+    selectedColumn.value.key = key
+    selectedColumn.value.name = name
+  }
+
   await saveTable(parent)
+}
+
+const setSelectedColumnType = (nextType: ColumnType) => {
+  if (!selectedColumn.value) return
+  selectedColumn.value.type = nextType
+  selectedColumn.value.settings = {
+    ...(selectedColumn.value.settings ?? {})
+  }
+}
+
+const getSelectedColumnOptionsText = (): string => {
+  if (!selectedColumn.value) return ''
+  const options = selectedColumn.value.settings?.options
+  if (!Array.isArray(options)) return ''
+  return options.map((item) => String(item)).filter(Boolean).join(', ')
+}
+
+const setSelectedColumnOptionsText = (raw: string) => {
+  if (!selectedColumn.value) return
+  const options = raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+  selectedColumn.value.settings = {
+    ...(selectedColumn.value.settings ?? {}),
+    options
+  }
+}
+
+const setSelectedListItemType = (itemType: 'text' | 'number' | 'boolean' | 'enum') => {
+  if (!selectedColumn.value || selectedColumn.value.type !== 'list') return
+  selectedColumn.value.settings = {
+    ...(selectedColumn.value.settings ?? {}),
+    itemType
+  }
+}
+
+const getSelectedListItemType = (): 'text' | 'number' | 'boolean' | 'enum' => {
+  if (!selectedColumn.value || selectedColumn.value.type !== 'list') return 'text'
+  const raw = selectedColumn.value.settings?.itemType
+  if (raw === 'number' || raw === 'boolean' || raw === 'enum') return raw
+  return 'text'
 }
 
 const createTable = async () => {
@@ -623,6 +1079,8 @@ const loadForms = async () => {
     selectedFormId.value = null
     selectedFormFieldIndex.value = null
     formTableSelection.value = []
+    formSavedSnapshot.value = ''
+    formSaveError.value = ''
     return
   }
 
@@ -636,6 +1094,8 @@ const loadForms = async () => {
       selectedFormFieldIndex.value = null
       formTableSelection.value = []
       formEditorOpen.value = false
+      formSavedSnapshot.value = ''
+      formSaveError.value = ''
       return
     }
 
@@ -643,6 +1103,7 @@ const loadForms = async () => {
     selectedFormId.value = selectedExists ? selectedFormId.value : formConfigurations.value[0].id
     syncFormTableSelectionFromSelected()
     selectedFormFieldIndex.value = selectedForm.value?.fields.length ? 0 : null
+    rememberSavedFormSnapshot()
   } catch (error) {
     formError.value = 'Не удалось загрузить формы'
     console.error(error)
@@ -655,6 +1116,39 @@ const selectedForm = computed(() => {
   if (!selectedFormId.value) return null
   return formConfigurations.value.find((f) => f.id === selectedFormId.value) ?? null
 })
+
+const buildSelectedFormSnapshot = (): string => {
+  if (!selectedForm.value) return ''
+
+  return JSON.stringify({
+    id: selectedForm.value.id,
+    name: selectedForm.value.name,
+    description: selectedForm.value.description,
+    tableSelection: formTableSelection.value,
+    is_published: selectedForm.value.is_published,
+    collect_email: selectedForm.value.collect_email,
+    fields: selectedForm.value.fields
+  })
+}
+
+const isFormDirty = computed(() => {
+  if (!selectedForm.value) return false
+  if (!formSavedSnapshot.value) return false
+  return buildSelectedFormSnapshot() !== formSavedSnapshot.value
+})
+
+const formSaveStatusText = computed(() => {
+  if (!selectedForm.value) return ''
+  if (formSaving.value) return 'Сохранение формы...'
+  if (formSaveError.value) return formSaveError.value
+  if (isFormDirty.value) return 'Есть несохраненные изменения'
+  return 'Изменения сохранены'
+})
+
+const rememberSavedFormSnapshot = () => {
+  formSavedSnapshot.value = buildSelectedFormSnapshot()
+  formSaveError.value = ''
+}
 
 const getFormUsedTableIds = (form: FormConfiguration): number[] => {
   const ids = new Set<number>()
@@ -698,6 +1192,8 @@ const selectForm = (formId: number) => {
   selectedFormId.value = formId
   selectedFormFieldIndex.value = selectedForm.value?.fields.length ? 0 : null
   syncFormTableSelectionFromSelected()
+  formSaveError.value = ''
+  rememberSavedFormSnapshot()
   formEditorOpen.value = true
 }
 
@@ -833,6 +1329,10 @@ const dropFieldAt = (targetIndex: number) => {
 
 const selectFormField = (index: number) => {
   selectedFormFieldIndex.value = index
+}
+
+const closeSelectedFormField = () => {
+  selectedFormFieldIndex.value = null
 }
 
 const removeFormField = (index: number) => {
@@ -986,6 +1486,9 @@ const onFormTablesChange = () => {
 const saveSingleForm = async () => {
   if (!selectedForm.value || !selectedWorkspace.value || formTableSelection.value.length === 0) return
 
+  formSaving.value = true
+  formSaveError.value = ''
+
   const primaryTableId = formTableSelection.value[0]
 
   // Keep form fields mapped to selected tables only.
@@ -996,17 +1499,25 @@ const saveSingleForm = async () => {
 
   selectedForm.value.table_id = primaryTableId
 
-  await formBuilderUseCase.updateForm(
-    selectedWorkspace.value.id,
-    selectedForm.value.id,
-    selectedForm.value.name,
-    selectedForm.value.description,
-    selectedForm.value.fields,
-    selectedForm.value.is_published,
-    selectedForm.value.collect_email
-  )
+  try {
+    await formBuilderUseCase.updateForm(
+      selectedWorkspace.value.id,
+      selectedForm.value.id,
+      selectedForm.value.name,
+      selectedForm.value.description,
+      selectedForm.value.fields,
+      selectedForm.value.is_published,
+      selectedForm.value.collect_email
+    )
 
-  await loadForms()
+    await loadForms()
+    formSaveError.value = ''
+    rememberSavedFormSnapshot()
+  } catch (error: any) {
+    formSaveError.value = error?.response?.data?.detail || 'Не удалось сохранить форму'
+  } finally {
+    formSaving.value = false
+  }
 }
 
 const deleteForm = async (formId: number) => {
@@ -1082,6 +1593,23 @@ const normalizeImportKey = (value: string): string =>
     .replace(/^_+|_+$/g, '')
     .slice(0, IMPORT_KEY_MAX_LENGTH) || 'column'
 
+const IMPORT_COLUMN_TYPES = new Set([
+  'text',
+  'number',
+  'boolean',
+  'date',
+  'datetime',
+  'enum',
+  'list',
+  'geoPoint',
+  'geoPolygon'
+])
+
+const normalizeImportColumnType = (value: string | null | undefined): string => {
+  const prepared = String(value || '').trim()
+  return IMPORT_COLUMN_TYPES.has(prepared) ? prepared : 'text'
+}
+
 const formatMappedKeyPreview = (value: string | null | undefined): string => {
   const normalized = normalizeImportKey(String(value || ''))
   return normalized || 'column'
@@ -1102,13 +1630,31 @@ const syncImportTargetMappings = (target: ImportTargetUi) => {
   if (!importScanResult.value) return
 
   const nextMappings: Record<string, string | null> = {}
+  const nextColumnNames: Record<string, string | null> = {}
+  const nextColumnTypes: Record<string, string | null> = {}
   if (target.mode === 'new') {
     for (const detected of importScanResult.value.detected_columns) {
+      const hasSourceKey = Object.prototype.hasOwnProperty.call(target.column_mappings, detected.source_key)
       const current = target.column_mappings[detected.source_key]
+      if (hasSourceKey && current === null) {
+        nextMappings[detected.source_key] = null
+        nextColumnNames[detected.source_key] = target.column_names?.[detected.source_key] || detected.suggested_name
+        nextColumnTypes[detected.source_key] = null
+        continue
+      }
+
       nextMappings[detected.source_key] =
         typeof current === 'string' && current.trim().length > 0
           ? normalizeImportKey(current)
           : normalizeImportKey(detected.suggested_key || detected.source_key)
+
+      nextColumnNames[detected.source_key] =
+        typeof target.column_names?.[detected.source_key] === 'string' && target.column_names[detected.source_key]?.trim()
+          ? target.column_names[detected.source_key]!.trim()
+          : detected.suggested_name
+
+      const existingType = target.column_types?.[detected.source_key]
+      nextColumnTypes[detected.source_key] = normalizeImportColumnType(existingType || detected.suggested_type)
     }
   } else {
     const columns = getImportTargetColumns(target)
@@ -1126,6 +1672,8 @@ const syncImportTargetMappings = (target: ImportTargetUi) => {
   }
 
   target.column_mappings = nextMappings
+  target.column_names = nextColumnNames
+  target.column_types = nextColumnTypes
 }
 
 const addImportTarget = () => {
@@ -1137,6 +1685,8 @@ const addImportTarget = () => {
     table_name: '',
     table_description: '',
     column_mappings: {},
+    column_names: {},
+    column_types: {},
     map_section_to_field: false,
     section_field_name: 'Раздел'
   }
@@ -1145,10 +1695,16 @@ const addImportTarget = () => {
     syncImportTargetMappings(target)
   }
   importTargets.value.push(target)
+  if (importPreviewTargetLocalId.value === null) {
+    importPreviewTargetLocalId.value = target.localId
+  }
 }
 
 const removeImportTarget = (localId: number) => {
   importTargets.value = importTargets.value.filter((target) => target.localId !== localId)
+  if (importPreviewTargetLocalId.value === localId) {
+    importPreviewTargetLocalId.value = importTargets.value[0]?.localId ?? null
+  }
 }
 
 const onImportTargetModeChange = (target: ImportTargetUi) => {
@@ -1170,18 +1726,41 @@ const onImportTargetTableChange = (target: ImportTargetUi) => {
 const onImportFileChange = (event: Event) => {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0] ?? null
+
+  if (importRescanTimer.value !== null && typeof window !== 'undefined') {
+    window.clearTimeout(importRescanTimer.value)
+    importRescanTimer.value = null
+  }
+
   importFile.value = file
   importError.value = ''
   importSuccess.value = ''
   importScanResult.value = null
+  importPreviewTargetLocalId.value = null
   importShowAllSeparators.value = false
   importRequiresRescan.value = false
+
+  if (file) {
+    void scanImport()
+  }
 }
 
 const onImportScanOptionsChanged = () => {
-  if (!importScanResult.value) return
+  if (!importFile.value) return
+
+  if (importRescanTimer.value !== null && typeof window !== 'undefined') {
+    window.clearTimeout(importRescanTimer.value)
+  }
+
   importRequiresRescan.value = true
   importSuccess.value = ''
+
+  if (typeof window === 'undefined') return
+
+  importRescanTimer.value = window.setTimeout(() => {
+    importRescanTimer.value = null
+    void scanImport()
+  }, 450)
 }
 
 const scanImport = async () => {
@@ -1189,7 +1768,9 @@ const scanImport = async () => {
 
   importLoading.value = true
   importError.value = ''
-  importSuccess.value = ''
+  if (!importRequiresRescan.value) {
+    importSuccess.value = ''
+  }
   try {
     const delimiters = importListDelimiters.value
       .split(';')
@@ -1218,11 +1799,23 @@ const scanImport = async () => {
     } else {
       importTargets.value.forEach(syncImportTargetMappings)
     }
+
+    if (!importPreviewTarget.value) {
+      importPreviewTargetLocalId.value = importTargets.value[0]?.localId ?? null
+    }
   } catch (error) {
     importError.value = 'Не удалось просканировать файл'
     console.error(error)
   } finally {
     importLoading.value = false
+  }
+}
+
+const refreshImportPreview = async () => {
+  if (!importScanResult.value || !importFile.value) return
+  await scanImport()
+  if (!importError.value) {
+    importSuccess.value = 'Превью таблицы обновлено'
   }
 }
 
@@ -1249,6 +1842,22 @@ const buildImportApplyConfig = (): ImportApplyConfig => {
       column_mappings: Object.fromEntries(
         Object.entries(target.column_mappings).map(([source, mapped]) => [source, mapped && mapped.trim() ? mapped.trim() : null])
       ),
+      column_names: target.mode === 'new'
+        ? Object.fromEntries(
+            Object.entries(target.column_names || {}).map(([source, columnName]) => [
+              source,
+              target.column_mappings[source] ? (columnName || '').trim() || null : null
+            ])
+          )
+        : {},
+      column_types: target.mode === 'new'
+        ? Object.fromEntries(
+            Object.entries(target.column_types || {}).map(([source, selectedType]) => [
+              source,
+              target.column_mappings[source] ? normalizeImportColumnType(selectedType) : null
+            ])
+          )
+        : {},
       map_section_to_field: Boolean(target.map_section_to_field),
       section_field_name: (target.section_field_name || 'Раздел').trim() || 'Раздел'
     }))
@@ -1275,10 +1884,24 @@ const applyImport = async () => {
     const config = buildImportApplyConfig()
     const result = await importUseCase.applyImport(authStore.token, selectedWorkspace.value.id, importFile.value, config)
     importSuccess.value = result.imported_tables
-      .map((item) => `${item.table_name}: ${item.created_records} записей`)
-      .join(' | ')
+      .map((item, index) => `Импорт ${index + 1}: ${item.created_records} записей`)
+      .join(' • ')
+
+    if (importToastTimer.value !== null && typeof window !== 'undefined') {
+      window.clearTimeout(importToastTimer.value)
+    }
+
+    importToastMessage.value = importSuccess.value
+    if (typeof window !== 'undefined') {
+      importToastTimer.value = window.setTimeout(() => {
+        importToastMessage.value = ''
+        importToastTimer.value = null
+      }, 3600)
+    }
+
     await loadSchema()
     await loadTableData()
+    workspaceTab.value = 'tables'
   } catch (error) {
     importError.value = 'Ошибка при импорте данных'
     console.error(error)
@@ -1304,6 +1927,134 @@ const formatImportValue = (value: unknown): string => {
   return String(value)
 }
 
+const parseImportDateCandidate = (value: unknown): Date | null => {
+  const excelBase = new Date(Date.UTC(1899, 11, 30))
+
+  const fromExcelSerial = (numeric: number): Date | null => {
+    if (!Number.isFinite(numeric) || numeric < 0) return null
+    const date = new Date(excelBase.getTime() + numeric * 24 * 60 * 60 * 1000)
+    return Number.isNaN(date.getTime()) ? null : date
+  }
+
+  const fromUnix = (numeric: number): Date | null => {
+    if (!Number.isFinite(numeric)) return null
+    if (numeric > 1_000_000_000_000) {
+      const msDate = new Date(numeric)
+      return Number.isNaN(msDate.getTime()) ? null : msDate
+    }
+    if (numeric > 1_000_000_000) {
+      const secDate = new Date(numeric * 1000)
+      return Number.isNaN(secDate.getTime()) ? null : secDate
+    }
+    return null
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const unixDate = fromUnix(value)
+    if (unixDate) return unixDate
+
+    const excelDate = fromExcelSerial(value)
+    if (excelDate) return excelDate
+
+    return null
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+
+    const ruDateTime = trimmed.match(
+      /^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/
+    )
+    if (ruDateTime) {
+      const [, day, month, year, hour = '0', minute = '0', second = '0'] = ruDateTime
+      const parsed = new Date(
+        Number(year),
+        Number(month) - 1,
+        Number(day),
+        Number(hour),
+        Number(minute),
+        Number(second)
+      )
+      return Number.isNaN(parsed.getTime()) ? null : parsed
+    }
+
+    const timeOnly = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/)
+    if (timeOnly) {
+      const now = new Date()
+      const [, hour, minute, second = '0'] = timeOnly
+      const parsed = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
+        Number(hour),
+        Number(minute),
+        Number(second)
+      )
+      return Number.isNaN(parsed.getTime()) ? null : parsed
+    }
+
+    const numberLike = /^\d+(?:[\.,]\d+)?$/.test(trimmed)
+    if (numberLike) {
+      const numeric = Number(trimmed.replace(',', '.'))
+      if (Number.isFinite(numeric)) {
+        const unixDate = fromUnix(numeric)
+        if (unixDate) return unixDate
+
+        const excelDate = fromExcelSerial(numeric)
+        if (excelDate) return excelDate
+      }
+    }
+
+    const parsed = new Date(trimmed)
+    return Number.isNaN(parsed.getTime()) ? null : parsed
+  }
+
+  return null
+}
+
+const formatImportValueByType = (value: unknown, targetType: string): string => {
+  if (value === null || value === undefined || value === '') return '—'
+
+  if (targetType === 'number') {
+    const numeric = typeof value === 'number' ? value : Number(String(value).replace(',', '.'))
+    return Number.isFinite(numeric) ? String(numeric) : '—'
+  }
+
+  if (targetType === 'boolean') {
+    if (typeof value === 'boolean') return value ? 'Да' : 'Нет'
+    const lowered = String(value).trim().toLowerCase()
+    if (['true', '1', 'yes', 'да'].includes(lowered)) return 'Да'
+    if (['false', '0', 'no', 'нет'].includes(lowered)) return 'Нет'
+    return '—'
+  }
+
+  if (targetType === 'date' || targetType === 'datetime') {
+    const parsed = parseImportDateCandidate(value)
+    if (!parsed) return '—'
+
+    if (targetType === 'date') {
+      return new Intl.DateTimeFormat('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      }).format(parsed)
+    }
+
+    return new Intl.DateTimeFormat('ru-RU', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    }).format(parsed)
+  }
+
+  return formatImportValue(value)
+}
+
 const onDataTableChange = async () => {
   dataPagination.value.skip = 0
   await loadTableData()
@@ -1315,8 +2066,102 @@ const onDataLimitChange = async () => {
 }
 
 const getReportTypeLabel = (type: ReportType) => {
-  if (type === 'excel_export') return 'Excel выгрузка'
+  if (type === 'table_export') return 'Табличная выгрузка'
   return 'Публичный дашборд'
+}
+
+const getReportCardTypeLabel = (report: ReportConfiguration) => {
+  if (report.report_type !== 'table_export') {
+    return 'Публичный дашборд'
+  }
+
+  return 'Табличная выгрузка'
+}
+
+const syncReportCreateSelectedTablesWithSchema = () => {
+  const allowed = new Set(tableStructures.value.map((table) => table.id))
+  reportCreateSelectedTableIds.value = reportCreateSelectedTableIds.value.filter((id) => allowed.has(id))
+}
+
+const openCreateReportModal = () => {
+  if (!selectedWorkspace.value) return
+
+  reportCreateKind.value = 'dashboard'
+  reportName.value = ''
+  reportDescription.value = ''
+  reportIsPublished.value = false
+  syncReportCreateSelectedTablesWithSchema()
+  reportCreateSelectedTableIds.value = tableStructures.value[0]?.id ? [tableStructures.value[0].id] : []
+
+  reportCreateModalOpen.value = true
+}
+
+const closeCreateReportModal = () => {
+  reportCreateModalOpen.value = false
+}
+
+const onReportCreateTypeChange = () => {
+  if (reportCreateSelectedTableIds.value.length === 0 && tableStructures.value.length > 0) {
+    reportCreateSelectedTableIds.value = [tableStructures.value[0].id]
+  }
+}
+
+const createReportFromModal = async () => {
+  if (!selectedWorkspace.value || !reportName.value.trim()) return
+  if (reportCreateSelectedTables.value.length === 0) {
+    alert('Выберите хотя бы одну таблицу.')
+    return
+  }
+
+  const reportTitle = reportName.value.trim()
+  const reportDesc = reportDescription.value.trim()
+
+  try {
+    if (reportCreateKind.value === 'dashboard') {
+      // Redirect to new dashboard editor
+      reportCreateModalOpen.value = false
+      await router.push({
+        name: 'dashboard-create',
+        params: { workspaceId: selectedWorkspace.value.id }
+      })
+    } else {
+      const datasets = reportCreateSelectedTables.value
+        .map((dataset, index) => ({
+          id: `dataset_${index + 1}`,
+          title: dataset.name,
+          sheet_name: dataset.name.slice(0, 31) || `Sheet${index + 1}`,
+          table_id: dataset.id,
+          columns: [],
+          aggregated_columns: [],
+          group_by_columns: [],
+          sorting: [],
+          filters: []
+        }))
+
+      const settings: Record<string, unknown> = {
+        datasets
+      }
+
+      const created = await reportUseCase.createReport(
+        selectedWorkspace.value.id,
+        reportTitle,
+        reportDesc,
+        'table_export',
+        settings,
+        reportIsPublished.value
+      )
+
+      reportCreateModalOpen.value = false
+      await loadReports()
+      await router.push({
+        name: 'table-report-detail',
+        params: { workspaceId: selectedWorkspace.value.id, reportId: created.id }
+      })
+    }
+  } catch (error) {
+    console.error(error)
+    alert('Не удалось создать отчет')
+  }
 }
 
 const syncReportColumnsWithSelectedTable = () => {
@@ -1341,7 +2186,7 @@ const resetReportEditor = () => {
   selectedReportId.value = null
   reportName.value = ''
   reportDescription.value = ''
-  reportType.value = 'excel_export'
+  reportType.value = 'table_export'
   reportIsPublished.value = false
   reportTableId.value = activeTable.value?.id ?? tableStructures.value[0]?.id ?? null
   reportRecentLimit.value = 10
@@ -1372,100 +2217,34 @@ const goToReportsTab = async () => {
   workspaceTab.value = 'reports'
   reportEditorOpen.value = false
   templateModalOpen.value = false
+
   promptModalOpen.value = false
+
+  syncReportCreateSelectedTablesWithSchema()
   await loadReports()
 }
 
 const createReport = () => {
-  reportEditorOpen.value = true
-  resetReportEditor()
+  openCreateReportModal()
 }
 
 const editReport = (report: ReportConfiguration) => {
-  selectedReportId.value = report.id
-  reportName.value = report.name
-  reportDescription.value = report.description || ''
-  reportType.value = report.report_type
-  reportIsPublished.value = report.is_published
-
-  const settings = report.settings || {}
-  reportTableId.value = Number(settings.table_id) || activeTable.value?.id || tableStructures.value[0]?.id || null
-
-  syncReportColumnsWithSelectedTable()
-  if (report.report_type === 'excel_export') {
-    const configuredColumns = Array.isArray(settings.columns) ? settings.columns : []
-    if (configuredColumns.length > 0) {
-      const enabled = new Map(
-        configuredColumns
-          .filter((item): item is { key: string; label?: string } => !!item && typeof item === 'object' && 'key' in item)
-          .map((item) => [item.key, item.label])
-      )
-      reportExcelColumns.value = reportExcelColumns.value.map((column) => ({
-        ...column,
-        enabled: enabled.has(column.key),
-        label: String(enabled.get(column.key) || column.label)
-      }))
-    }
-  }
-
+  if (!selectedWorkspace.value) return
   if (report.report_type === 'dashboard') {
-    reportRecentLimit.value = Number(settings.recent_limit) || 10
-    const metrics = Array.isArray(settings.metrics) ? settings.metrics : []
-    reportMetrics.value = metrics
-      .filter((metric): metric is DashboardMetricConfig => !!metric && typeof metric === 'object')
-      .map((metric) => ({
-        label: String(metric.label || 'Метрика'),
-        aggregation: (metric.aggregation as DashboardMetricConfig['aggregation']) || 'count',
-        field_key: metric.field_key ? String(metric.field_key) : undefined
-      }))
-
-    if (reportMetrics.value.length === 0) {
-      reportMetrics.value = [{ label: 'Количество записей', aggregation: 'count' }]
-    }
-
-    const charts = Array.isArray(settings.charts) ? settings.charts : []
-    reportCharts.value = charts
-      .filter((chart): chart is DashboardChartConfig => !!chart && typeof chart === 'object')
-      .map((chart) => ({
-        title: String(chart.title || 'График'),
-        chart_type: 'bar',
-        group_by_key: String(chart.group_by_key || ''),
-        aggregation: chart.aggregation || 'count',
-        value_key: chart.value_key ? String(chart.value_key) : undefined,
-        limit: Number(chart.limit) || 10
-      }))
+    router.push({
+      name: 'dashboard-detail',
+      params: { workspaceId: selectedWorkspace.value.id, reportId: report.id }
+    })
+    return
   }
-
-  reportEditorOpen.value = true
+  router.push({
+    name: 'table-report-detail',
+    params: { workspaceId: selectedWorkspace.value.id, reportId: report.id }
+  })
 }
 
 const onReportTableChange = () => {
   syncReportColumnsWithSelectedTable()
-}
-
-const addDashboardMetric = () => {
-  reportMetrics.value.push({ label: 'Новая метрика', aggregation: 'count' })
-}
-
-const addDashboardChart = () => {
-  reportCharts.value.push({
-    title: 'Новый график',
-    chart_type: 'bar',
-    group_by_key: '',
-    aggregation: 'count',
-    limit: 10
-  })
-}
-
-const removeDashboardMetric = (index: number) => {
-  reportMetrics.value.splice(index, 1)
-  if (reportMetrics.value.length === 0) {
-    reportMetrics.value.push({ label: 'Количество записей', aggregation: 'count' })
-  }
-}
-
-const removeDashboardChart = (index: number) => {
-  reportCharts.value.splice(index, 1)
 }
 
 const saveReport = async () => {
@@ -1476,7 +2255,7 @@ const saveReport = async () => {
     .map((column) => ({ key: column.key, label: column.label || column.key }))
 
   const settings: Record<string, unknown> = { table_id: reportTableId.value }
-  if (reportType.value === 'excel_export') {
+  if (reportType.value === 'table_export') {
     settings.columns = excelColumns
   } else {
     settings.metrics = reportMetrics.value
@@ -1529,14 +2308,22 @@ const openReportPublicLink = (reportId: number) => {
   window.open(`/report/${reportId}`, '_blank')
 }
 
-const downloadReport = async (reportId: number) => {
+const openTableReportView = (reportId: number) => {
+  if (!selectedWorkspace.value) return
+  router.push({
+    name: 'table-report-view',
+    params: { workspaceId: selectedWorkspace.value.id, reportId }
+  })
+}
+
+const downloadReport = async (reportId: number, format: 'xlsx' | 'csv' = 'xlsx') => {
   if (!selectedWorkspace.value) return
 
-  const blob = await reportUseCase.downloadExcelReport(selectedWorkspace.value.id, reportId)
+  const blob = await reportUseCase.downloadExcelReport(selectedWorkspace.value.id, reportId, format)
   const url = window.URL.createObjectURL(blob)
   const anchor = document.createElement('a')
   anchor.href = url
-  anchor.download = `report_${reportId}.xlsx`
+  anchor.download = format === 'xlsx' ? `report_${reportId}.xlsx` : `report_${reportId}.zip`
   document.body.appendChild(anchor)
   anchor.click()
   document.body.removeChild(anchor)
@@ -1700,19 +2487,6 @@ const onTemplateDrop = async (event: DragEvent) => {
   await processTemplateFile(file)
 }
 
-const openTemplateFilePicker = () => {
-  if (templateUploading.value) return
-  templateFileInput.value?.click()
-}
-
-const onTemplateFileChange = async (event: Event) => {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  if (!file) return
-  await processTemplateFile(file)
-}
-
 const deleteDataRecord = async (recordId: number) => {
   if (!authStore.token || !selectedWorkspace.value || !selectedDataTable.value) return
   if (!window.confirm('Удалить эту запись?')) return
@@ -1729,23 +2503,91 @@ const deleteDataRecord = async (recordId: number) => {
   }
 }
 
-const formatDataValue = (value: unknown, columnType: ColumnType): string => {
-  if (value === null || value === undefined) return '—'
-  if (typeof value === 'boolean') return value ? 'Да' : 'Нет'
-  if (typeof value === 'object') return JSON.stringify(value).substring(0, 50) + '...'
-  return String(value).substring(0, 80)
+const saveDataRecord = async (payload: { recordId: number; data: Record<string, unknown> }) => {
+  if (!authStore.token || !selectedWorkspace.value || !selectedDataTable.value) return
+
+  try {
+    await formBuilderUseCase.updateTableDataRecord(
+      selectedWorkspace.value.id,
+      selectedDataTable.value.id,
+      payload.recordId,
+      payload.data
+    )
+    await loadTableData()
+  } catch (error) {
+    console.error(error)
+    alert('Ошибка при сохранении записи')
+  }
 }
 
-const formatDate = (value: string): string => {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return value
-  return new Intl.DateTimeFormat('ru-RU', {
+const normalizeDateValue = (input: unknown): Date | null => {
+  if (input instanceof Date) {
+    return Number.isNaN(input.getTime()) ? null : input
+  }
+
+  if (typeof input === 'number' && Number.isFinite(input)) {
+    const millis = input < 1_000_000_000_000 ? input * 1000 : input
+    const date = new Date(millis)
+    return Number.isNaN(date.getTime()) ? null : date
+  }
+
+  if (typeof input === 'string') {
+    const trimmed = input.trim()
+    if (!trimmed) return null
+
+    if (/^\d+$/.test(trimmed)) {
+      const numeric = Number(trimmed)
+      if (Number.isFinite(numeric)) {
+        const millis = numeric < 1_000_000_000_000 ? numeric * 1000 : numeric
+        const dateFromNumeric = new Date(millis)
+        if (!Number.isNaN(dateFromNumeric.getTime())) {
+          return dateFromNumeric
+        }
+      }
+    }
+
+    const dateFromString = new Date(trimmed)
+    return Number.isNaN(dateFromString.getTime()) ? null : dateFromString
+  }
+
+  return null
+}
+
+const formatDateOnly = (date: Date): string =>
+  new Intl.DateTimeFormat('ru-RU', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric'
+  }).format(date)
+
+const formatDateTime = (date: Date): string =>
+  new Intl.DateTimeFormat('ru-RU', {
     day: '2-digit',
     month: 'long',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit'
   }).format(date)
+
+const formatDataValue = (value: unknown, columnType: ColumnType): string => {
+  if (value === null || value === undefined) return '—'
+
+  if (columnType === 'date' || columnType === 'datetime') {
+    const parsedDate = normalizeDateValue(value)
+    if (parsedDate) {
+      return columnType === 'date' ? formatDateOnly(parsedDate) : formatDateTime(parsedDate)
+    }
+  }
+
+  if (typeof value === 'boolean') return value ? 'Да' : 'Нет'
+  if (typeof value === 'object') return JSON.stringify(value).substring(0, 50) + '...'
+  return String(value).substring(0, 80)
+}
+
+const formatDate = (value: unknown): string => {
+  const date = normalizeDateValue(value)
+  if (!date) return typeof value === 'string' ? value : String(value ?? '')
+  return formatDateTime(date)
 }
 
 const logout = () => {
@@ -1760,7 +2602,28 @@ onMounted(async () => {
   await loadSchema()
 })
 
+watch(
+  () => selectedWorkspace.value,
+  (workspace) => {
+    if (!workspace) {
+      editWorkspaceName.value = ''
+      editWorkspaceDescription.value = ''
+      return
+    }
+
+    editWorkspaceName.value = workspace.name
+    editWorkspaceDescription.value = workspace.description ?? ''
+  },
+  { immediate: true }
+)
+
 onBeforeUnmount(() => {
+  if (importRescanTimer.value !== null && typeof window !== 'undefined') {
+    window.clearTimeout(importRescanTimer.value)
+  }
+  if (importToastTimer.value !== null && typeof window !== 'undefined') {
+    window.clearTimeout(importToastTimer.value)
+  }
   window.removeEventListener('pointermove', onCanvasPointerMove)
   window.removeEventListener('pointerup', stopTableDrag)
 })
@@ -1768,130 +2631,73 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="dashboard">
-    <aside class="sidebar">
-      <header class="sidebar-header">
-        <h1>Workspace</h1>
-        <p>{{ authStore.me?.email }}</p>
-      </header>
-
-      <section class="create-widget">
-        <h2>Новый workspace</h2>
-        <div class="fields">
-          <input v-model="workspaceName" type="text" placeholder="Название" maxlength="255" />
-          <textarea v-model="workspaceDescription" rows="3" placeholder="Описание (опционально)" maxlength="2000" />
-          <button @click="createWorkspace">Создать</button>
-        </div>
-      </section>
-
-      <section class="workspace-nav">
-        <div class="nav-title">
-          <h2>Список</h2>
-          <span>{{ workspaces.length }}</span>
-        </div>
-        <p v-if="loading" class="muted">Загрузка...</p>
-        <p v-else-if="workspaces.length === 0" class="muted">Пока нет workspace</p>
-
-        <ul v-else>
-          <li v-for="workspace in workspaces" :key="workspace.id">
-            <button class="workspace-link" :class="{ active: selectedWorkspaceId === workspace.id }" @click="selectWorkspace(workspace.id)">
-              <strong>{{ workspace.name }}</strong>
-              <span>{{ workspace.description || 'Без описания' }}</span>
-            </button>
-          </li>
-        </ul>
-      </section>
-
-      <button class="ghost" @click="logout">Выйти</button>
-    </aside>
+    <DashboardSidebar
+      :active-tab="workspaceTab"
+      @nav-click="onSidebarNavClick"
+      @open-profile="openUserModal"
+      @logout="logout"
+    />
 
     <section class="content">
+      <div v-if="importToastMessage" class="import-toast" role="status" aria-live="polite">
+        {{ importToastMessage }}
+      </div>
       <article v-if="selectedWorkspace" class="workspace-content">
-        <header>
-          <h2>{{ selectedWorkspace.name }}</h2>
-          <p>{{ selectedWorkspace.description || 'Описание пока не добавлено' }}</p>
+        <DashboardTopBar
+          :workspaces="workspaces"
+          :active-workspace-id="selectedWorkspaceId"
+          :active-tab="workspaceTab"
+          @select-workspace="selectWorkspace"
+          @open-modal="openCreateWorkspaceModal"
+          @delete-workspace="deleteWorkspaceById"
+          @go-details="goToDetailsTab"
+          @go-import="goToImportTab"
+          @refresh-workspaces="loadWorkspaces"
+          @create-table="onTopBarCreateTable"
+          @create-form="createNewForm"
+          @create-report="createReport"
+        />
+
+        <header class="workspace-header">
+          <div class="workspace-title-group">
+            <h2>{{ selectedWorkspace.name }}</h2>
+            <p>{{ selectedWorkspace.description || 'Описание пока не добавлено' }}</p>
+          </div>
         </header>
 
-        <div class="workspace-tabs">
-          <button class="tab" :class="{ active: workspaceTab === 'details' }" @click="workspaceTab = 'details'">Детали</button>
-          <button class="tab" :class="{ active: workspaceTab === 'tables' }" @click="workspaceTab = 'tables'">Таблицы</button>
-          <button class="tab" :class="{ active: workspaceTab === 'forms' }" @click="goToFormsTab">Формы</button>
-          <button class="tab" :class="{ active: workspaceTab === 'data' }" @click="goToDataTab">Данные</button>
-          <button class="tab" :class="{ active: workspaceTab === 'import' }" @click="goToImportTab">Импорт</button>
-          <button class="tab" :class="{ active: workspaceTab === 'reports' }" @click="goToReportsTab">Отчеты</button>
-        </div>
-
-        <div class="actions-row" v-if="workspaceTab === 'details'">
+        <DashboardTileActions v-if="workspaceTab === 'details'" class="actions-row">
           <button class="danger" :disabled="deleting" @click="deleteWorkspace">
             {{ deleting ? 'Удаляем...' : 'Удалить workspace' }}
           </button>
-        </div>
+        </DashboardTileActions>
 
         <section v-if="workspaceTab === 'tables'" class="designer">
-          <div class="designer-header">
-            <h3>Low-code структуры таблиц</h3>
-            <p>SQL Canvas: перемещайте таблицы по полю и переносите колонки drag-and-drop между таблицами.</p>
-          </div>
-
-          <div class="create-table">
-            <input v-model="newTableName" type="text" placeholder="Новая таблица: название" maxlength="255" />
-            <input v-model="newTableDescription" type="text" placeholder="Описание таблицы" maxlength="255" />
-            <button @click="createTable">Добавить таблицу</button>
-          </div>
-
-          <p v-if="schemaLoading" class="muted">Загрузка структуры...</p>
-          <p v-if="schemaError" class="error">{{ schemaError }}</p>
-
-          <div class="schema-layout">
-            <div class="schema-canvas-wrap">
-              <div class="schema-canvas">
-                <article
-                  v-for="table in tableStructures"
-                  :key="table.id"
-                  class="table-card"
-                  :class="{ active: activeTableId === table.id }"
-                  :style="{ left: `${getTablePosition(table.id).x}px`, top: `${getTablePosition(table.id).y}px` }"
-                  @dragover.prevent
-                  @drop="onDropColumnToTable(table.id)"
-                >
-                  <div class="table-head" @click="selectTable(table.id)">
-                    <button class="table-grip" @pointerdown.prevent="onTableGripPointerDown($event, table.id)">::: </button>
-                    <strong>{{ table.name }}</strong>
-                  </div>
-                  <p class="table-sub">{{ table.description || 'Без описания' }}</p>
-
-                  <ul class="column-list">
-                    <li
-                      v-for="column in table.columns"
-                      :key="column.key"
-                      class="column-item"
-                      draggable="true"
-                      @dragstart="startDraggingColumn(table.id, column.key)"
-                      @dragend="dragState = null"
-                      @click="selectColumn(table.id, column.key)"
-                    >
-                      <div>
-                        <strong>{{ column.name }}</strong>
-                        <span>{{ column.key }}</span>
-                      </div>
-                      <em>{{ column.type }}</em>
-                    </li>
-                  </ul>
-                </article>
-              </div>
-            </div>
-
-            <aside class="object-sidebar">
-              <section v-if="activeTable" class="object-card">
-                <h4>Выделенная таблица</h4>
-                <input v-model="activeTable.name" placeholder="Имя таблицы" />
-                <input v-model="activeTable.description" placeholder="Описание таблицы" />
-                <div class="row-actions">
-                  <button class="small" @click="saveTable(activeTable)">Сохранить таблицу</button>
-                  <button class="small danger" @click="deleteActiveTable">Удалить таблицу</button>
-                </div>
+          <div class="table-workspace">
+            <aside class="table-editor-pane">
+              <section class="object-card table-editor-card">
+                <h3>{{ activeTable ? activeTable.name : 'Создать таблицу' }}</h3>
+                <p class="muted">
+                  {{ activeTable ? 'Редактируйте таблицу и её описание.' : 'Добавьте новую таблицу в workspace.' }}
+                </p>
+                <input
+                  v-model="tableEditorName"
+                  :placeholder="activeTable ? 'Имя таблицы' : 'Новая таблица: название'"
+                  maxlength="255"
+                />
+                <textarea
+                  v-model="tableEditorDescription"
+                  :placeholder="activeTable ? 'Описание таблицы' : 'Описание таблицы'"
+                  rows="4"
+                  maxlength="255"
+                />
+                <DashboardTileActions>
+                  <button v-if="activeTable" class="small" @click="saveTable(activeTable)">Сохранить таблицу</button>
+                  <button v-else class="small" @click="createTable">Добавить таблицу</button>
+                  <button v-if="activeTable" class="small danger" @click="deleteActiveTable">Удалить таблицу</button>
+                </DashboardTileActions>
               </section>
 
-              <section class="object-card" v-if="activeTable">
+              <section class="object-card table-editor-card" v-if="activeTable">
                 <h4>Добавить колонку</h4>
                 <div class="new-column-form">
                   <input v-model="newColumnName" placeholder="Название колонки" />
@@ -1962,24 +2768,111 @@ onBeforeUnmount(() => {
 
                 <button class="small" @click="addColumnToActiveTable">Добавить в таблицу</button>
               </section>
+            </aside>
 
-              <section v-if="selectedColumn && selectedColumnParent" class="object-card">
-                <h4>Выделенная колонка</h4>
-                <p class="muted">Таблица: {{ selectedColumnParent.name }}</p>
-                <input v-model="selectedColumn.name" placeholder="Название" />
-                <input v-model="selectedColumn.key" placeholder="Ключ" />
-                <select v-model="selectedColumn.type">
-                  <option value="text">text</option>
-                  <option value="number">number</option>
-                  <option value="boolean">boolean</option>
-                  <option value="date">date</option>
-                  <option value="datetime">datetime</option>
-                  <option value="enum">enum</option>
-                  <option value="list">list</option>
-                  <option value="geoPoint">geoPoint</option>
-                  <option value="geoPolygon">geoPolygon</option>
-                </select>
-                <label class="checkbox-inline"><input v-model="selectedColumn.required" type="checkbox" />required</label>
+            <div class="table-canvas-shell">
+              <div class="designer-header">
+                <h3>Low-code структуры таблиц</h3>
+                <p>Перемещайте таблицы по полю и переносите колонки drag-and-drop между таблицами.</p>
+              </div>
+
+              <UiStatusText v-if="schemaLoading">Загрузка структуры...</UiStatusText>
+              <UiStatusText v-if="schemaError" variant="error">{{ schemaError }}</UiStatusText>
+
+              <div ref="schemaCanvasWrapRef" class="schema-canvas-wrap">
+                <div class="schema-canvas">
+                  <article
+                    v-for="table in tableStructures"
+                    :key="table.id"
+                    class="table-card"
+                    :class="{ active: activeTableId === table.id }"
+                    :style="{ left: `${getTablePosition(table.id).x}px`, top: `${getTablePosition(table.id).y}px` }"
+                    @pointerdown.left="onTableCardPointerDown($event, table.id)"
+                    @dragover.prevent
+                    @drop="onDropColumnToTable(table.id)"
+                  >
+                    <div class="table-head" @click="selectTable(table.id)">
+                      <strong>{{ table.name }}</strong>
+                    </div>
+                    <p class="table-sub">{{ table.description || 'Без описания' }}</p>
+
+                  <ul class="column-list">
+                      <li
+                        v-for="column in table.columns"
+                        :key="column.key"
+                        class="column-item"
+                        draggable="true"
+                        @pointerdown.stop
+                        @dragstart="startDraggingColumn(table.id, column.key)"
+                        @dragend="dragState = null"
+                        @click.stop="selectColumn(table.id, column.key)"
+                      >
+                        <div>
+                          <strong>{{ column.name }}</strong>
+                          <span>{{ column.key }}</span>
+                        </div>
+                        <em>{{ column.type }}</em>
+                      </li>
+                    </ul>
+                  </article>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <Transition name="column-editor-fade">
+            <aside v-if="selectedColumn" class="column-editor-modal">
+              <section class="object-card">
+                <div class="column-editor-head">
+                  <h4>Редактирование столбца</h4>
+                  <button class="small ghost" @click="closeColumnEditor">Закрыть</button>
+                </div>
+
+                <div class="new-column-form">
+                  <label>Название</label>
+                  <input v-model="selectedColumn.name" placeholder="Название столбца" />
+
+                  <label>Ключ</label>
+                  <input v-model="selectedColumn.key" placeholder="Уникальный ключ" />
+
+                  <label>Тип</label>
+                  <select :value="selectedColumn.type" @change="setSelectedColumnType(($event.target as HTMLSelectElement).value as ColumnType)">
+                    <option v-for="typeOption in COLUMN_TYPE_OPTIONS" :key="`selected-col-type-${typeOption}`" :value="typeOption">
+                      {{ typeOption }}
+                    </option>
+                  </select>
+
+                  <label class="checkbox-inline">
+                    <input v-model="selectedColumn.required" type="checkbox" /> Обязательный
+                  </label>
+                </div>
+
+                <div v-if="selectedColumn.type === 'enum'" class="type-settings">
+                  <label>Варианты enum</label>
+                  <input
+                    :value="getSelectedColumnOptionsText()"
+                    placeholder="Значение 1, Значение 2"
+                    @input="setSelectedColumnOptionsText(($event.target as HTMLInputElement).value)"
+                  />
+                </div>
+
+                <div v-if="selectedColumn.type === 'list'" class="type-settings">
+                  <label>Тип элементов списка</label>
+                  <select :value="getSelectedListItemType()" @change="setSelectedListItemType(($event.target as HTMLSelectElement).value as 'text' | 'number' | 'boolean' | 'enum')">
+                    <option value="text">text</option>
+                    <option value="number">number</option>
+                    <option value="boolean">boolean</option>
+                    <option value="enum">enum</option>
+                  </select>
+
+                  <input
+                    v-if="getSelectedListItemType() === 'enum'"
+                    :value="getSelectedColumnOptionsText()"
+                    placeholder="Варианты list enum через запятую"
+                    @input="setSelectedColumnOptionsText(($event.target as HTMLInputElement).value)"
+                  />
+                </div>
+
                 <div v-if="selectedColumn.type === 'number'" class="type-settings">
                   <label class="checkbox-inline">
                     <input
@@ -2002,110 +2895,162 @@ onBeforeUnmount(() => {
                     :value="getSelectedNumberSetting('autoIncrementStart', 1)"
                     type="number"
                     min="1"
-                    placeholder="Стартовое значение"
-                    :disabled="!getSelectedNumberSetting('autoIncrement', false)"
-                    @input="setSelectedNumberSetting('autoIncrementStart', Math.max(1, Number(($event.target as HTMLInputElement).value) || 1))"
+                    @input="setSelectedNumberSetting('autoIncrementStart', Number(($event.target as HTMLInputElement).value) || 1)"
                   />
                   <label class="setting-label">Шаг инкремента</label>
                   <input
                     :value="getSelectedNumberSetting('autoIncrementStep', 1)"
                     type="number"
                     min="1"
-                    placeholder="Шаг"
-                    :disabled="!getSelectedNumberSetting('autoIncrement', false)"
-                    @input="setSelectedNumberSetting('autoIncrementStep', Math.max(1, Number(($event.target as HTMLInputElement).value) || 1))"
+                    @input="setSelectedNumberSetting('autoIncrementStep', Number(($event.target as HTMLInputElement).value) || 1)"
                   />
                 </div>
-                <div class="row-actions">
-                  <button class="small" @click="saveSelectedColumn">Сохранить</button>
-                  <button class="small danger" @click="removeColumnFromActiveTable(selectedColumn.key)">Удалить</button>
-                </div>
-              </section>
 
-              <section class="object-card relations">
-                <h4>Связи таблиц</h4>
-                <div class="relation-form">
-                  <input v-model="relationName" placeholder="Название связи" />
-                  <select v-model="relationSourceTableId">
-                    <option value="">Источник</option>
-                    <option v-for="table in allTableOptions" :key="`s-${table.id}`" :value="String(table.id)">{{ table.name }}</option>
-                  </select>
-                  <select v-model="relationSourceColumn">
-                    <option value="">Колонка источника</option>
-                    <option v-for="column in relationSourceColumns" :key="`sc-${column.key}`" :value="column.key">{{ column.name }}</option>
-                  </select>
-                  <select v-model="relationTargetTableId">
-                    <option value="">Цель</option>
-                    <option v-for="table in allTableOptions" :key="`t-${table.id}`" :value="String(table.id)">{{ table.name }}</option>
-                  </select>
-                  <select v-model="relationTargetColumn">
-                    <option value="">Колонка цели</option>
-                    <option v-for="column in relationTargetColumns" :key="`tc-${column.key}`" :value="column.key">{{ column.name }}</option>
-                  </select>
-                  <select v-model="relationType">
-                    <option value="one_to_one">one_to_one</option>
-                    <option value="one_to_many">one_to_many</option>
-                    <option value="many_to_many">many_to_many</option>
-                  </select>
-                  <button @click="createRelation">Добавить связь</button>
+                <div v-if="selectedColumn.type === 'geoPoint' || selectedColumn.type === 'geoPolygon'" class="type-settings">
+                  <label>SRID</label>
+                  <input
+                    :value="Number(selectedColumn.settings?.srid || 4326)"
+                    type="number"
+                    min="1"
+                    @input="selectedColumn.settings = { ...(selectedColumn.settings ?? {}), srid: Number(($event.target as HTMLInputElement).value) || 4326 }"
+                  />
+                  <label v-if="selectedColumn.type === 'geoPolygon'" class="checkbox-inline">
+                    <input
+                      :checked="Boolean(selectedColumn.settings?.allowHoles)"
+                      type="checkbox"
+                      @change="selectedColumn.settings = { ...(selectedColumn.settings ?? {}), allowHoles: ($event.target as HTMLInputElement).checked }"
+                    />
+                    allow holes
+                  </label>
                 </div>
 
-                <ul class="relation-list">
-                  <li v-for="relation in relations" :key="relation.id">
-                    <div>
-                      <strong>{{ relation.name }}</strong>
-                      <span>{{ relation.relation_type }}: {{ relation.source_table_id }} -> {{ relation.target_table_id }}</span>
-                    </div>
-                    <button class="small danger" @click="deleteRelation(relation.id)">Удалить</button>
-                  </li>
-                </ul>
+                <DashboardTileActions>
+                  <button class="small" :disabled="!selectedColumnCanSave" @click="saveSelectedColumn">Сохранить столбец</button>
+                  <button class="small danger" @click="removeColumnFromActiveTable(selectedColumn.key)">Удалить столбец</button>
+                </DashboardTileActions>
               </section>
             </aside>
-          </div>
+          </Transition>
         </section>
 
         <section v-if="workspaceTab === 'forms'" class="forms-section">
-          <div class="forms-header">
-            <div>
-              <h3>Конструктор форм</h3>
-              <p>Создавайте несколько форм для одной таблицы или для набора таблиц.</p>
-            </div>
-            <button class="small" @click="createNewForm">Новая форма</button>
-          </div>
+          <UiSectionHeader
+            title="Конструктор форм"
+            description="Создавайте несколько форм для одной таблицы или для набора таблиц."
+          >
+            <template #actions>
+              <button class="small" @click="createNewForm">Новая форма</button>
+            </template>
+          </UiSectionHeader>
 
-          <div v-if="formLoading" class="muted">Загрузка форм...</div>
-          <div v-if="formError" class="error">{{ formError }}</div>
+          <UiStatusText v-if="formLoading" as="div">Загрузка форм...</UiStatusText>
+          <UiStatusText v-if="formError" as="div" variant="error">{{ formError }}</UiStatusText>
 
           <div class="reports-grid" v-if="formConfigurations.length > 0">
-            <article
+            <DashboardTileCard
               v-for="form in formConfigurations"
               :key="form.id"
-              class="report-tile"
-              :class="{ active: selectedFormId === form.id }"
+              :active="selectedFormId === form.id"
             >
-              <header>
+              <template #title>
                 <h4>{{ form.name }}</h4>
+              </template>
+              <template #badge>
                 <span class="report-type">{{ form.is_published ? 'Публичная' : 'Черновик' }}</span>
-              </header>
+              </template>
               <p>{{ form.description || 'Без описания' }}</p>
               <p class="muted">Поля: {{ form.fields.length }}</p>
               <p class="muted">Таблицы: {{ getFormUsedTableNames(form) }}</p>
-              <div class="report-actions">
-                <button
-                  class="small"
-                  :disabled="!form.is_published"
-                  @click="openFormPublicLink(form.id)"
-                >
-                  Ссылка
-                </button>
-                <button class="small" @click="selectForm(form.id)">Редактировать</button>
-                <button class="small danger" @click="deleteForm(form.id)">Удалить</button>
-              </div>
-            </article>
+              <template #actions>
+                <DashboardTileActions>
+                  <button
+                    class="small"
+                    :disabled="!form.is_published"
+                    @click="openFormPublicLink(form.id)"
+                  >
+                    Ссылка
+                  </button>
+                  <button class="small" @click="selectForm(form.id)">Редактировать</button>
+                  <button class="small danger" @click="deleteForm(form.id)">Удалить</button>
+                </DashboardTileActions>
+              </template>
+            </DashboardTileCard>
           </div>
-          <p v-else-if="!formLoading" class="muted">Пока нет форм. Создайте первую.</p>
+          <UiStatusText v-else-if="!formLoading">Пока нет форм. Создайте первую.</UiStatusText>
 
           <div v-if="formEditorOpen && selectedForm" class="form-editor">
+            <aside class="form-config">
+              <section class="object-card">
+                <h4>Настройки формы</h4>
+                <div>
+                  <label>Название</label>
+                  <input v-model="selectedForm.name" />
+                </div>
+                <div>
+                  <label>Описание</label>
+                  <input v-model="selectedForm.description" />
+                </div>
+                <div>
+                  <label>Таблицы формы (можно несколько)</label>
+                  <select v-model="formTableSelection" multiple @change="onFormTablesChange">
+                    <option v-for="table in allTableOptions" :key="`ft-t-${table.id}`" :value="table.id">
+                      {{ table.name }}
+                    </option>
+                  </select>
+                </div>
+                <label class="checkbox-inline">
+                  <input v-model="selectedForm.is_published" type="checkbox" /> Опубликована
+                </label>
+                <label class="checkbox-inline">
+                  <input v-model="selectedForm.collect_email" type="checkbox" /> Собирать email
+                </label>
+                <button class="small" :disabled="formSaving || !isFormDirty" @click="saveSingleForm">
+                  {{ formSaving ? 'Сохраняем...' : 'Сохранить форму' }}
+                </button>
+                <UiStatusText
+                  v-if="formSaveStatusText"
+                  as="div"
+                  :variant="formSaveError ? 'error' : isFormDirty ? undefined : 'success'"
+                >
+                  {{ formSaveStatusText }}
+                </UiStatusText>
+              </section>
+
+              <section class="object-card">
+                <h4>Поля ({{ selectedForm.fields.length }})</h4>
+                <button class="small" @click="syncMissingFieldsFromWorkspace">Добавить все недостающие</button>
+                <div class="field-settings-row">
+                  <select v-model="addFieldTableId">
+                    <option value="">Таблица для добавления</option>
+                    <option
+                      v-for="table in allTableOptions.filter((item) => formTableSelection.includes(item.id))"
+                      :key="`add-t-${table.id}`"
+                      :value="String(table.id)"
+                    >
+                      {{ table.name }}
+                    </option>
+                  </select>
+                  <select v-model="addFieldColumnKey" :disabled="!addFieldTableId">
+                    <option value="">Поле таблицы</option>
+                    <option v-for="column in addFieldCandidates" :key="`add-c-${column.key}`" :value="column.key">
+                      {{ column.name }}
+                    </option>
+                  </select>
+                  <button class="small" @click="addSelectedFieldToForm">Добавить поле в конец формы</button>
+                </div>
+                <p class="muted">Выберите поле справа в превью для редактирования.</p>
+              </section>
+
+              <section class="object-card">
+                <h4>Поделиться</h4>
+                <p class="muted">Скопируйте ссылку для отправки пользователям:</p>
+                <div class="share-link">
+                  <code>/form/{{ selectedForm.id }}</code>
+                  <button class="small" @click="copyToClipboard">Копировать</button>
+                </div>
+              </section>
+            </aside>
+
             <article class="form-preview">
               <header class="form-header">
                 <h4>{{ selectedForm.name }}</h4>
@@ -2124,10 +3069,15 @@ onBeforeUnmount(() => {
                   @drop.prevent="dropFieldAt(index)"
                   @click="selectFormField(index)"
                 >
-                  <label :for="`field-${field.column_key}`">
-                    {{ field.field_label }}
-                    <span v-if="field.required" class="required">*</span>
-                  </label>
+                  <div class="form-field-top">
+                    <label :for="`field-${field.column_key}`">
+                      {{ field.field_label }}
+                      <span v-if="field.required" class="required">*</span>
+                    </label>
+                    <div class="form-field-actions">
+                      <button class="small danger" type="button" @click.stop="removeFormField(index)">Удалить</button>
+                    </div>
+                  </div>
                   <p class="field-table-label">Таблица: {{ getFieldTableName(field) }}</p>
                   <input
                     v-if="['text_input', 'number_input', 'date_input', 'datetime_input'].includes(field.widget_type)"
@@ -2182,655 +3132,343 @@ onBeforeUnmount(() => {
               </form>
             </article>
 
-            <aside class="form-config">
-              <section class="object-card">
-                <h4>Настройки формы</h4>
-                <div>
-                  <label>Название</label>
-                  <input v-model="selectedForm.name" />
-                </div>
-                <div>
-                  <label>Описание</label>
-                  <input v-model="selectedForm.description" />
-                </div>
-                <div>
-                  <label>Таблицы формы (можно несколько)</label>
-                  <select v-model="formTableSelection" multiple @change="onFormTablesChange">
-                    <option v-for="table in allTableOptions" :key="`ft-t-${table.id}`" :value="table.id">
-                      {{ table.name }}
-                    </option>
-                  </select>
-                </div>
-                <label class="checkbox-inline">
-                  <input v-model="selectedForm.is_published" type="checkbox" /> Опубликована
-                </label>
-                <label class="checkbox-inline">
-                  <input v-model="selectedForm.collect_email" type="checkbox" /> Собирать email
-                </label>
-                <button class="small" @click="saveSingleForm">Сохранить форму</button>
-              </section>
+            <Transition name="column-editor-fade">
+              <aside v-if="selectedFormField" class="column-editor-modal form-field-editor-modal">
+                <section class="object-card">
+                  <div class="column-editor-head">
+                    <h4>Настройки выбранного поля</h4>
+                    <button class="small ghost" @click="closeSelectedFormField">Закрыть</button>
+                  </div>
 
-              <section class="object-card">
-                <h4>Поля ({{ selectedForm.fields.length }})</h4>
-                <button class="small" @click="syncMissingFieldsFromWorkspace">Добавить все недостающие</button>
-                <div class="field-settings-row">
-                  <select v-model="addFieldTableId">
-                    <option value="">Таблица для добавления</option>
-                    <option
-                      v-for="table in allTableOptions.filter((item) => formTableSelection.includes(item.id))"
-                      :key="`add-t-${table.id}`"
-                      :value="String(table.id)"
-                    >
+                  <p class="muted">Текущая таблица: {{ getFieldTableName(selectedFormField) }}</p>
+                  <input v-model="selectedFormField.field_label" placeholder="Заголовок поля" />
+                  <select v-model="selectedFormField.widget_type">
+                    <option value="text_input">text_input</option>
+                    <option value="textarea">textarea</option>
+                    <option value="number_input">number_input</option>
+                    <option value="date_input">date_input</option>
+                    <option value="datetime_input">datetime_input</option>
+                    <option value="select">select</option>
+                    <option value="multiselect">multiselect</option>
+                    <option value="list_input">list_input</option>
+                    <option value="checkbox">checkbox</option>
+                    <option value="radio">radio</option>
+                  </select>
+                  <select v-model.number="selectedFormField.table_id">
+                    <option v-for="table in allTableOptions.filter((item) => formTableSelection.includes(item.id))" :key="`sf-t-${table.id}`" :value="table.id">
                       {{ table.name }}
                     </option>
                   </select>
-                  <select v-model="addFieldColumnKey" :disabled="!addFieldTableId">
-                    <option value="">Поле таблицы</option>
-                    <option v-for="column in addFieldCandidates" :key="`add-c-${column.key}`" :value="column.key">
-                      {{ column.name }}
-                    </option>
-                  </select>
-                  <button class="small" @click="addSelectedFieldToForm">Добавить поле в конец формы</button>
-                </div>
-                <ul v-if="selectedForm.fields.length > 0" class="form-fields-list">
-                  <li
-                    v-for="(field, index) in selectedForm.fields"
-                    :key="`${field.table_id ?? 'default'}-${field.column_key}`"
-                    :class="{ active: selectedFormFieldIndex === index }"
-                    @click="selectFormField(index)"
-                  >
-                    <div>
-                      <strong>{{ field.field_label }}</strong>
-                      <span>{{ getWidgetTypeLabel(field.widget_type) }} · {{ field.column_key }} · {{ getFieldTableName(field) }}</span>
+                  <input v-model="selectedFormField.placeholder" placeholder="Placeholder" />
+                  <input v-model="selectedFormField.help_text" placeholder="Подсказка" />
+                  <div v-if="supportsWidgetOptions(selectedFormField)" class="options-editor">
+                    <label>Варианты</label>
+                    <div class="option-row" v-for="(opt, optIndex) in getFieldOptions(selectedFormField)" :key="`opt-${optIndex}`">
+                      <input
+                        :value="opt"
+                        placeholder="Вариант"
+                        @input="updateFieldOptionAt(selectedFormField, optIndex, ($event.target as HTMLInputElement).value)"
+                      />
+                      <button class="small danger" @click="removeFieldOptionAt(selectedFormField, optIndex)">Удалить</button>
                     </div>
-                    <button class="small danger" @click.stop="removeFormField(index)">Удалить</button>
-                  </li>
-                </ul>
-                <p v-else class="muted">Нет полей</p>
-              </section>
-
-              <section v-if="selectedFormField" class="object-card">
-                <h4>Настройки выбранного поля</h4>
-                <p class="muted">Текущая таблица: {{ getFieldTableName(selectedFormField) }}</p>
-                <input v-model="selectedFormField.field_label" placeholder="Заголовок поля" />
-                <select v-model="selectedFormField.widget_type">
-                  <option value="text_input">text_input</option>
-                  <option value="textarea">textarea</option>
-                  <option value="number_input">number_input</option>
-                  <option value="date_input">date_input</option>
-                  <option value="datetime_input">datetime_input</option>
-                  <option value="select">select</option>
-                  <option value="multiselect">multiselect</option>
-                  <option value="list_input">list_input</option>
-                  <option value="checkbox">checkbox</option>
-                  <option value="radio">radio</option>
-                </select>
-                <select v-model.number="selectedFormField.table_id">
-                  <option v-for="table in allTableOptions.filter((item) => formTableSelection.includes(item.id))" :key="`sf-t-${table.id}`" :value="table.id">
-                    {{ table.name }}
-                  </option>
-                </select>
-                <input v-model="selectedFormField.placeholder" placeholder="Placeholder" />
-                <input v-model="selectedFormField.help_text" placeholder="Подсказка" />
-                <div v-if="supportsWidgetOptions(selectedFormField)" class="options-editor">
-                  <label>Варианты</label>
-                  <div class="option-row" v-for="(opt, optIndex) in getFieldOptions(selectedFormField)" :key="`opt-${optIndex}`">
-                    <input
-                      :value="opt"
-                      placeholder="Вариант"
-                      @input="updateFieldOptionAt(selectedFormField, optIndex, ($event.target as HTMLInputElement).value)"
-                    />
-                    <button class="small danger" @click="removeFieldOptionAt(selectedFormField, optIndex)">Удалить</button>
+                    <div class="option-add-row">
+                      <input
+                        v-model="newWidgetOption"
+                        placeholder="Новый вариант"
+                        @keydown.enter.prevent="addOptionToSelectedField"
+                      />
+                      <button class="small" @click="addOptionToSelectedField">Добавить вариант</button>
+                    </div>
                   </div>
-                  <div class="option-add-row">
-                    <input
-                      v-model="newWidgetOption"
-                      placeholder="Новый вариант"
-                      @keydown.enter.prevent="addOptionToSelectedField"
-                    />
-                    <button class="small" @click="addOptionToSelectedField">Добавить вариант</button>
-                  </div>
-                </div>
-                <label class="checkbox-inline">
-                  <input v-model="selectedFormField.required" type="checkbox" /> Обязательное
-                </label>
-                <button class="small danger" @click="removeSelectedFormField">Удалить поле</button>
-              </section>
-
-              <section class="object-card">
-                <h4>Поделиться</h4>
-                <p class="muted">Скопируйте ссылку для отправки пользователям:</p>
-                <div class="share-link">
-                  <code>/form/{{ selectedForm.id }}</code>
-                  <button class="small" @click="copyToClipboard">Копировать</button>
-                </div>
-              </section>
-            </aside>
-          </div>
-        </section>
-
-        <section v-if="workspaceTab === 'data'" class="data-section">
-          <div class="data-header">
-            <h3>{{ selectedDataTable ? selectedDataTable.name : 'Таблица' }}: Данные</h3>
-            <p v-if="selectedDataTable">Показано {{ tableDataRecords.length }} из {{ dataPagination.total }} записей</p>
-          </div>
-
-          <div class="field-settings-row">
-            <select v-model.number="selectedDataTableId" @change="onDataTableChange">
-              <option :value="null">Выберите таблицу</option>
-              <option v-for="table in allTableOptions" :key="`data-t-${table.id}`" :value="table.id">
-                {{ table.name }}
-              </option>
-            </select>
-            <select v-model.number="dataPagination.limit" @change="onDataLimitChange">
-              <option :value="10">10 записей</option>
-              <option :value="25">25 записей</option>
-              <option :value="50">50 записей</option>
-              <option :value="100">100 записей</option>
-            </select>
-          </div>
-
-          <div v-if="dataLoading" class="muted">Загрузка данных...</div>
-          <div v-if="dataError" class="error">{{ dataError }}</div>
-
-          <div v-if="tableDataRecords.length > 0 && selectedDataTable" class="data-table-wrap">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th v-for="column in selectedDataTable.columns" :key="column.key">{{ column.name }}</th>
-                  <th>Отправлено</th>
-                  <th>Email</th>
-                  <th>Действие</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(record, index) in tableDataRecords" :key="record.id">
-                  <td>{{ dataPagination.skip + index + 1 }}</td>
-                  <td v-for="column in selectedDataTable.columns" :key="column.key">
-                    <span :title="JSON.stringify(record.data[column.key])">
-                      {{ formatDataValue(record.data[column.key], column.type) }}
-                    </span>
-                  </td>
-                  <td>{{ formatDate(record.submitted_at || record.created_at) }}</td>
-                  <td>{{ record.submitter_email || '—' }}</td>
-                  <td>
-                    <button class="small danger" @click="deleteDataRecord(record.id)">Удалить</button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div v-else-if="!dataLoading && selectedDataTable" class="muted" style="text-align: center; padding: 20px;">
-            Нет записей в этой таблице
-          </div>
-
-          <div v-if="totalPages > 1" class="pagination">
-            <button @click="goToPage(currentPage - 1)" :disabled="currentPage === 1">← Назад</button>
-            <span>Страница {{ currentPage }} из {{ totalPages }}</span>
-            <button @click="goToPage(currentPage + 1)" :disabled="currentPage === totalPages">Вперёд →</button>
-          </div>
-        </section>
-
-        <section v-if="workspaceTab === 'import'" class="import-section">
-          <div class="import-header">
-            <div>
-              <h3>Импорт</h3>
-              <p>Загрузите файл, просканируйте структуру, затем сопоставьте колонки и выполните импорт.</p>
-            </div>
-          </div>
-
-          <div class="import-panel">
-            <div class="import-flow">
-              <span class="flow-step" :class="{ active: !!importScanResult, warning: importRequiresRescan }">
-                Шаг 1: Сканирование
-              </span>
-              <span class="flow-step" :class="{ active: importCanApply }">
-                Шаг 2: Загрузка в систему
-              </span>
-            </div>
-
-            <div class="import-inputs">
-              <label>Файл</label>
-              <input type="file" accept=".csv,.xls,.xlsx" @change="onImportFileChange" />
-            </div>
-
-            <div class="import-zones">
-              <h4>Зоны поиска</h4>
-              <div class="zones-grid">
-                <div>
-                  <label>Header start</label>
-                  <input v-model.number="importHeaderRowStart" type="number" min="0" placeholder="auto" @input="onImportScanOptionsChanged" />
-                </div>
-                <div>
-                  <label>Header end</label>
-                  <input v-model.number="importHeaderRowEnd" type="number" min="0" placeholder="auto" @input="onImportScanOptionsChanged" />
-                </div>
-                <div>
-                  <label>Data start</label>
-                  <input v-model.number="importDataRowStart" type="number" min="0" placeholder="auto" @input="onImportScanOptionsChanged" />
-                </div>
-                <div>
-                  <label>Data end</label>
-                  <input v-model.number="importDataRowEnd" type="number" min="0" placeholder="до конца" @input="onImportScanOptionsChanged" />
-                </div>
-              </div>
-            </div>
-
-            <div class="import-zones">
-              <h4>Списки</h4>
-              <label>Разделители списка (через ;, используйте \n для новой строки)</label>
-              <input v-model="importListDelimiters" placeholder=",;|;\\n" @input="onImportScanOptionsChanged" />
-            </div>
-
-            <p class="import-warning" v-if="importScanResult">
-              Важно: ключи колонок ограничены {{ IMPORT_KEY_MAX_LENGTH }} символами.
-              При импорте длинные ключи автоматически сокращаются.
-            </p>
-
-            <div class="row-actions">
-              <button class="small" :disabled="!importFile || importLoading" @click="scanImport">
-                {{ importLoading ? 'Сканирование...' : 'Сканировать файл' }}
-              </button>
-              <button
-                class="small"
-                :disabled="!importCanApply || importApplying"
-                @click="applyImport"
-              >
-                {{ importApplying ? 'Импорт...' : 'Запустить импорт' }}
-              </button>
-            </div>
-
-            <p v-if="importRequiresRescan" class="muted">
-              Параметры сканирования изменены. Выполните шаг 1 повторно перед загрузкой.
-            </p>
-
-            <p v-if="importError" class="error">{{ importError }}</p>
-            <p v-if="importSuccess" class="success-text">{{ importSuccess }}</p>
-          </div>
-
-          <div v-if="importScanResult" class="import-results">
-            <article class="import-card">
-              <h4>Результат сканирования</h4>
-              <p class="muted">Лист: {{ importScanResult.sheet_name }} ({{ importScanResult.source_format }})</p>
-              <p class="muted">
-                Артефакты: merged cells {{ importScanResult.artifacts.merged_cells_count }},
-                разделители {{ importScanResult.artifacts.sections_count }}
-              </p>
-              <div v-if="importDetectedSeparators.length > 0" class="separator-artifacts">
-                <p class="muted">Найденные разделители:</p>
-                <div class="separator-list">
-                  <span v-for="(separator, index) in importVisibleSeparators" :key="`separator-${index}`" class="separator-pill" :title="separator">
-                    {{ separator }}
-                  </span>
-                </div>
-                <button v-if="importDetectedSeparators.length > 3" class="small ghost" @click="toggleAllSeparators">
-                  {{ importShowAllSeparators ? 'Свернуть список' : `Показать все (${importDetectedSeparators.length})` }}
-                </button>
-              </div>
-            </article>
-
-            <article class="import-card">
-              <div class="import-targets-head">
-                <h4>Цели импорта</h4>
-                <button class="small" @click="addImportTarget">Добавить цель</button>
-              </div>
-
-              <div v-if="importTargets.length === 0" class="muted">Добавьте цель импорта.</div>
-
-              <div v-for="target in importTargets" :key="target.localId" class="import-target">
-                <div class="import-target-row">
-                  <label>Режим</label>
-                  <select v-model="target.mode" @change="onImportTargetModeChange(target)">
-                    <option value="existing">В существующую таблицу</option>
-                    <option value="new">Создать новую таблицу</option>
-                  </select>
-                  <button class="small danger" @click="removeImportTarget(target.localId)">Удалить цель</button>
-                </div>
-
-                <div v-if="target.mode === 'existing'" class="import-target-row">
-                  <label>Таблица</label>
-                  <select v-model.number="target.table_id" @change="onImportTargetTableChange(target)">
-                    <option :value="null">Выберите таблицу</option>
-                    <option v-for="table in allTableOptions" :key="`imp-target-${target.localId}-${table.id}`" :value="table.id">
-                      {{ table.name }}
-                    </option>
-                  </select>
-                </div>
-
-                <div v-else class="import-target-row import-target-grid">
-                  <div>
-                    <label>Название новой таблицы</label>
-                    <input v-model="target.table_name" placeholder="Например: Импорт товаров" />
-                  </div>
-                  <div>
-                    <label>Описание</label>
-                    <input v-model="target.table_description" placeholder="Описание новой таблицы" />
-                  </div>
-                </div>
-
-                <div class="import-target-row import-target-grid">
                   <label class="checkbox-inline">
-                    <input v-model="target.map_section_to_field" type="checkbox" />
-                    Добавить отдельный столбец "разделитель" и заполнить его значением разделителя
+                    <input v-model="selectedFormField.required" type="checkbox" /> Обязательное
                   </label>
-                  <div v-if="target.map_section_to_field">
-                    <label>Имя столбца разделителя</label>
-                    <input v-model="target.section_field_name" placeholder="Разделитель" />
-                  </div>
-                </div>
-
-                <div class="mapping-grid" v-if="importSourceKeys.length > 0">
-                  <div v-for="sourceKey in importSourceKeys" :key="`map-${target.localId}-${sourceKey}`" class="mapping-row">
-                    <strong>{{ sourceKey }}</strong>
-
-                    <select
-                      v-if="target.mode === 'existing'"
-                      v-model="target.column_mappings[sourceKey]"
-                    >
-                      <option :value="null">Не импортировать</option>
-                      <option v-for="column in getImportTargetColumns(target)" :key="`map-col-${target.localId}-${column.key}`" :value="column.key">
-                        {{ column.name }} ({{ column.key }})
-                      </option>
-                    </select>
-
-                    <input
-                      v-else
-                      v-model="target.column_mappings[sourceKey]"
-                      :placeholder="`Ключ колонки (например ${sourceKey})`"
-                    />
-
-                    <p v-if="target.mode === 'new'" class="mapping-hint">
-                      Итоговый ключ: <strong>{{ formatMappedKeyPreview(target.column_mappings[sourceKey]) }}</strong>
-                      <span v-if="isMappedKeyTruncated(target.column_mappings[sourceKey])" class="mapping-warning">
-                        (будет сокращен до {{ IMPORT_KEY_MAX_LENGTH }} символов)
-                      </span>
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </article>
-
-            <article class="import-card import-preview-card" v-if="importPreviewRows.length > 0">
-              <h4>Превью данных</h4>
-              <div class="data-table-wrap import-preview-wrap">
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>#</th>
-                      <th v-for="sourceKey in importSourceKeys" :key="`preview-head-${sourceKey}`">{{ sourceKey }}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="(row, rowIndex) in importPreviewRows" :key="`preview-row-${rowIndex}`">
-                      <td>{{ rowIndex + 1 }}</td>
-                      <td v-for="sourceKey in importSourceKeys" :key="`preview-cell-${rowIndex}-${sourceKey}`">
-                        <span :title="formatImportValue(row[sourceKey])">
-                          {{ formatImportValue(row[sourceKey]) }}
-                        </span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </article>
+                  <button class="small danger" @click="removeSelectedFormField">Удалить поле</button>
+                </section>
+              </aside>
+            </Transition>
           </div>
         </section>
+
+        <DashboardDataSection
+          v-if="workspaceTab === 'data'"
+          :selected-data-table="selectedDataTable"
+          :table-data-records="tableDataRecords"
+          :data-pagination="dataPagination"
+          :data-loading="dataLoading"
+          :data-error="dataError"
+          :total-pages="totalPages"
+          :current-page="currentPage"
+          :all-table-options="allTableOptions"
+          :selected-data-table-id="selectedDataTableId"
+          :format-data-value="formatDataValue"
+          :format-date="formatDate"
+          @update:selected-data-table-id="selectedDataTableId = $event"
+          @update:data-limit="dataPagination.limit = $event"
+          @data-table-change="onDataTableChange"
+          @data-limit-change="onDataLimitChange"
+          @delete-record="deleteDataRecord"
+          @save-record="saveDataRecord"
+          @go-to-page="goToPage"
+        />
+
+        <DashboardImportSection
+          v-if="workspaceTab === 'import'"
+          :import-scan-result="importScanResult"
+          :import-requires-rescan="importRequiresRescan"
+          :import-can-apply="importCanApply"
+          :import-file="importFile"
+          :import-loading="importLoading"
+          :import-applying="importApplying"
+          :import-header-row-start="importHeaderRowStart"
+          :import-header-row-end="importHeaderRowEnd"
+          :import-data-row-start="importDataRowStart"
+          :import-data-row-end="importDataRowEnd"
+          :import-list-delimiters="importListDelimiters"
+          :import-targets="importTargets"
+          :all-table-options="allTableOptions"
+          :import-source-keys="importSourceKeys"
+          :import-preview-columns="importPreviewColumns"
+          :import-preview-rows="importPreviewRows"
+          :import-preview-target-local-id="importPreviewTargetLocalId"
+          :import-preview-target-options="importPreviewTargetOptions"
+          :import-detected-separators="importDetectedSeparators"
+          :import-visible-separators="importVisibleSeparators"
+          :import-show-all-separators="importShowAllSeparators"
+          :import-error="importError"
+          :import-success="importSuccess"
+          :import-key-max-length="IMPORT_KEY_MAX_LENGTH"
+          :get-import-target-columns="getImportTargetColumns"
+          :format-mapped-key-preview="formatMappedKeyPreview"
+          :is-mapped-key-truncated="isMappedKeyTruncated"
+          :on-import-target-mode-change="onImportTargetModeChange"
+          :on-import-target-table-change="onImportTargetTableChange"
+          @update:import-header-row-start="importHeaderRowStart = $event"
+          @update:import-header-row-end="importHeaderRowEnd = $event"
+          @update:import-data-row-start="importDataRowStart = $event"
+          @update:import-data-row-end="importDataRowEnd = $event"
+          @update:import-list-delimiters="importListDelimiters = $event"
+          @update:import-preview-target-local-id="importPreviewTargetLocalId = $event"
+          @import-file-change="onImportFileChange"
+          @import-scan-options-change="onImportScanOptionsChanged"
+          @refresh-import-preview="refreshImportPreview"
+          @apply-import="applyImport"
+          @toggle-separators="toggleAllSeparators"
+          @add-import-target="addImportTarget"
+          @remove-import-target="removeImportTarget"
+        />
 
         <section v-if="workspaceTab === 'reports'" class="reports-section">
-          <div class="reports-header">
-            <div>
-              <h3>Отчеты</h3>
-              <p>Создавайте Excel-выгрузки и публичные дашборды с настройками.</p>
-            </div>
-            <div class="reports-header-actions">
-              <button class="small ghost" @click="openPromptModal">Промпт конвертации</button>
-              <button class="small ghost" @click="openTemplateModal">Посчитать по шаблону</button>
-              <button class="small" @click="createReport">Новый отчет</button>
-            </div>
-          </div>
 
-          <div v-if="reportsLoading" class="muted">Загрузка отчетов...</div>
-          <div v-if="reportsError" class="error">{{ reportsError }}</div>
+          <UiSectionHeader
+            title="Отчеты"
+            description="Создавайте Excel-выгрузки и публичные дашборды с настройками."
+          >
+            <template #actions>
+              <DashboardTileActions>
+                <button class="small ghost" @click="openTemplateModal">Посчитать по шаблону</button>
+                <button class="small" @click="createReport">Новый отчет</button>
+              </DashboardTileActions>
+            </template>
+          </UiSectionHeader>
+
+          <UiStatusText v-if="reportsLoading" as="div">Загрузка отчетов...</UiStatusText>
+          <UiStatusText v-if="reportsError" as="div" variant="error">{{ reportsError }}</UiStatusText>
 
           <div class="reports-grid" v-if="reports.length > 0">
-            <article v-for="report in reports" :key="report.id" class="report-tile">
-              <header>
+            <DashboardTileCard v-for="report in reports" :key="report.id">
+              <template #title>
                 <h4>{{ report.name }}</h4>
-                <span class="report-type">{{ getReportTypeLabel(report.report_type) }}</span>
-              </header>
+              </template>
+              <template #badge>
+                <span class="report-type">{{ getReportCardTypeLabel(report) }}</span>
+              </template>
               <p>{{ report.description || 'Без описания' }}</p>
               <p class="muted">Статус: {{ report.is_published ? 'опубликован' : 'черновик' }}</p>
-              <div class="report-actions">
-                <button
-                  v-if="report.report_type === 'excel_export'"
-                  class="small"
-                  @click="downloadReport(report.id)"
-                >
-                  Скачать
-                </button>
-                <button
-                  v-else
-                  class="small"
-                  :disabled="!report.is_published"
-                  @click="openReportPublicLink(report.id)"
-                >
-                  Ссылка
-                </button>
-                <button class="small" @click="editReport(report)">Редактировать</button>
-                <button class="small danger" @click="deleteReport(report.id)">Удалить</button>
-              </div>
-            </article>
+              <template #actions>
+                <DashboardTileActions>
+                  <button
+                    v-if="report.report_type === 'table_export'"
+                    class="small"
+                    @click="openTableReportView(report.id)"
+                  >
+                    Открыть
+                  </button>
+                  <button
+                    v-if="report.report_type === 'table_export'"
+                    class="small"
+                    @click="downloadReport(report.id, 'csv')"
+                  >
+                    CSV
+                  </button>
+                  <button
+                    v-if="report.report_type === 'table_export'"
+                    class="small"
+                    @click="downloadReport(report.id, 'xlsx')"
+                  >
+                    Excel
+                  </button>
+                  <button
+                    v-else
+                    class="small"
+                    :disabled="!report.is_published"
+                    @click="openReportPublicLink(report.id)"
+                  >
+                    Ссылка
+                  </button>
+                  <button class="small" @click="editReport(report)">Редактировать</button>
+                  <button class="small danger" @click="deleteReport(report.id)">Удалить</button>
+                </DashboardTileActions>
+              </template>
+            </DashboardTileCard>
           </div>
-          <p v-else-if="!reportsLoading" class="muted">Пока нет отчетов. Создайте первый.</p>
+          <UiStatusText v-else-if="!reportsLoading">Пока нет отчетов. Создайте первый.</UiStatusText>
 
-          <article v-if="reportEditorOpen" class="report-editor">
-            <header>
-              <h4>{{ selectedReport ? 'Редактирование отчета' : 'Новый отчет' }}</h4>
-            </header>
+          <div v-if="reportCreateModalOpen" class="report-create-modal-backdrop" @click.self="closeCreateReportModal">
+            <article class="report-create-modal">
+              <header class="report-create-head">
+                <h4>Новый отчет</h4>
+                <button class="small ghost" @click="closeCreateReportModal">Закрыть</button>
+              </header>
 
-            <div class="report-editor-grid">
-              <div>
-                <label>Название</label>
-                <input v-model="reportName" placeholder="Например: Продажи за неделю" />
-              </div>
-              <div>
-                <label>Тип отчета</label>
-                <select v-model="reportType">
-                  <option value="excel_export">Excel выгрузка</option>
-                  <option value="dashboard">Публичный дашборд</option>
-                </select>
-              </div>
-              <div>
-                <label>Таблица источника</label>
-                <select v-model.number="reportTableId" @change="onReportTableChange">
-                  <option :value="null">Выберите таблицу</option>
-                  <option v-for="table in allTableOptions" :key="`r-t-${table.id}`" :value="table.id">
-                    {{ table.name }}
-                  </option>
-                </select>
-              </div>
-              <div>
-                <label>Описание</label>
-                <input v-model="reportDescription" placeholder="Коротко про назначение" />
-              </div>
-            </div>
-
-            <label class="checkbox-inline">
-              <input v-model="reportIsPublished" type="checkbox" /> Опубликовать
-            </label>
-
-            <section v-if="reportType === 'excel_export'" class="report-settings">
-              <h5>Структура Excel</h5>
-              <p class="muted">Выберите столбцы и подписи в выгрузке.</p>
-              <div class="excel-columns" v-if="reportExcelColumns.length > 0">
-                <div v-for="column in reportExcelColumns" :key="`excel-${column.key}`" class="excel-column-row">
-                  <label class="checkbox-inline">
-                    <input v-model="column.enabled" type="checkbox" /> {{ column.key }}
-                  </label>
-                  <input v-model="column.label" placeholder="Заголовок в Excel" />
-                </div>
-              </div>
-              <p v-else class="muted">Сначала выберите таблицу.</p>
-            </section>
-
-            <section v-else class="report-settings">
-              <h5>Настройки дашборда</h5>
-              <div class="report-editor-grid compact">
+              <div class="report-create-grid">
                 <div>
-                  <label>Количество последних записей</label>
-                  <input v-model.number="reportRecentLimit" type="number" min="1" max="100" />
+                  <label>Название</label>
+                  <input v-model="reportName" placeholder="Например: Сводка по продажам" />
+                </div>
+                <div>
+                  <label>Тип отчета</label>
+                  <select v-model="reportCreateKind" @change="onReportCreateTypeChange">
+                    <option value="dashboard">Дашборд</option>
+                    <option value="table_export">Табличная выгрузка (Excel/CSV)</option>
+                  </select>
+                </div>
+                <div class="report-create-full">
+                  <label>Описание</label>
+                  <input v-model="reportDescription" placeholder="Коротко про назначение отчета" />
                 </div>
               </div>
 
-              <div class="metrics-settings">
-                <div class="metrics-header">
-                  <strong>Метрики</strong>
-                  <button class="small" @click="addDashboardMetric">Добавить метрику</button>
+              <label class="checkbox-inline">
+                <input v-model="reportIsPublished" type="checkbox" /> Опубликовать сразу
+              </label>
+
+              <section v-if="reportCreateKind === 'dashboard'" class="report-create-section">
+                <h5>Таблицы для дашборда</h5>
+                <p class="muted">Выберите одну или несколько таблиц. Базовая конфигурация будет создана автоматически.</p>
+
+                <div class="report-create-grid">
+                  <div class="report-create-full">
+                    <label>Таблицы</label>
+                    <UiMultiSelect
+                      v-model="reportCreateSelectedTableIds"
+                      :options="allTableOptions"
+                      placeholder="Выберите таблицы для дашборда"
+                      @change="onReportCreateTypeChange"
+                    />
+                  </div>
                 </div>
-                <div v-for="(metric, index) in reportMetrics" :key="`m-${index}`" class="metric-row">
-                  <input v-model="metric.label" placeholder="Название метрики" />
-                  <select v-model="metric.aggregation">
-                    <option value="count">count</option>
-                    <option value="sum">sum</option>
-                    <option value="avg">avg</option>
-                    <option value="min">min</option>
-                    <option value="max">max</option>
-                  </select>
-                  <select v-model="metric.field_key" :disabled="metric.aggregation === 'count'">
-                    <option value="">Поле</option>
-                    <option
-                      v-for="column in selectedReportTable?.columns || []"
-                      :key="`mc-${column.key}`"
-                      :value="column.key"
-                    >
-                      {{ column.name }}
-                    </option>
-                  </select>
-                  <button class="small danger" @click="removeDashboardMetric(index)">Удалить</button>
+              </section>
+
+              <section v-else class="report-create-section">
+                <h5>Таблицы для табличного отчета</h5>
+                <p class="muted">Выберите таблицы через мультиселект. Столбцы, порядок и листы настраиваются в детальном редакторе.</p>
+
+                <div class="report-create-grid">
+                  <div class="report-create-full">
+                    <label>Таблицы</label>
+                    <UiMultiSelect
+                      v-model="reportCreateSelectedTableIds"
+                      :options="allTableOptions"
+                      placeholder="Выберите таблицы для табличного отчета"
+                      @change="onReportCreateTypeChange"
+                    />
+                  </div>
                 </div>
-              </div>
+              </section>
 
-              <div class="metrics-settings">
-                <div class="metrics-header">
-                  <strong>Графики (bar)</strong>
-                  <button class="small" @click="addDashboardChart">Добавить график</button>
-                </div>
-                <div v-for="(chart, index) in reportCharts" :key="`c-${index}`" class="chart-row">
-                  <input v-model="chart.title" placeholder="Название графика" />
-                  <select v-model="chart.group_by_key">
-                    <option value="">Группировать по полю</option>
-                    <option
-                      v-for="column in selectedReportTable?.columns || []"
-                      :key="`cg-${column.key}`"
-                      :value="column.key"
-                    >
-                      {{ column.name }}
-                    </option>
-                  </select>
-                  <select v-model="chart.aggregation">
-                    <option value="count">count</option>
-                    <option value="sum">sum</option>
-                    <option value="avg">avg</option>
-                    <option value="min">min</option>
-                    <option value="max">max</option>
-                  </select>
-                  <select v-model="chart.value_key" :disabled="chart.aggregation === 'count'">
-                    <option value="">Поле значения</option>
-                    <option
-                      v-for="column in selectedReportTable?.columns || []"
-                      :key="`cv-${column.key}`"
-                      :value="column.key"
-                    >
-                      {{ column.name }}
-                    </option>
-                  </select>
-                  <input v-model.number="chart.limit" type="number" min="1" max="30" placeholder="Top N" />
-                  <button class="small danger" @click="removeDashboardChart(index)">Удалить</button>
-                </div>
-              </div>
-            </section>
-
-            <div class="report-editor-actions">
-              <button class="small" @click="saveReport">Сохранить отчет</button>
-              <button class="small ghost" @click="reportEditorOpen = false">Закрыть</button>
-            </div>
-          </article>
-
-          <div v-if="templateModalOpen" class="template-modal-backdrop" @click.self="closeTemplateModal">
-            <article class="template-modal">
-              <header class="template-modal-header">
-                <h4>Посчитать по шаблону</h4>
-                <button class="small ghost" :disabled="templateUploading" @click="closeTemplateModal">Закрыть</button>
-              </header>
-
-              <p class="muted" v-pre>
-                Поддерживаемые выражения в `.odt`: {{ count(key) }}, {{ sum(key) }}, {{ avg(key) }}, {{ min(key) }},
-                {{ max(key) }}.
-              </p>
-
-              <label>Таблица источника</label>
-              <select v-model.number="templateTableId" :disabled="templateUploading">
-                <option :value="null">Выберите таблицу</option>
-                <option v-for="table in allTableOptions" :key="`template-table-${table.id}`" :value="table.id">
-                  {{ table.name }}
-                </option>
-              </select>
-
-              <div
-                class="template-dropzone"
-                :class="{ active: templateDragActive, disabled: templateUploading }"
-                @dragover="onTemplateDragOver"
-                @dragleave="onTemplateDragLeave"
-                @drop="onTemplateDrop"
-              >
-                <p>{{ templateUploading ? 'Обрабатываем шаблон...' : 'Перетащите сюда .odt файл' }}</p>
-                <p class="muted">или</p>
-                <button class="small" :disabled="templateUploading" @click="openTemplateFilePicker">
-                  Выбрать файл
-                </button>
-                <p v-if="templateFileName" class="muted">Текущий файл: {{ templateFileName }}</p>
-              </div>
-
-              <input
-                ref="templateFileInput"
-                class="template-file-input"
-                type="file"
-                accept=".odt,application/vnd.oasis.opendocument.text"
-                @change="onTemplateFileChange"
-              />
-
-              <p v-if="templateError" class="error">{{ templateError }}</p>
+              <DashboardTileActions>
+                <button class="small" @click="createReportFromModal">Создать отчет</button>
+                <button class="small ghost" @click="closeCreateReportModal">Отмена</button>
+              </DashboardTileActions>
             </article>
           </div>
 
-          <div v-if="promptModalOpen" class="template-modal-backdrop" @click.self="closePromptModal">
-            <article class="template-modal">
-              <header class="template-modal-header">
-                <h4>Промпт конвертации</h4>
-                <button class="small ghost" @click="closePromptModal">Закрыть</button>
-              </header>
-
-              <p class="muted" v-pre>
-                Выберите таблицу. Скачается `.txt` с инструкцией для LLM, чтобы он заполнял пустые поля отчета выражениями `{{ ... }}`.
-              </p>
-
-              <label>Таблица источника</label>
-              <select v-model.number="promptTableId">
-                <option :value="null">Выберите таблицу</option>
-                <option v-for="table in allTableOptions" :key="`prompt-table-${table.id}`" :value="table.id">
-                  {{ table.name }}
-                </option>
-              </select>
-
-              <button class="small" @click="downloadConversionPrompt">Скачать промпт</button>
-              <p v-if="promptError" class="error">{{ promptError }}</p>
-            </article>
-          </div>
+          <DashboardTemplateModal
+            :open="templateModalOpen"
+            :uploading="templateUploading"
+            :drag-active="templateDragActive"
+            :error="templateError"
+            :file-name="templateFileName"
+            :table-id="templateTableId"
+            :table-options="allTableOptions"
+            @close="closeTemplateModal"
+            @update:table-id="templateTableId = $event"
+            @drag-over="onTemplateDragOver"
+            @drag-leave="onTemplateDragLeave"
+            @drop="onTemplateDrop"
+            @file-selected="processTemplateFile"
+          />
         </section>
 
         <section class="info-grid" v-if="workspaceTab === 'details'">
+          <section class="info-card workspace-stats-card">
+            <h3>Статистика workspace</h3>
+            <div class="stats-kpi-grid">
+              <article class="stats-kpi">
+                <span>Таблиц</span>
+                <strong>{{ workspaceStats.tableCount }}</strong>
+              </article>
+              <article class="stats-kpi">
+                <span>Колонок</span>
+                <strong>{{ workspaceStats.columnCount }}</strong>
+              </article>
+              <article class="stats-kpi">
+                <span>Форм</span>
+                <strong>{{ workspaceStats.formCount }}</strong>
+              </article>
+              <article class="stats-kpi">
+                <span>Отчетов</span>
+                <strong>{{ workspaceStats.reportCount }}</strong>
+              </article>
+              <article class="stats-kpi">
+                <span>Связей</span>
+                <strong>{{ workspaceStats.relationCount }}</strong>
+              </article>
+              <article class="stats-kpi">
+                <span>Ср. колонок/таблица</span>
+                <strong>{{ workspaceStats.avgColumnsPerTable }}</strong>
+              </article>
+            </div>
+
+            <div class="stats-bars">
+              <h4>Насыщенность таблиц полями</h4>
+              <div v-if="tableColumnStats.length" class="stats-bar-list">
+                <div v-for="item in tableColumnStats" :key="item.id" class="stats-bar-row">
+                  <span class="stats-bar-label" :title="item.name">{{ item.name }}</span>
+                  <div class="stats-bar-track">
+                    <div class="stats-bar-fill" :style="{ width: `${item.widthPercent}%` }" />
+                  </div>
+                  <strong class="stats-bar-value">{{ item.columns }}</strong>
+                </div>
+              </div>
+              <p v-else class="muted">Таблицы еще не созданы.</p>
+            </div>
+          </section>
+
+          <section class="info-card">
+            <h3>Редактировать workspace</h3>
+            <div class="workspace-edit-form">
+              <input v-model="editWorkspaceName" type="text" placeholder="Название" maxlength="255" />
+              <textarea v-model="editWorkspaceDescription" rows="4" placeholder="Описание (опционально)" maxlength="2000" />
+              <DashboardTileActions>
+                <button class="small" :disabled="!canSaveWorkspaceDetails" @click="saveWorkspaceDetails">
+                  {{ savingWorkspaceDetails ? 'Сохраняем...' : 'Сохранить изменения' }}
+                </button>
+              </DashboardTileActions>
+            </div>
+          </section>
+
           <section class="info-card">
             <h3>Детали workspace</h3>
             <dl>
@@ -2851,1228 +3489,32 @@ onBeforeUnmount(() => {
         </section>
       </article>
 
-      <article v-else class="empty-content">
-        <h2>Выберите workspace</h2>
-        <p>Создайте новое пространство в боковой панели или выберите существующее из списка.</p>
+      <DashboardWorkspaceModal
+        v-if="createWorkspaceModalOpen"
+        :default-name="nextWorkspaceName"
+        @create="onTopBarCreateWorkspace"
+        @close="closeCreateWorkspaceModal"
+      />
+
+      <DashboardUserModal
+        v-if="userModalOpen"
+        :email="authStore.me?.email || 'unknown@local'"
+        :user-id="authStore.me?.id ?? null"
+        :loading="authStore.loading"
+        :error="passwordChangeError"
+        @close="closeUserModal"
+        @change-password="changePassword"
+      />
+
+      <article v-if="!selectedWorkspace" class="empty-content">
+        <h2>У вас пока нет workspace</h2>
+        <p>Создайте первое пространство, чтобы начать работу с таблицами, формами, импортом и отчетами.</p>
+        <div class="empty-content-actions">
+          <button @click="openCreateWorkspaceModal">Создать workspace</button>
+        </div>
       </article>
     </section>
   </main>
 </template>
 
-<style scoped>
-.dashboard {
-  min-height: 100vh;
-  padding: 18px;
-  display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 16px;
-}
-
-.sidebar {
-  background: var(--bg-panel);
-  border-radius: 18px;
-  border: 1px solid var(--line);
-  padding: 16px;
-  display: grid;
-  gap: 14px;
-  align-content: start;
-}
-
-.sidebar-header h1 {
-  margin: 0;
-  letter-spacing: 0.02em;
-}
-
-.sidebar-header p {
-  margin: 6px 0 0;
-  color: var(--text-muted);
-}
-
-h2,
-h3,
-h4 {
-  margin: 0;
-}
-
-.create-widget,
-.workspace-nav {
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--bg-soft);
-  padding: 12px;
-}
-
-.fields {
-  display: grid;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-input,
-textarea,
-select {
-  border: 1px solid var(--line);
-  background: #edf4f5;
-  padding: 10px 12px;
-  border-radius: 10px;
-  color: var(--text-main);
-  font: inherit;
-}
-
-textarea {
-  resize: vertical;
-}
-
-button {
-  border: none;
-  background: var(--accent);
-  color: #e8fbff;
-  border-radius: 10px;
-  padding: 10px 16px;
-  font-weight: 700;
-}
-
-button.small {
-  padding: 7px 10px;
-  font-size: 0.84rem;
-}
-
-button.ghost {
-  background: #d9e3e5;
-  color: #1f353b;
-}
-
-button.danger {
-  background: var(--danger);
-  color: #fff;
-}
-
-ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.workspace-nav ul {
-  display: grid;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.workspace-link {
-  width: 100%;
-  text-align: left;
-  background: #dbe8ea;
-  color: var(--text-main);
-  border: 1px solid transparent;
-  padding: 10px;
-  border-radius: 10px;
-  display: grid;
-  gap: 4px;
-}
-
-.workspace-link.active {
-  background: linear-gradient(135deg, #3c6f7f, #2b8f86);
-  color: #f0fffd;
-  border-color: #70ada5;
-}
-
-.workspace-link span,
-.muted {
-  color: var(--text-muted);
-}
-
-.workspace-link.active span {
-  color: #c6f7f0;
-}
-
-.nav-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.nav-title span {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  font-size: 0.82rem;
-  padding: 2px 9px;
-  color: var(--text-muted);
-}
-
-.content {
-  border-radius: 18px;
-  border: 1px solid var(--line);
-  background: var(--bg-panel);
-  padding: 20px;
-}
-
-.workspace-content header p {
-  color: var(--text-muted);
-  margin: 8px 0 0;
-}
-
-.workspace-tabs {
-  margin-top: 14px;
-  display: inline-flex;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 4px;
-  background: #e9f1f3;
-}
-
-.workspace-tabs .tab {
-  background: transparent;
-  color: var(--text-main);
-  padding: 8px 14px;
-  border-radius: 8px;
-}
-
-.workspace-tabs .tab.active {
-  background: linear-gradient(135deg, #3d6f7d, #2b8e84);
-  color: #effffd;
-}
-
-.actions-row {
-  margin: 12px 0;
-}
-
-.designer {
-  margin-top: 8px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 14px;
-  background: var(--bg-soft);
-  display: grid;
-  gap: 14px;
-}
-
-.designer-header p {
-  margin: 6px 0 0;
-  color: var(--text-muted);
-}
-
-.create-table {
-  display: grid;
-  grid-template-columns: 1fr 1fr auto;
-  gap: 8px;
-}
-
-.schema-layout {
-  display: grid;
-  grid-template-columns: minmax(620px, 1fr) 360px;
-  gap: 12px;
-}
-
-.schema-canvas-wrap {
-  border: 1px dashed var(--line);
-  border-radius: 12px;
-  background: linear-gradient(180deg, #ebf2f3 0%, #e4edf0 100%);
-  overflow: auto;
-}
-
-.schema-canvas {
-  position: relative;
-  min-height: 640px;
-  min-width: 940px;
-}
-
-.table-card {
-  position: absolute;
-  width: 280px;
-  max-width: 280px;
-  border: 1px solid #8ca8b1;
-  border-radius: 12px;
-  padding: 10px;
-  background: #f3f8f9;
-  display: grid;
-  gap: 8px;
-  box-shadow: 0 6px 14px rgba(38, 74, 85, 0.12);
-  overflow: hidden;
-}
-
-.table-card.active {
-  border-color: #2b8f86;
-  box-shadow: inset 0 0 0 1px #2b8f86;
-}
-
-.table-head {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  cursor: pointer;
-  min-width: 0;
-}
-
-.table-head strong {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.table-grip {
-  background: #dce8ea;
-  color: #45676f;
-  border-radius: 6px;
-  padding: 4px 6px;
-  font-size: 0.74rem;
-}
-
-.table-sub {
-  margin: 0;
-  font-size: 0.83rem;
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
-}
-
-.table-name-input,
-.table-description-input {
-  width: 100%;
-}
-
-.column-list {
-  display: grid;
-  gap: 6px;
-}
-
-.column-item {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 8px;
-  background: #f4f9fa;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  cursor: grab;
-  min-width: 0;
-}
-
-.column-item div {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-}
-
-.column-item strong,
-.column-item span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.column-item span {
-  color: var(--text-muted);
-  font-size: 0.82rem;
-}
-
-.column-item em {
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-
-.column-item:hover {
-  border-color: #7ea4ad;
-}
-
-.object-sidebar {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #eef5f7;
-  padding: 10px;
-  display: grid;
-  gap: 10px;
-  align-content: start;
-  max-height: 640px;
-  overflow: auto;
-}
-
-.object-card {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 12px;
-  background: #f7fbfc;
-  display: grid;
-  gap: 10px;
-}
-
-.new-column-form,
-.type-settings,
-.relation-form {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
-  align-items: center;
-}
-
-.checkbox-inline {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  color: var(--text-muted);
-}
-
-.setting-label {
-  font-size: 0.84rem;
-  color: var(--text-muted);
-}
-
-.add-column {
-  width: fit-content;
-}
-
-.row-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.relations {
-  background: #edf5f7;
-  display: grid;
-  gap: 10px;
-}
-
-.relation-list {
-  display: grid;
-  gap: 8px;
-}
-
-.relation-list li {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 9px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  background: #f7fbfb;
-}
-
-.relation-list span {
-  color: var(--text-muted);
-  font-size: 0.85rem;
-}
-
-.info-grid {
-  margin-top: 14px;
-}
-
-.info-card {
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 14px;
-  background: var(--bg-soft);
-}
-
-dl {
-  margin: 0;
-  display: grid;
-  gap: 10px;
-}
-
-dt {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-dd {
-  margin: 0;
-  font-weight: 600;
-}
-
-.empty-content {
-  min-height: 320px;
-  display: grid;
-  place-content: center;
-  text-align: center;
-  gap: 6px;
-}
-
-.error {
-  color: var(--danger);
-}
-
-/* Form Builder Styles */
-.forms-section {
-  margin-top: 8px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 14px;
-  background: var(--bg-soft);
-  display: grid;
-  gap: 14px;
-}
-
-.forms-header p {
-  margin: 6px 0 0;
-  color: var(--text-muted);
-}
-
-.forms-list ul {
-  display: grid;
-  gap: 6px;
-}
-
-.form-link {
-  width: 100%;
-  text-align: left;
-  background: #dbe8ea;
-  color: var(--text-main);
-  border: 1px solid transparent;
-  padding: 10px;
-  border-radius: 10px;
-  display: grid;
-  gap: 4px;
-}
-
-.form-link.active {
-  background: linear-gradient(135deg, #3c6f7f, #2b8f86);
-  color: #f0fffd;
-  border-color: #70ada5;
-}
-
-.form-link span {
-  color: var(--text-muted);
-  font-size: 0.82rem;
-}
-
-.form-link.active span {
-  color: #c6f7f0;
-}
-
-.form-editor {
-  display: grid;
-  grid-template-columns: 1fr 340px;
-  gap: 12px;
-  margin-top: 8px;
-}
-
-.form-preview {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 20px;
-  background: #fafbfc;
-}
-
-.form-header {
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--line);
-}
-
-.form-header h4 {
-  margin: 0 0 4px;
-}
-
-.form-header p {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 0.9rem;
-}
-
-form {
-  display: grid;
-  gap: 14px;
-}
-
-.form-field-preview {
-  display: grid;
-  gap: 6px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  padding: 8px;
-  cursor: pointer;
-}
-
-.form-field-preview.active {
-  border-color: #7ea4ad;
-  background: #f2f8f9;
-}
-
-.form-field-preview label {
-  font-weight: 600;
-  font-size: 0.95rem;
-  color: var(--text-main);
-}
-
-.required {
-  color: var(--danger);
-}
-
-.form-field-preview input,
-.form-field-preview textarea,
-.form-field-preview select {
-  width: 100%;
-  border: 1px solid var(--line);
-  background: #fff;
-  padding: 10px 12px;
-  border-radius: 8px;
-  color: var(--text-main);
-  font: inherit;
-}
-
-.form-field-preview input:focus,
-.form-field-preview textarea:focus,
-.form-field-preview select:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
-}
-
-.checkbox-wrapper,
-.radio-wrapper {
-  display: flex;
-  gap: 8px;
-  flex-direction: column;
-}
-
-.list-input-preview {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-}
-
-.radio-wrapper label {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  font-weight: normal;
-}
-
-.checkbox-wrapper label {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  font-weight: normal;
-}
-
-.help-text {
-  margin: 0;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-}
-
-.field-table-label {
-  margin: 0;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-}
-
-.form-config {
-  display: grid;
-  gap: 10px;
-  align-content: start;
-}
-
-.form-fields-list {
-  display: grid;
-  gap: 6px;
-}
-
-.form-fields-list li {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 8px;
-  background: #f7fbfc;
-  display: grid;
-  gap: 2px;
-  cursor: grab;
-}
-
-.form-fields-list li.active {
-  border-color: #7ea4ad;
-  background: #eef6f8;
-}
-
-.form-fields-list li:active {
-  cursor: grabbing;
-}
-
-.form-fields-list li:hover {
-  border-color: #7ea4ad;
-}
-
-.form-fields-list div {
-  display: grid;
-}
-
-.field-settings-row {
-  display: grid;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.form-fields-list strong {
-  font-size: 0.9rem;
-}
-
-.form-fields-list span {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-
-.share-link {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 10px;
-  background: #f7fbfc;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.share-link code {
-  flex: 1;
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  word-break: break-all;
-}
-
-.form-config select[multiple] {
-  min-height: 118px;
-  background: #fff;
-}
-
-.options-editor {
-  display: grid;
-  gap: 8px;
-}
-
-.option-row,
-.option-add-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-  align-items: center;
-}
-
-/* Data Viewer Styles */
-.data-section {
-  margin-top: 8px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 14px;
-  background: var(--bg-soft);
-  display: grid;
-  gap: 14px;
-}
-
-.data-header p {
-  margin: 6px 0 0;
-  color: var(--text-muted);
-}
-
-.data-table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #fafbfc;
-}
-
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9rem;
-}
-
-.data-table thead {
-  background: #f0f4f5;
-  border-bottom: 1px solid var(--line);
-}
-
-.data-table th {
-  text-align: left;
-  padding: 10px 12px;
-  font-weight: 600;
-  color: var(--text-main);
-  white-space: nowrap;
-}
-
-.data-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--line);
-  color: var(--text-main);
-}
-
-.data-table tbody tr:hover {
-  background-color: #f7fbfc;
-}
-
-.data-table td span {
-  display: inline-block;
-  max-width: 150px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.pagination {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: center;
-  padding: 12px;
-  background: #f0f4f5;
-  border-radius: 10px;
-}
-
-.pagination button {
-  padding: 8px 12px;
-  font-size: 0.9rem;
-}
-
-.pagination button:disabled {
-  background: #d9e3e5;
-  color: #7a8c92;
-  cursor: not-allowed;
-}
-
-.pagination span {
-  color: var(--text-muted);
-  font-size: 0.9rem;
-}
-
-/* Import Styles */
-.import-section {
-  margin-top: 8px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 14px;
-  background: var(--bg-soft);
-  display: grid;
-  gap: 14px;
-}
-
-.import-header p {
-  margin: 6px 0 0;
-  color: var(--text-muted);
-}
-
-.import-panel,
-.import-card,
-.import-target {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #f7fbfc;
-  padding: 10px;
-}
-
-.import-panel,
-.import-results,
-.import-inputs,
-.import-zones,
-.mapping-grid {
-  display: grid;
-  gap: 10px;
-}
-
-.import-results,
-.import-card,
-.import-preview-card {
-  min-width: 0;
-}
-
-.import-flow {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.flow-step {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 4px 10px;
-  font-size: 0.82rem;
-  color: var(--text-muted);
-  background: #edf4f6;
-}
-
-.flow-step.active {
-  border-color: #2b8f86;
-  color: #1f5a54;
-  background: #e2f3ef;
-}
-
-.flow-step.warning {
-  border-color: #d49f3f;
-  color: #8b621f;
-  background: #fff5df;
-}
-
-.zones-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(120px, 1fr));
-  gap: 8px;
-}
-
-.import-targets-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.import-target-row {
-  display: grid;
-  grid-template-columns: 180px 1fr auto;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.import-target-grid {
-  grid-template-columns: 1fr 1fr;
-}
-
-.mapping-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  align-items: center;
-}
-
-.mapping-hint {
-  margin: 0;
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  grid-column: 1 / -1;
-}
-
-.mapping-warning,
-.import-warning {
-  color: #8b621f;
-  font-size: 0.84rem;
-}
-
-.success-text {
-  color: #276f45;
-  font-weight: 600;
-}
-
-.import-preview-wrap {
-  width: 100%;
-  max-width: 100%;
-  max-height: 360px;
-  overflow-x: auto;
-  overflow-y: auto;
-}
-
-.import-preview-card {
-  overflow: hidden;
-}
-
-.import-preview-wrap .data-table {
-  width: max-content;
-  min-width: 100%;
-  table-layout: fixed;
-}
-
-.import-preview-wrap .data-table th,
-.import-preview-wrap .data-table td {
-  min-width: 150px;
-  max-width: 240px;
-  white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  vertical-align: top;
-}
-
-.import-preview-wrap .data-table td span {
-  max-width: none;
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-  display: block;
-}
-
-.separator-artifacts {
-  display: grid;
-  gap: 8px;
-}
-
-.separator-list {
-  display: grid;
-  gap: 6px;
-  max-height: 190px;
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.separator-pill {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #eef6f8;
-  color: var(--text-main);
-  padding: 6px 8px;
-  font-size: 0.84rem;
-  line-height: 1.35;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Reports Styles */
-.reports-section {
-  margin-top: 8px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 14px;
-  background: var(--bg-soft);
-  display: grid;
-  gap: 14px;
-}
-
-.reports-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: start;
-  gap: 12px;
-}
-
-.reports-header p {
-  margin: 6px 0 0;
-  color: var(--text-muted);
-}
-
-.reports-header-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-
-.reports-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 10px;
-}
-
-.report-tile {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 12px;
-  background: #f7fbfc;
-  display: grid;
-  gap: 8px;
-}
-
-.report-tile.active {
-  border-color: #2b8f86;
-  box-shadow: inset 0 0 0 1px #2b8f86;
-}
-
-.report-tile header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.report-tile h4 {
-  margin: 0;
-}
-
-.report-type {
-  font-size: 0.75rem;
-  border: 1px solid #9fb8bf;
-  border-radius: 999px;
-  padding: 2px 8px;
-  color: #355f6b;
-  background: #ecf4f6;
-}
-
-.report-tile p {
-  margin: 0;
-}
-
-.report-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.report-editor {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #f8fcfc;
-  padding: 12px;
-  display: grid;
-  gap: 12px;
-}
-
-.report-editor-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(220px, 1fr));
-  gap: 10px;
-}
-
-.report-editor-grid.compact {
-  grid-template-columns: minmax(220px, 320px);
-}
-
-.report-editor-grid label,
-.report-settings h5 {
-  font-size: 0.9rem;
-  color: var(--text-main);
-}
-
-.report-settings {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 10px;
-  background: #f3f9fa;
-  display: grid;
-  gap: 8px;
-}
-
-.report-settings h5 {
-  margin: 0;
-}
-
-.excel-columns {
-  display: grid;
-  gap: 8px;
-}
-
-.excel-column-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  align-items: center;
-}
-
-.metrics-settings {
-  display: grid;
-  gap: 8px;
-}
-
-.metrics-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.metric-row {
-  display: grid;
-  grid-template-columns: 1fr 160px 1fr auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.chart-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr 140px 1fr 120px auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.report-editor-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.template-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(25, 48, 57, 0.4);
-  display: grid;
-  place-items: center;
-  z-index: 30;
-  padding: 16px;
-}
-
-.template-modal {
-  width: min(560px, 100%);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: #f8fcfc;
-  padding: 14px;
-  display: grid;
-  gap: 12px;
-}
-
-.template-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.template-dropzone {
-  border: 2px dashed #84a7ae;
-  border-radius: 12px;
-  background: #eef6f8;
-  padding: 18px;
-  display: grid;
-  gap: 8px;
-  justify-items: center;
-  text-align: center;
-}
-
-.template-dropzone.active {
-  border-color: #2b8f86;
-  background: #e4f6f1;
-}
-
-.template-dropzone.disabled {
-  opacity: 0.7;
-}
-
-.template-dropzone p {
-  margin: 0;
-}
-
-.template-file-input {
-  display: none;
-}
-
-@media (max-width: 1100px) {
-  .create-table {
-    grid-template-columns: 1fr;
-  }
-
-  .schema-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .schema-canvas {
-    min-width: 100%;
-  }
-
-  .form-editor {
-    grid-template-columns: 1fr;
-  }
-
-  .report-editor-grid,
-  .metric-row,
-  .chart-row,
-  .excel-column-row,
-  .zones-grid,
-  .import-target-row,
-  .mapping-row,
-  .import-target-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .reports-header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .reports-header-actions {
-    justify-content: flex-start;
-  }
-}
-
-@media (max-width: 760px) {
-  .dashboard {
-    grid-template-columns: 1fr;
-  }
-
-  .content {
-    padding: 16px;
-  }
-}
-</style>
+<style scoped src="../styles/dashboard/dashboard-view.css"></style>

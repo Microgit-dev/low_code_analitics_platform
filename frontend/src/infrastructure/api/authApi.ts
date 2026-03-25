@@ -22,5 +22,18 @@ export const authApi = {
       headers: { Authorization: `Bearer ${token}` }
     })
     return data
+  },
+
+  async changePassword(token: string, currentPassword: string, newPassword: string): Promise<void> {
+    await httpClient.post(
+      '/auth/change-password',
+      {
+        current_password: currentPassword,
+        new_password: newPassword
+      },
+      {
+        headers: { Authorization: `Bearer ${token}` }
+      }
+    )
   }
 }

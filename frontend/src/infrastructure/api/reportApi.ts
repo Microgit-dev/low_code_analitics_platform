@@ -9,6 +9,13 @@ export const reportApi = {
     return response.data;
   },
 
+  getReport: async (token: string, workspaceId: number, reportId: number) => {
+    const response = await httpClient.get<ReportConfiguration>(`/workspaces/${workspaceId}/reports/${reportId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return response.data;
+  },
+
   createReport: async (
     token: string,
     workspaceId: number,
@@ -54,8 +61,13 @@ export const reportApi = {
     });
   },
 
-  downloadExcelReport: async (token: string, workspaceId: number, reportId: number) => {
-    const response = await httpClient.get<Blob>(`/workspaces/${workspaceId}/reports/${reportId}/export`, {
+  downloadExcelReport: async (
+    token: string,
+    workspaceId: number,
+    reportId: number,
+    format: "xlsx" | "csv" = "xlsx"
+  ) => {
+    const response = await httpClient.get<Blob>(`/workspaces/${workspaceId}/reports/${reportId}/export?format=${format}`, {
       headers: { Authorization: `Bearer ${token}` },
       responseType: "blob",
     });

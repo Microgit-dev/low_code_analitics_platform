@@ -1,0 +1,213 @@
+.data-section {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 14px;
+  background: var(--bg-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: fade-up 0.26s ease;
+}
+
+.data-header p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+}
+
+.field-settings-row {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+select {
+  border: 1.5px solid var(--line);
+  background: var(--bg-panel);
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: var(--text-main);
+  font: inherit;
+}
+
+button {
+  border: none;
+  background: var(--button-primary);
+  color: var(--accent-contrast);
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-weight: 700;
+}
+
+button.small {
+  padding: 7px 10px;
+  font-size: 0.84rem;
+}
+
+button.danger {
+  background: var(--button-danger);
+  color: var(--accent-contrast);
+}
+
+.data-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-panel);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.data-table thead {
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--line);
+}
+
+.data-table th {
+  text-align: left;
+  padding: 10px 12px;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  color: var(--text-main);
+}
+
+.data-table tbody tr:hover {
+  background-color: color-mix(in srgb, var(--bg-soft) 82%, transparent);
+}
+
+.data-table td span {
+  display: inline-block;
+  max-width: 150px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pagination {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: var(--bg-tab-soft);
+  border-radius: 12px;
+}
+
+.pagination button {
+  padding: 8px 12px;
+  font-size: 0.9rem;
+}
+
+.pagination button:disabled {
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.pagination span {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.error {
+  color: var(--danger);
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.empty-table-state {
+  text-align: center;
+  padding: 20px;
+}
+
+.actions-cell {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.edit-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 26, 46, 0.44);
+  backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
+  z-index: 90;
+}
+
+.edit-modal {
+  width: min(760px, 94vw);
+  max-height: 88vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-strong);
+}
+
+.edit-modal-header,
+.edit-modal-footer {
+  padding: 12px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.edit-modal-header {
+  border-bottom: 1px solid var(--line);
+}
+
+.edit-modal-header h4 {
+  margin: 0;
+}
+
+.edit-modal-footer {
+  border-top: 1px solid var(--line);
+  justify-content: flex-end;
+}
+
+.edit-modal-body {
+  padding: 12px 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.edit-field {
+  display: grid;
+  gap: 6px;
+}
+
+.edit-field label {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.edit-field input,
+.edit-field select,
+.edit-field textarea {
+  border: 1.5px solid var(--line);
+  background: var(--bg-soft);
+  padding: 10px 12px;
+  border-radius: 12px;
+  color: var(--text-main);
+  font: inherit;
+}
+
+.edit-field textarea {
+  resize: vertical;
+  min-height: 96px;
+}
