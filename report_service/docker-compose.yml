@@ -1,0 +1,11 @@
+﻿services:
+  reports_service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: reports-service
+    env_file:
+      - .env
+    ports:
+      - "8085:8085"
+    restart: unless-stopped

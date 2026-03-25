@@ -1,0 +1,331 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Reports Service",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/reports/generate": {
+      "post": {
+        "summary": "Generate Report",
+        "operationId": "generate_report_reports_generate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportGenerationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportGenerationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ColumnSchema": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "ColumnSchema"
+      },
+      "DbConnection": {
+        "properties": {
+          "driver": {
+            "type": "string",
+            "title": "Driver",
+            "default": "postgresql+psycopg"
+          },
+          "host": {
+            "type": "string",
+            "title": "Host"
+          },
+          "port": {
+            "type": "integer",
+            "title": "Port",
+            "default": 5432
+          },
+          "user": {
+            "type": "string",
+            "title": "User"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          },
+          "database": {
+            "type": "string",
+            "title": "Database"
+          },
+          "sslmode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sslmode"
+          }
+        },
+        "type": "object",
+        "required": [
+          "host",
+          "user",
+          "password",
+          "database"
+        ],
+        "title": "DbConnection"
+      },
+      "DbSchema": {
+        "properties": {
+          "tables": {
+            "items": {
+              "$ref": "#/components/schemas/TableSchema"
+            },
+            "type": "array",
+            "title": "Tables"
+          },
+          "relations": {
+            "items": {
+              "$ref": "#/components/schemas/Relation"
+            },
+            "type": "array",
+            "title": "Relations"
+          }
+        },
+        "type": "object",
+        "title": "DbSchema"
+      },
+      "FunctionCatalogItem": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "example": {
+            "type": "string",
+            "title": "Example"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "example"
+        ],
+        "title": "FunctionCatalogItem"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Relation": {
+        "properties": {
+          "from_table": {
+            "type": "string",
+            "title": "From Table"
+          },
+          "from_column": {
+            "type": "string",
+            "title": "From Column"
+          },
+          "to_table": {
+            "type": "string",
+            "title": "To Table"
+          },
+          "to_column": {
+            "type": "string",
+            "title": "To Column"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from_table",
+          "from_column",
+          "to_table",
+          "to_column"
+        ],
+        "title": "Relation"
+      },
+      "ReportGenerationRequest": {
+        "properties": {
+          "template_html": {
+            "type": "string",
+            "title": "Template Html"
+          },
+          "report_request": {
+            "type": "string",
+            "title": "Report Request"
+          },
+          "db_schema": {
+            "$ref": "#/components/schemas/DbSchema"
+          },
+          "function_catalog": {
+            "items": {
+              "$ref": "#/components/schemas/FunctionCatalogItem"
+            },
+            "type": "array",
+            "title": "Function Catalog"
+          },
+          "db": {
+            "$ref": "#/components/schemas/DbConnection"
+          },
+          "debug": {
+            "type": "boolean",
+            "title": "Debug",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "template_html",
+          "report_request",
+          "db_schema",
+          "db"
+        ],
+        "title": "ReportGenerationRequest"
+      },
+      "ReportGenerationResponse": {
+        "properties": {
+          "sql": {
+            "type": "string",
+            "title": "Sql"
+          },
+          "rows": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "html": {
+            "type": "string",
+            "title": "Html"
+          },
+          "debug_info": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Debug Info"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sql",
+          "rows",
+          "html"
+        ],
+        "title": "ReportGenerationResponse"
+      },
+      "TableSchema": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/components/schemas/ColumnSchema"
+            },
+            "type": "array",
+            "title": "Columns"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "columns"
+        ],
+        "title": "TableSchema"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

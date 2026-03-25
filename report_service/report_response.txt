@@ -1,0 +1,1 @@
+{"detail":[{"type":"missing","loc":["body","template_html"],"msg":"Field required","input":{}},{"type":"missing","loc":["body","report_request"],"msg":"Field required","input":{}},{"type":"missing","loc":["body","db_schema"],"msg":"Field required","input":{}},{"type":"missing","loc":["body","db"],"msg":"Field required","input":{}}]}

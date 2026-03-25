@@ -1,0 +1,57 @@
+{
+  "template": "../form_d.html",
+  "prompt": "../prompt_conversion_dps_new_2026.txt",
+  "mode": "stub",
+  "debug": true,
+  "trace": true,
+  "out_dir": "../out/form_d_run",
+  "report_request": "Сформировать HTML-отчёт по шаблону form_d.html с placeholder-выражениями {{value}} и {{function(value)}} на основе актуальных данных.",
+  "db": {
+    "driver": "postgresql+psycopg",
+    "host": "172.20.10.3",
+    "port": 5432,
+    "name": "dashboard",
+    "user": "postgres",
+    "password": "postgres",
+    "sslmode": null
+  },
+  "function_catalog": [
+    {
+      "name": "value",
+      "description": "Простое значение из одной строки результата без агрегации.",
+      "example": "{{road_name}}"
+    },
+    {
+      "name": "sum",
+      "description": "Сумма по числовому полю для итогов и агрегированных строк.",
+      "example": "{{sum(accident_count)}}"
+    },
+    {
+      "name": "count",
+      "description": "Количество строк или непустых значений.",
+      "example": "{{count(road_name)}}"
+    },
+    {
+      "name": "avg",
+      "description": "Среднее значение по числовому полю, если это уместно в шаблоне.",
+      "example": "{{avg(severity_rate)}}"
+    },
+    {
+      "name": "min",
+      "description": "Минимальное значение по полю.",
+      "example": "{{min(report_period)}}"
+    },
+    {
+      "name": "max",
+      "description": "Максимальное значение по полю.",
+      "example": "{{max(report_period)}}"
+    },
+    {
+      "name": "if",
+      "description": "Условное выражение для текстовых вставок и проверок.",
+      "example": "{{if(count(road_name) > 0, 'Да', 'Нет')}}"
+    }
+  ],
+  "fail_on_validation_error": false,
+  "print_summary": true
+}
