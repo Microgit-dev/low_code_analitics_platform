@@ -1,4 +1,24 @@
-export type ReportType = "table_export" | "dashboard";
+export type ReportType = "table_export" | "dashboard" | "docx_template";
+
+export interface DocumentTemplateVisualBlock {
+  type: "text" | "field" | "section_title" | "line_break" | "if_row" | "table" | "nested_table";
+  value: string;
+  config?: Record<string, unknown>;
+}
+
+export interface DocumentTemplateConverterRule {
+  output_key: string;
+  source_field: string;
+  transform: "none" | "upper" | "lower" | "date" | "number";
+}
+
+export interface DocumentTemplateSettings {
+  table_id: number | null;
+  template_mode: "visual" | "jinja2";
+  visual_blocks: DocumentTemplateVisualBlock[];
+  jinja_template: string;
+  data_converter: DocumentTemplateConverterRule[];
+}
 
 export type MetricAggregation = "count" | "sum" | "avg" | "min" | "max";
 export type WidgetMetricAggregation = MetricAggregation;

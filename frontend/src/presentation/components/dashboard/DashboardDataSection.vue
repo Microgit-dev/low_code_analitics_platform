@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { ColumnType } from '../../../domain/entities/TableSchema'
+import GeoJsonMapEditor from '../common/GeoJsonMapEditor.vue'
 import UiStatusText from '../common/UiStatusText.vue'
 
 interface TableColumn {
   key: string
   name: string
   type: ColumnType
+  settings: Record<string, unknown>
 }
 
 interface TableOption {
@@ -65,21 +67,84 @@ const dataLimitModel = computed({
 const editModalOpen = ref(false)
 const editRecordId = ref<number | null>(null)
 const editValues = ref<Record<string, unknown>>({})
+const listDraftValues = ref<Record<string, string>>({})
+const geoPreviewMode = ref<'text' | 'geojson' | 'map'>('text')
 
 const editableColumns = computed(() => props.selectedDataTable?.columns ?? [])
+const hasGeoColumns = computed(() =>
+  editableColumns.value.some((column) => column.type === 'geoPoint' || column.type === 'geoPolygon')
+)
 
-const isTextareaColumn = (type: ColumnType) => type === 'list' || type === 'geoPoint' || type === 'geoPolygon'
+const isTextareaColumn = (type: ColumnType) => type === 'geoPoint' || type === 'geoPolygon'
+
+const getColumnOptions = (column: TableColumn): string[] => {
+  const options = column.settings?.options
+  if (!Array.isArray(options)) return []
+  return options.map((item) => String(item)).filter(Boolean)
+}
+
+const getListItemType = (column: TableColumn): 'text' | 'number' | 'boolean' | 'enum' => {
+  const raw = String(column.settings?.itemType ?? 'text')
+  if (raw === 'number' || raw === 'boolean' || raw === 'enum') return raw
+  return 'text'
+}
+
+const isListEnumColumn = (column: TableColumn): boolean =>
+  column.type === 'list' && getListItemType(column) === 'enum' && getColumnOptions(column).length > 0
+
+const normalizeArrayValue = (value: unknown): string[] => {
+  if (Array.isArray(value)) return value.map((item) => String(item))
+  if (typeof value === 'string') {
+    const prepared = value.trim()
+    if (!prepared) return []
+    try {
+      const parsed = JSON.parse(prepared)
+      if (Array.isArray(parsed)) return parsed.map((item) => String(item))
+    } catch {
+      return prepared
+        .split(/[,\n]/g)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    }
+  }
+  return []
+}
+
+const toPrettyGeoJson = (value: unknown): string => {
+  if (value === null || value === undefined || value === '') return '—'
+  if (typeof value === 'string') {
+    try {
+      return JSON.stringify(JSON.parse(value), null, 2)
+    } catch {
+      return value
+    }
+  }
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+const formatMapTitle = (value: unknown): string => {
+  if (!value) return 'Геоданные'
+  if (typeof value === 'string') return value
+  return 'Геоданные'
+}
 
 const valueToInput = (value: unknown, type: ColumnType): string | number => {
   if (value === null || value === undefined) return ''
   if (type === 'boolean') return Boolean(value) ? 'true' : 'false'
-  if (type === 'list' || type === 'geoPoint' || type === 'geoPolygon') {
+  if (type === 'list') {
+    return normalizeArrayValue(value).join('\n')
+  }
+  if (type === 'geoPoint' || type === 'geoPolygon') {
     return typeof value === 'string' ? value : JSON.stringify(value, null, 2)
   }
   return typeof value === 'number' ? value : String(value)
 }
 
-const parseInputValue = (raw: string, type: ColumnType): unknown => {
+const parseInputValue = (raw: string, type: ColumnType, column?: TableColumn): unknown => {
   const value = raw.trim()
   if (!value) return null
 
@@ -92,7 +157,14 @@ const parseInputValue = (raw: string, type: ColumnType): unknown => {
     return value === 'true' || value === '1' || value.toLowerCase() === 'yes'
   }
 
-  if (type === 'list' || type === 'geoPoint' || type === 'geoPolygon') {
+  if (type === 'list') {
+    if (column && isListEnumColumn(column)) {
+      return normalizeArrayValue(raw)
+    }
+    return normalizeArrayValue(raw)
+  }
+
+  if (type === 'geoPoint' || type === 'geoPolygon') {
     try {
       return JSON.parse(value)
     } catch {
@@ -107,6 +179,22 @@ const openEditModal = (record: DataRecord) => {
   if (!props.selectedDataTable) return
   const initial: Record<string, unknown> = {}
   for (const column of props.selectedDataTable.columns) {
+    if (column.type === 'list') {
+      initial[column.key] = normalizeArrayValue(record.data[column.key])
+      continue
+    }
+    if (column.type === 'geoPoint' || column.type === 'geoPolygon') {
+      if (typeof record.data[column.key] === 'string') {
+        try {
+          initial[column.key] = JSON.parse(String(record.data[column.key]))
+        } catch {
+          initial[column.key] = record.data[column.key]
+        }
+      } else {
+        initial[column.key] = record.data[column.key] ?? null
+      }
+      continue
+    }
     initial[column.key] = valueToInput(record.data[column.key], column.type)
   }
   editValues.value = initial
@@ -118,6 +206,41 @@ const closeEditModal = () => {
   editModalOpen.value = false
   editRecordId.value = null
   editValues.value = {}
+  listDraftValues.value = {}
+}
+
+const ensureListField = (columnKey: string) => {
+  if (!Array.isArray(editValues.value[columnKey])) {
+    editValues.value[columnKey] = []
+  }
+}
+
+const addListItem = (columnKey: string) => {
+  const draft = String(listDraftValues.value[columnKey] ?? '').trim()
+  if (!draft) return
+  ensureListField(columnKey)
+  const current = editValues.value[columnKey] as string[]
+  if (!current.includes(draft)) {
+    current.push(draft)
+  }
+  listDraftValues.value[columnKey] = ''
+}
+
+const removeListItem = (columnKey: string, index: number) => {
+  ensureListField(columnKey)
+  const current = editValues.value[columnKey] as string[]
+  if (index < 0 || index >= current.length) return
+  current.splice(index, 1)
+}
+
+const toggleListEnumOption = (columnKey: string, option: string, checked: boolean) => {
+  ensureListField(columnKey)
+  const current = editValues.value[columnKey] as string[]
+  if (checked) {
+    if (!current.includes(option)) current.push(option)
+    return
+  }
+  editValues.value[columnKey] = current.filter((item) => item !== option)
 }
 
 const saveEditedRecord = () => {
@@ -125,8 +248,25 @@ const saveEditedRecord = () => {
 
   const parsed: Record<string, unknown> = {}
   for (const column of props.selectedDataTable.columns) {
+    if (column.type === 'list') {
+      parsed[column.key] = normalizeArrayValue(editValues.value[column.key])
+      continue
+    }
+
+    if (column.type === 'geoPoint' || column.type === 'geoPolygon') {
+      const geoRaw = editValues.value[column.key]
+      if (geoRaw === null || geoRaw === undefined || geoRaw === '') {
+        parsed[column.key] = null
+      } else if (typeof geoRaw === 'string') {
+        parsed[column.key] = parseInputValue(geoRaw, column.type, column)
+      } else {
+        parsed[column.key] = geoRaw
+      }
+      continue
+    }
+
     const raw = String(editValues.value[column.key] ?? '')
-    parsed[column.key] = parseInputValue(raw, column.type)
+    parsed[column.key] = parseInputValue(raw, column.type, column)
   }
 
   emit('save-record', { recordId: editRecordId.value, data: parsed })
@@ -154,6 +294,11 @@ const saveEditedRecord = () => {
         <option :value="50">50 записей</option>
         <option :value="100">100 записей</option>
       </select>
+      <select v-if="hasGeoColumns" v-model="geoPreviewMode">
+        <option value="text">Geo: краткий текст</option>
+        <option value="geojson">Geo: GeoJSON</option>
+        <option value="map">Geo: карта</option>
+      </select>
     </div>
 
     <UiStatusText v-if="dataLoading" as="div">Загрузка данных...</UiStatusText>
@@ -174,7 +319,18 @@ const saveEditedRecord = () => {
           <tr v-for="(record, index) in tableDataRecords" :key="record.id">
             <td>{{ dataPagination.skip + index + 1 }}</td>
             <td v-for="column in selectedDataTable.columns" :key="column.key">
-              <span :title="JSON.stringify(record.data[column.key])">
+              <template v-if="(column.type === 'geoPoint' || column.type === 'geoPolygon') && geoPreviewMode === 'geojson'">
+                <pre class="geojson-preview" :title="toPrettyGeoJson(record.data[column.key])">{{ toPrettyGeoJson(record.data[column.key]) }}</pre>
+              </template>
+              <template v-else-if="(column.type === 'geoPoint' || column.type === 'geoPolygon') && geoPreviewMode === 'map'">
+                <GeoJsonMapEditor
+                  :model-value="record.data[column.key]"
+                  :geometry-type="column.type === 'geoPoint' ? 'point' : 'polygon'"
+                  :height="150"
+                  readonly
+                />
+              </template>
+              <span v-else :title="JSON.stringify(record.data[column.key])">
                 {{ formatDataValue(record.data[column.key], column.type) }}
               </span>
             </td>
@@ -226,6 +382,60 @@ const saveEditedRecord = () => {
               <option value="true">Да</option>
               <option value="false">Нет</option>
             </select>
+
+            <select
+              v-else-if="column.type === 'enum'"
+              :value="String(editValues[column.key] ?? '')"
+              @change="editValues[column.key] = ($event.target as HTMLSelectElement).value"
+            >
+              <option value="">Пусто</option>
+              <option v-for="opt in getColumnOptions(column)" :key="`enum-${column.key}-${opt}`" :value="opt">
+                {{ opt }}
+              </option>
+            </select>
+
+            <div v-else-if="column.type === 'list' && isListEnumColumn(column)" class="list-edit-box">
+              <label v-for="opt in getColumnOptions(column)" :key="`list-enum-${column.key}-${opt}`" class="checkbox-inline">
+                <input
+                  type="checkbox"
+                  :checked="Array.isArray(editValues[column.key]) && editValues[column.key].includes(opt)"
+                  @change="toggleListEnumOption(column.key, opt, ($event.target as HTMLInputElement).checked)"
+                />
+                <span>{{ opt }}</span>
+              </label>
+            </div>
+
+            <div v-else-if="column.type === 'list'" class="list-edit-box">
+              <div class="list-editor-add-row">
+                <input
+                  :value="String(listDraftValues[column.key] ?? '')"
+                  placeholder="Добавить элемент"
+                  @input="listDraftValues[column.key] = ($event.target as HTMLInputElement).value"
+                  @keydown.enter.prevent="addListItem(column.key)"
+                />
+                <button class="small" type="button" @click="addListItem(column.key)">Добавить</button>
+              </div>
+              <ul v-if="Array.isArray(editValues[column.key]) && editValues[column.key].length > 0" class="list-items">
+                <li v-for="(item, index) in editValues[column.key]" :key="`item-${column.key}-${index}`">
+                  <span>{{ item }}</span>
+                  <button class="small danger" type="button" @click="removeListItem(column.key, Number(index))">Удалить</button>
+                </li>
+              </ul>
+            </div>
+
+            <GeoJsonMapEditor
+              v-else-if="column.type === 'geoPoint'"
+              v-model="editValues[column.key]"
+              geometry-type="point"
+              :height="250"
+            />
+
+            <GeoJsonMapEditor
+              v-else-if="column.type === 'geoPolygon'"
+              v-model="editValues[column.key]"
+              geometry-type="polygon"
+              :height="250"
+            />
 
             <input
               v-else

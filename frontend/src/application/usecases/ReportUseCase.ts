@@ -55,12 +55,8 @@ export class ReportUseCase {
     return reportApi.downloadExcelReport(this.token, workspaceId, reportId, format);
   }
 
-  async calculateByTemplate(workspaceId: number, tableId: number, file: File): Promise<Blob> {
-    return reportApi.calculateByTemplate(this.token, workspaceId, tableId, file);
-  }
-
-  async generateHtmlByTemplate(workspaceId: number, file: File, tableIds: number[]): Promise<Blob> {
-    return reportApi.generateHtmlByTemplate(this.token, workspaceId, file, tableIds);
+  async downloadDocumentReport(workspaceId: number, reportId: number, format: "docx" | "pdf" = "docx"): Promise<Blob> {
+    return reportApi.downloadDocumentReport(this.token, workspaceId, reportId, format);
   }
 
   async downloadConversionPrompt(workspaceId: number, tableId: number): Promise<Blob> {

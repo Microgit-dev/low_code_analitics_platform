@@ -331,8 +331,8 @@ onMounted(loadEditor)
 </script>
 
 <template>
-  <main class="table-report-page">
-    <header class="header-bar">
+  <main class="table-report-page editor-shell">
+    <header class="header-bar editor-shell-header">
       <div class="header-content">
         <button class="back-btn" @click="router.push({ name: 'dashboard' })">← Назад</button>
         <div>
@@ -340,7 +340,7 @@ onMounted(loadEditor)
           <p>Многотабличный экспорт в CSV/XLSX</p>
         </div>
       </div>
-      <div class="header-actions">
+      <div class="header-actions editor-shell-actions">
         <button
           v-if="!isCreateMode && reportId"
           class="btn-secondary"
@@ -363,7 +363,7 @@ onMounted(loadEditor)
 
     <template v-else>
       <!-- Metadata -->
-      <section class="card meta-section">
+      <section class="card meta-section editor-shell-panel">
         <div class="form-group">
           <label>Название отчета</label>
           <input v-model="reportName" placeholder="Введите название отчета" class="input-text" />
@@ -375,7 +375,7 @@ onMounted(loadEditor)
       </section>
 
       <!-- Datasets Management -->
-      <section class="card datasets-section">
+      <section class="card datasets-section editor-shell-panel">
         <div class="section-header">
           <div>
             <h3>Наборы таблиц</h3>
@@ -408,7 +408,7 @@ onMounted(loadEditor)
       <!-- Editor -->
       <section v-if="selectedDataset" class="editor-section">
         <div class="editor-column editor-settings">
-          <div class="card settings-card">
+          <div class="card settings-card editor-shell-panel">
             <div class="card-header">
               <h3>Параметры набора</h3>
               <div v-if="datasets.length > 1" class="dataset-actions">
@@ -439,7 +439,7 @@ onMounted(loadEditor)
         </div>
 
         <div class="editor-column editor-columns">
-          <div class="card columns-card">
+          <div class="card columns-card editor-shell-panel">
             <div class="card-header">
               <h3>Столбцы ({{ selectedDataset.columns.length }})</h3>
             </div>
@@ -485,7 +485,7 @@ onMounted(loadEditor)
         </div>
 
         <div class="editor-column editor-available">
-          <div class="card available-card">
+          <div class="card available-card editor-shell-panel">
             <div class="card-header">
               <h3>Доступные столбцы</h3>
             </div>
@@ -508,7 +508,7 @@ onMounted(loadEditor)
       </section>
 
       <!-- Preview -->
-      <section class="card preview-section">
+      <section class="card preview-section editor-shell-panel">
         <div class="section-header">
           <h3>Предпросмотр</h3>
           <p class="muted">Первые 15 строк с выбранными столбцами</p>

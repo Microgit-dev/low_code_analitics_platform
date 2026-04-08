@@ -597,14 +597,14 @@ onMounted(loadPage)
 </script>
 
 <template>
-  <main class="builder-page">
-    <header class="topbar">
+  <main class="builder-page editor-shell">
+    <header class="topbar editor-shell-header">
       <div>
         <button class="ghost-link" @click="router.push({ name: 'dashboard' })">← Назад</button>
         <h1>Конструктор дашборда</h1>
         <p>Сверху выбираешь виджет, ниже редактируешь только его.</p>
       </div>
-      <div class="topbar-actions">
+      <div class="topbar-actions editor-shell-actions">
         <label class="publish-toggle">
           <input v-model="reportIsPublished" type="checkbox" />
           Опубликован
@@ -618,7 +618,7 @@ onMounted(loadPage)
     <div v-if="loading" class="surface-card">Загрузка...</div>
     <div v-else-if="pageError" class="surface-card error">{{ pageError }}</div>
     <template v-else>
-      <section class="surface-card meta-grid">
+      <section class="surface-card meta-grid editor-shell-panel">
         <div>
           <label>Название отчета</label>
           <input v-model="reportName" placeholder="Например: Анализ ДТП" />
@@ -629,7 +629,7 @@ onMounted(loadPage)
         </div>
       </section>
 
-      <section class="surface-card widget-toolbar">
+      <section class="surface-card widget-toolbar editor-shell-panel">
         <div class="toolbar-row">
           <div class="toolbar-label">Виджеты отчета</div>
           <div class="widget-tabs">
@@ -661,7 +661,7 @@ onMounted(loadPage)
       </section>
 
       <section v-if="selectedWidget" class="editor-layout">
-        <aside class="surface-card editor-panel">
+        <aside class="surface-card editor-panel editor-shell-panel">
           <div class="panel-head">
             <div>
               <h3>Редактор виджета</h3>

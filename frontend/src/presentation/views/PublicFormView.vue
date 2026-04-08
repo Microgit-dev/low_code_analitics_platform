@@ -3,6 +3,7 @@ import { onMounted, ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import type { FormConfiguration } from '../../domain/entities/FormBuilder'
 import { httpClient } from '../../infrastructure/api/httpClient'
+import GeoJsonMapEditor from '../components/common/GeoJsonMapEditor.vue'
 
 const route = useRoute()
 const formId = Number(route.params.formId)
@@ -21,6 +22,7 @@ const listDraftValues = ref<Record<string, string>>({})
 const getFieldInputType = (widgetType: string): string => {
   const typeMap: Record<string, string> = {
     number_input: 'number',
+    time_input: 'time',
     date_input: 'date',
     datetime_input: 'datetime-local'
   }
@@ -49,21 +51,39 @@ const getWidgetTypeLabel = (type: string): string => {
     text_input: 'Текстовое поле',
     textarea: 'Многострочный текст',
     number_input: 'Числовое поле',
+    time_input: 'Время',
     date_input: 'Дата',
     datetime_input: 'Дата и время',
     select: 'Выпадающий список',
     multiselect: 'Множественный выбор',
     list_input: 'Список значений',
+    geo_point_input: 'Точка на карте',
+    geo_polygon_input: 'Полигон на карте',
     checkbox: 'Чекбокс',
     radio: 'Радио'
   }
   return labels[type] || type
 }
 
+const isEnumListField = (field: FormConfiguration['fields'][number]): boolean => {
+  if (field.widget_type !== 'list_input') return false
+  return field.widget_settings?.itemType === 'enum' && getFieldOptions(field).length > 0
+}
+
 const ensureArrayFieldValue = (fieldKey: string) => {
   if (!Array.isArray(formData.value[fieldKey])) {
     formData.value[fieldKey] = []
   }
+}
+
+const toggleListEnumOption = (fieldKey: string, option: string, checked: boolean) => {
+  ensureArrayFieldValue(fieldKey)
+  const current = formData.value[fieldKey] as string[]
+  if (checked) {
+    if (!current.includes(option)) current.push(option)
+    return
+  }
+  formData.value[fieldKey] = current.filter((item) => item !== option)
 }
 
 const addListItem = (fieldKey: string) => {
@@ -106,6 +126,11 @@ const loadForm = async () => {
     for (const field of form.value.fields) {
       if (isArrayWidget(field)) {
         ensureArrayFieldValue(field.column_key)
+        continue
+      }
+
+      if (field.widget_type === 'geo_point_input' || field.widget_type === 'geo_polygon_input') {
+        formData.value[field.column_key] = null
       }
     }
   } catch (err) {
@@ -173,7 +198,7 @@ onMounted(() => {
             </label>
 
             <input
-              v-if="['text_input', 'number_input', 'date_input', 'datetime_input'].includes(field.widget_type)"
+              v-if="['text_input', 'number_input', 'time_input', 'date_input', 'datetime_input'].includes(field.widget_type)"
               :id="`field-${field.column_key}`"
               v-model="formData[field.column_key]"
               :type="getFieldInputType(field.widget_type)"
@@ -210,21 +235,47 @@ onMounted(() => {
             </select>
 
             <div v-else-if="field.widget_type === 'list_input'" class="list-editor">
-              <div class="list-editor-add-row">
-                <input
-                  v-model="listDraftValues[field.column_key]"
-                  :placeholder="field.placeholder || 'Добавить элемент списка'"
-                  @keydown.enter.prevent="addListItem(field.column_key)"
-                />
-                <button type="button" class="small-btn" @click="addListItem(field.column_key)">Добавить</button>
+              <div v-if="isEnumListField(field)" class="checkbox-wrapper">
+                <label v-for="opt in getFieldOptions(field)" :key="`list-enum-${field.column_key}-${opt}`">
+                  <input
+                    type="checkbox"
+                    :checked="Array.isArray(formData[field.column_key]) && formData[field.column_key].includes(opt)"
+                    @change="toggleListEnumOption(field.column_key, opt, ($event.target as HTMLInputElement).checked)"
+                  />
+                  {{ opt }}
+                </label>
               </div>
-              <ul v-if="Array.isArray(formData[field.column_key]) && formData[field.column_key].length > 0" class="list-editor-items">
-                <li v-for="(item, idx) in formData[field.column_key]" :key="`li-${field.column_key}-${idx}`">
-                  <span>{{ item }}</span>
-                  <button type="button" class="small-btn danger-btn" @click="removeListItem(field.column_key, Number(idx))">Удалить</button>
-                </li>
-              </ul>
+              <template v-else>
+                <div class="list-editor-add-row">
+                  <input
+                    v-model="listDraftValues[field.column_key]"
+                    :placeholder="field.placeholder || 'Добавить элемент списка'"
+                    @keydown.enter.prevent="addListItem(field.column_key)"
+                  />
+                  <button type="button" class="small-btn" @click="addListItem(field.column_key)">Добавить</button>
+                </div>
+                <ul v-if="Array.isArray(formData[field.column_key]) && formData[field.column_key].length > 0" class="list-editor-items">
+                  <li v-for="(item, idx) in formData[field.column_key]" :key="`li-${field.column_key}-${idx}`">
+                    <span>{{ item }}</span>
+                    <button type="button" class="small-btn danger-btn" @click="removeListItem(field.column_key, Number(idx))">Удалить</button>
+                  </li>
+                </ul>
+              </template>
             </div>
+
+            <GeoJsonMapEditor
+              v-else-if="field.widget_type === 'geo_point_input'"
+              v-model="formData[field.column_key]"
+              geometry-type="point"
+              :height="260"
+            />
+
+            <GeoJsonMapEditor
+              v-else-if="field.widget_type === 'geo_polygon_input'"
+              v-model="formData[field.column_key]"
+              geometry-type="polygon"
+              :height="260"
+            />
 
             <div v-else-if="field.widget_type === 'checkbox'" class="checkbox-wrapper">
               <template v-if="getFieldOptions(field).length > 0">
@@ -344,6 +395,7 @@ form {
 .form-field input[type='number'],
 .form-field input[type='date'],
 .form-field input[type='datetime-local'],
+.form-field input[type='time'],
 .form-field textarea,
 .form-field select {
   width: 100%;

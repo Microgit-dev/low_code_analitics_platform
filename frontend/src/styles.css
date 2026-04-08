@@ -115,6 +115,8 @@
   --public-success-text: var(--ok);
 }
 
+@import './presentation/styles/dashboard/editor-unified.css';
+
 * {
   box-sizing: border-box;
 }

@@ -10,6 +10,7 @@ import ReportDetailView from '../views/ReportDetailView.vue'
 import DashboardDetailView from '../views/DashboardDetailView.vue'
 import TableReportDetailView from '../views/TableReportDetailView.vue'
 import TableReportView from '../views/TableReportView.vue'
+import DocxTemplateDetailView from '../views/DocxTemplateDetailView.vue'
 import { getStoredToken } from '../../infrastructure/auth/tokenStorage'
 
 export const router = createRouter({
@@ -59,6 +60,12 @@ export const router = createRouter({
       path: '/workspaces/:workspaceId/table-reports/:reportId/view',
       name: 'table-report-view',
       component: TableReportView,
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/workspaces/:workspaceId/docx-templates/:reportId',
+      name: 'docx-template-detail',
+      component: DocxTemplateDetailView,
       meta: { requiresAuth: true }
     },
     { path: '/form/:formId', name: 'public-form', component: PublicFormView },

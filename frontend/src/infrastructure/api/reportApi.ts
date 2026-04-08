@@ -74,34 +74,16 @@ export const reportApi = {
     return response.data;
   },
 
-  calculateByTemplate: async (token: string, workspaceId: number, tableId: number, file: File) => {
-    const formData = new FormData();
-    formData.append("template_file", file);
-    const response = await httpClient.post<Blob>(
-      `/workspaces/${workspaceId}/reports/template-calc?table_id=${tableId}`,
-      formData,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-        responseType: "blob",
-      }
-    );
-    return response.data;
-  },
-
-  generateHtmlByTemplate: async (token: string, workspaceId: number, file: File, tableIds: number[]) => {
-    const formData = new FormData();
-    formData.append("template_file", file);
-    if (tableIds.length > 0) {
-      formData.append("table_ids", tableIds.join(","));
-    }
-    const response = await httpClient.post<Blob>(
-      `/workspaces/${workspaceId}/reports/template-generate`,
-      formData,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-        responseType: "blob",
-      }
-    );
+  downloadDocumentReport: async (
+    token: string,
+    workspaceId: number,
+    reportId: number,
+    format: "docx" | "pdf" = "docx"
+  ) => {
+    const response = await httpClient.get<Blob>(`/workspaces/${workspaceId}/reports/${reportId}/export?format=${format}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      responseType: "blob",
+    });
     return response.data;
   },
 
