@@ -36,8 +36,7 @@ interface DashboardWidget {
   filterColumnKey?: string | null
   filterValue?: string
   pageSize?: number
-  geoLatKey?: string | null
-  geoLngKey?: string | null
+  geoJsonKey?: string | null
 }
 
 interface TablePreviewState {
@@ -96,7 +95,7 @@ const WIDGET_TYPES: Array<{ id: WidgetType; name: string; icon: string; descript
   { id: 'table', name: 'Таблица', icon: '03', description: 'Данные таблицы + фильтр + пагинация' },
   { id: 'gauge', name: 'Индикатор', icon: '04', description: 'Процентный или KPI индикатор' },
   { id: 'text', name: 'Текст', icon: '05', description: 'Текстовый блок с описанием' },
-  { id: 'map', name: 'Карта', icon: '06', description: 'Карта по полям координат' },
+  { id: 'map', name: 'Карта', icon: '06', description: 'Карта по GeoJSON-полю' },
 ]
 
 const selectedWidget = computed(() => widgets.value.find((w) => w.id === selectedWidgetId.value) ?? null)
@@ -173,8 +172,7 @@ function createWidget(type: WidgetType): DashboardWidget {
     filterColumnKey: null,
     filterValue: '',
     pageSize: 10,
-    geoLatKey: null,
-    geoLngKey: null,
+    geoJsonKey: null,
   }
 }
 
@@ -287,8 +285,7 @@ function onSourceTableChange(widgetId: string, tableIdRaw: string) {
     tableColumns: table?.columns.slice(0, 5).map((column) => column.key) ?? [],
     filterColumnKey: firstColumn || null,
     filterValue: '',
-    geoLatKey: null,
-    geoLngKey: null,
+    geoJsonKey: null,
   })
 
   resetTablePreviewPage(widgetId)
@@ -619,17 +616,11 @@ function normalizeDashboardSettings(raw: Record<string, unknown>): DashboardWidg
             : typeof query?.limit === 'number'
               ? (query.limit as number)
               : 10,
-        geoLatKey:
-          typeof item.geoLatKey === 'string'
-            ? item.geoLatKey
-            : typeof config?.geo_lat_key === 'string'
-              ? (config.geo_lat_key as string)
-              : null,
-        geoLngKey:
-          typeof item.geoLngKey === 'string'
-            ? item.geoLngKey
-            : typeof config?.geo_lng_key === 'string'
-              ? (config.geo_lng_key as string)
+        geoJsonKey:
+          typeof item.geoJsonKey === 'string'
+            ? item.geoJsonKey
+            : typeof config?.geo_json_key === 'string'
+              ? (config.geo_json_key as string)
               : null,
       }
     })
@@ -698,8 +689,7 @@ async function saveDashboard() {
         table_columns: widget.tableColumns || [],
         filter_column_key: widget.filterColumnKey || null,
         filter_value: widget.filterValue || '',
-        geo_lat_key: widget.geoLatKey || null,
-        geo_lng_key: widget.geoLngKey || null,
+        geo_json_key: widget.geoJsonKey || null,
       },
     }))
 
@@ -736,8 +726,7 @@ async function saveDashboard() {
         filterColumnKey: widget.filterColumnKey,
         filterValue: widget.filterValue,
         pageSize: widget.pageSize,
-        geoLatKey: widget.geoLatKey,
-        geoLngKey: widget.geoLngKey,
+        geoJsonKey: widget.geoJsonKey,
       })),
     }
 
@@ -857,8 +846,8 @@ onMounted(loadDashboard)
 </script>
 
 <template>
-  <main class="dashboard-editor">
-    <header class="editor-header">
+  <main class="dashboard-editor editor-shell">
+    <header class="editor-header editor-shell-header">
       <div class="header-left">
         <button class="back-btn" @click="router.push({ name: 'dashboard' })">Назад</button>
         <div>
@@ -866,7 +855,7 @@ onMounted(loadDashboard)
           <p>Drag-and-drop layout builder with widget-level settings</p>
         </div>
       </div>
-      <div class="header-right">
+      <div class="header-right editor-shell-actions">
         <button class="btn-soft" :disabled="widgets.length === 0" @click="openDashboardPreview">Общее превью</button>
         <button class="btn-soft" :disabled="!selectedWidgetId" @click="openPreviewModal()">Preview + Data</button>
         <label class="checkbox-label">
@@ -883,12 +872,12 @@ onMounted(loadDashboard)
     <div v-else-if="pageError" class="error-placeholder">{{ pageError }}</div>
 
     <template v-else>
-      <section class="metadata-panel">
+      <section class="metadata-panel editor-shell-panel">
         <input v-model="reportName" class="input-text" placeholder="Название дашборда" />
         <input v-model="reportDescription" class="input-text" placeholder="Описание дашборда" />
       </section>
 
-      <section class="grid-controls-panel">
+      <section class="grid-controls-panel editor-shell-panel">
         <div class="grid-control-group">
           <label>Колонки: {{ gridCols }}</label>
           <input v-model.number="gridCols" type="range" min="4" max="24" step="1" />
@@ -1047,31 +1036,18 @@ onMounted(loadDashboard)
 
             <div v-if="selectedWidget.type === 'map'" class="type-settings">
               <div class="form-group">
-                <label>Поле широты (lat)</label>
+                <label>Поле GeoJSON</label>
                 <select
                   class="input-text"
-                  :value="selectedWidget.geoLatKey || ''"
-                  @change="updateWidget(selectedWidget.id, { geoLatKey: ($event.target as HTMLSelectElement).value || null })"
+                  :value="selectedWidget.geoJsonKey || ''"
+                  @change="updateWidget(selectedWidget.id, { geoJsonKey: ($event.target as HTMLSelectElement).value || null })"
                 >
                   <option value="">Не выбрано</option>
                   <option v-for="column in selectedWidgetColumns" :key="column.key" :value="column.key">
-                    {{ column.name }}
+                    {{ column.name }} ({{ column.type }})
                   </option>
                 </select>
-              </div>
-
-              <div class="form-group">
-                <label>Поле долготы (lng)</label>
-                <select
-                  class="input-text"
-                  :value="selectedWidget.geoLngKey || ''"
-                  @change="updateWidget(selectedWidget.id, { geoLngKey: ($event.target as HTMLSelectElement).value || null })"
-                >
-                  <option value="">Не выбрано</option>
-                  <option v-for="column in selectedWidgetColumns" :key="column.key" :value="column.key">
-                    {{ column.name }}
-                  </option>
-                </select>
+                <small class="muted">Выбирайте колонку типа GeoPoint/GeoPolygon или колонку с GeoJSON строкой.</small>
               </div>
             </div>
 
@@ -1244,7 +1220,7 @@ onMounted(loadDashboard)
 
                   <div v-else-if="widget.type === 'map'" class="preview-map">
                     <div class="map-placeholder">MAP</div>
-                    <small>{{ widget.geoLatKey || 'lat' }} / {{ widget.geoLngKey || 'lng' }}</small>
+                    <small>{{ widget.geoJsonKey || 'geojson' }}</small>
                   </div>
                 </div>
               </div>
@@ -1409,7 +1385,7 @@ onMounted(loadDashboard)
 
                   <div v-else-if="widget.type === 'map'" class="preview-map">
                     <div class="map-placeholder">MAP</div>
-                    <small>{{ widget.geoLatKey || 'lat' }} / {{ widget.geoLngKey || 'lng' }}</small>
+                    <small>{{ widget.geoJsonKey || 'geojson' }}</small>
                   </div>
                 </div>
               </div>

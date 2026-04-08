@@ -1,0 +1,49 @@
+.editor-shell {
+  min-height: 100vh;
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+  background: var(--bg);
+}
+
+.editor-shell-header {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-panel) 86%, var(--bg-soft));
+  padding: 12px;
+  box-shadow: 0 10px 24px color-mix(in srgb, #000 8%, transparent);
+}
+
+.editor-shell-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.editor-shell-panel {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-panel);
+  padding: 12px;
+  box-shadow: 0 8px 20px color-mix(in srgb, #000 6%, transparent);
+}
+
+.editor-shell-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.editor-shell-grid.columns-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.editor-shell-grid.columns-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 1200px) {
+  .editor-shell-grid.columns-2,
+  .editor-shell-grid.columns-3 {
+    grid-template-columns: 1fr;
+  }
+}

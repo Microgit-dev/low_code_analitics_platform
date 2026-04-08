@@ -712,6 +712,22 @@ form {
   gap: 8px;
 }
 
+.geo-widget-preview {
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: var(--bg-soft);
+  min-height: 84px;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  color: var(--text-muted);
+  padding: 8px;
+}
+
+.geo-widget-preview p {
+  margin: 0;
+}
+
 .radio-wrapper label,
 .checkbox-wrapper label {
   display: flex;
@@ -819,6 +835,39 @@ form {
   align-items: start;
 }
 
+.reports-tabs {
+  display: inline-flex;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 4px;
+  background: var(--bg-soft);
+}
+
+.reports-tabs .tab {
+  background: transparent;
+  color: var(--text-main);
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.reports-tabs .tab.active {
+  background: var(--bg-tab);
+  color: var(--accent);
+}
+
+.reports-toolbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) repeat(3, minmax(170px, 220px));
+  gap: 8px;
+}
+
+.report-badges {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .report-type {
   font-size: 0.75rem;
   border: 1px solid var(--line);
@@ -826,6 +875,36 @@ form {
   padding: 2px 8px;
   color: var(--text-muted);
   background: var(--bg-soft);
+}
+
+.report-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.report-tag {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-soft));
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  color: var(--text-main);
+}
+
+.report-card--table {
+  border-color: color-mix(in srgb, #169c48 44%, var(--line));
+  box-shadow: 0 10px 24px color-mix(in srgb, #169c48 16%, transparent);
+}
+
+.report-card--docx {
+  border-color: color-mix(in srgb, #2f7ce6 48%, var(--line));
+  box-shadow: 0 10px 24px color-mix(in srgb, #2f7ce6 18%, transparent);
+}
+
+.report-card--dashboard {
+  border-color: color-mix(in srgb, #7e3fd6 48%, var(--line));
+  box-shadow: 0 10px 24px color-mix(in srgb, #7e3fd6 18%, transparent);
 }
 
 .report-editor {
@@ -1028,6 +1107,7 @@ form {
 
   .report-editor-grid,
   .report-create-grid,
+  .reports-toolbar,
   .metric-row,
   .chart-row,
   .excel-column-row {
@@ -1069,5 +1149,10 @@ form {
 
   .workspace-tabs {
     width: 100%;
+  }
+
+  .reports-tabs {
+    width: 100%;
+    justify-content: space-between;
   }
 }

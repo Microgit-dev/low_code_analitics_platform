@@ -16,12 +16,11 @@ import { useAuthStore } from '../stores/authStore'
 import UiMultiSelect from '../components/common/UiMultiSelect.vue'
 import UiSectionHeader from '../components/common/UiSectionHeader.vue'
 import UiStatusText from '../components/common/UiStatusText.vue'
+import UiTagListInput from '../components/common/UiTagListInput.vue'
 import DashboardDataSection from '../components/dashboard/DashboardDataSection.vue'
 import DashboardImportSection from '../components/dashboard/DashboardImportSection.vue'
 import DashboardSidebar from '../components/dashboard/DashboardSidebar.vue'
 import DashboardTopBar from '../components/dashboard/DashboardTopBar.vue'
-import DashboardReportServiceModal from '../components/dashboard/DashboardReportServiceModal.vue'
-import DashboardTemplateModal from '../components/dashboard/DashboardTemplateModal.vue'
 import DashboardTileActions from '../components/dashboard/DashboardTileActions.vue'
 import DashboardTileCard from '../components/dashboard/DashboardTileCard.vue'
 import DashboardUserModal from '../components/dashboard/DashboardUserModal.vue'
@@ -45,7 +44,9 @@ type ImportPreviewColumn = {
   outputName: string
   outputType: string
 }
-type ReportCreationKind = 'dashboard' | 'table_export'
+type ReportsCatalogTab = 'templates' | 'reports'
+type ReportSortKey = 'name' | 'tags' | 'published'
+type TimeFilterMode = 'all_time' | 'fixed_period' | 'dynamic_window'
 const TABLE_LAYOUT_STORAGE_KEY = 'dashboard-table-layout'
 
 const workspaces = ref<Workspace[]>([])
@@ -160,9 +161,30 @@ const reportsLoading = ref(false)
 const reportsError = ref('')
 const selectedReportId = ref<number | null>(null)
 
+const reportsCatalogTab = ref<ReportsCatalogTab>('reports')
+const reportSearchQuery = ref('')
+const reportTagFilter = ref('')
+const reportSortKey = ref<ReportSortKey>('name')
+const reportSortDirection = ref<'asc' | 'desc'>('asc')
+
 const reportCreateModalOpen = ref(false)
-const reportCreateKind = ref<ReportCreationKind>('dashboard')
-const reportCreateSelectedTableIds = ref<number[]>([])
+const reportCreateTemplateId = ref<number | null>(null)
+const reportCreateName = ref('')
+const reportCreateDescription = ref('')
+const reportCreateTags = ref<string[]>([])
+const reportCreateTimeFilterMode = ref<TimeFilterMode>('all_time')
+const reportCreateFixedFrom = ref('')
+const reportCreateFixedTo = ref('')
+const reportCreateDynamicAmount = ref(1)
+const reportCreateDynamicUnit = ref<'minutes' | 'hours' | 'days'>('hours')
+
+const templateCreateModalOpen = ref(false)
+const templateCreateType = ref<ReportType>('dashboard')
+const templateCreateName = ref('')
+const templateCreateDescription = ref('')
+const templateCreateTags = ref<string[]>([])
+const templateCreateSelectedTableIds = ref<number[]>([])
+
 const reportEditorOpen = ref(false)
 const reportName = ref('')
 const reportDescription = ref('')
@@ -173,19 +195,6 @@ const reportRecentLimit = ref(10)
 const reportExcelColumns = ref<Array<{ key: string; label: string; enabled: boolean }>>([])
 const reportMetrics = ref<DashboardMetricConfig[]>([])
 const reportCharts = ref<DashboardChartConfig[]>([])
-const templateModalOpen = ref(false)
-const templateTableId = ref<number | null>(null)
-const templateDragActive = ref(false)
-const templateUploading = ref(false)
-const templateError = ref('')
-const templateFileName = ref('')
-const reportServiceModalOpen = ref(false)
-const reportServiceTableIds = ref<number[]>([])
-const reportServiceDragActive = ref(false)
-const reportServiceUploading = ref(false)
-const reportServiceError = ref('')
-const reportServiceFileName = ref('')
-const templateFileInput = ref<HTMLInputElement | null>(null)
 const promptModalOpen = ref(false)
 const promptTableId = ref<number | null>(null)
 const promptError = ref('')
@@ -314,8 +323,8 @@ const selectedReport = computed(() => {
   return reports.value.find((report) => report.id === selectedReportId.value) ?? null
 })
 
-const reportCreateSelectedTables = computed(() => {
-  const selected = new Set(reportCreateSelectedTableIds.value)
+const templateCreateSelectedTables = computed(() => {
+  const selected = new Set(templateCreateSelectedTableIds.value)
   return tableStructures.value.filter((table) => selected.has(table.id))
 })
 
@@ -433,6 +442,70 @@ const selectedColumnCanSave = computed(() => {
 })
 
 const allTableOptions = computed(() => tableStructures.value.map((table) => ({ id: table.id, name: table.name })))
+
+const parseReportTags = (settings: Record<string, unknown> | null | undefined): string[] => {
+  if (!settings) return []
+  if (!Array.isArray(settings.tags)) return []
+  return settings.tags.map((tag) => String(tag).trim()).filter((tag) => tag.length > 0)
+}
+
+const reportSettings = (report: ReportConfiguration): Record<string, unknown> => {
+  if (!report.settings || typeof report.settings !== 'object') return {}
+  return report.settings as Record<string, unknown>
+}
+
+const isTemplateReport = (report: ReportConfiguration): boolean => Boolean(reportSettings(report).is_template)
+
+const templateReports = computed(() => reports.value.filter((report) => isTemplateReport(report)))
+const workspaceReports = computed(() => reports.value.filter((report) => !isTemplateReport(report)))
+
+const reportTagOptions = computed(() => {
+  const tags = new Set<string>()
+  reports.value.forEach((report) => {
+    parseReportTags(reportSettings(report)).forEach((tag) => tags.add(tag))
+  })
+  return Array.from(tags).sort((a, b) => a.localeCompare(b, 'ru'))
+})
+
+const reportCatalogItems = computed(() => {
+  const source = reportsCatalogTab.value === 'templates' ? templateReports.value : workspaceReports.value
+  const search = reportSearchQuery.value.trim().toLowerCase()
+  const requiredTag = reportTagFilter.value.trim().toLowerCase()
+
+  const filtered = source.filter((report) => {
+    const tags = parseReportTags(reportSettings(report))
+    const tagsLower = tags.map((tag) => tag.toLowerCase())
+    const searchable = `${report.name} ${report.description || ''} ${tags.join(' ')}`.toLowerCase()
+
+    if (search && !searchable.includes(search)) return false
+    if (requiredTag && !tagsLower.includes(requiredTag)) return false
+    return true
+  })
+
+  const direction = reportSortDirection.value === 'asc' ? 1 : -1
+  return filtered.sort((a, b) => {
+    if (reportSortKey.value === 'published') {
+      const left = a.is_published ? 1 : 0
+      const right = b.is_published ? 1 : 0
+      if (left !== right) return (left - right) * direction
+      return a.name.localeCompare(b.name, 'ru') * direction
+    }
+
+    if (reportSortKey.value === 'tags') {
+      const left = parseReportTags(reportSettings(a)).join(', ')
+      const right = parseReportTags(reportSettings(b)).join(', ')
+      const cmp = left.localeCompare(right, 'ru')
+      if (cmp !== 0) return cmp * direction
+      return a.name.localeCompare(b.name, 'ru') * direction
+    }
+
+    return a.name.localeCompare(b.name, 'ru') * direction
+  })
+})
+
+const reportCreateSelectedTemplate = computed(() =>
+  templateReports.value.find((template) => template.id === reportCreateTemplateId.value) ?? null
+)
 
 const allWorkspaceColumns = computed(() =>
   tableStructures.value.flatMap((table) =>
@@ -1209,11 +1282,14 @@ const getWidgetTypeLabel = (type: string): string => {
     text_input: 'Текстовое поле',
     textarea: 'Многострочный текст',
     number_input: 'Числовое поле',
+    time_input: 'Время',
     date_input: 'Дата',
     datetime_input: 'Дата и время',
     select: 'Выпадающий список',
     multiselect: 'Множественный выбор',
     list_input: 'Список значений',
+    geo_point_input: 'Геоточка',
+    geo_polygon_input: 'Полигон',
     checkbox: 'Чекбокс',
     radio: 'Радио'
   }
@@ -1229,6 +1305,7 @@ const getFieldTableName = (field: FormField): string => {
 const getFieldInputType = (widgetType: string): string => {
   const typeMap: Record<string, string> = {
     number_input: 'number',
+    time_input: 'time',
     date_input: 'date',
     datetime_input: 'datetime-local'
   }
@@ -1244,11 +1321,9 @@ const mapWidgetTypeFromColumn = (
   if (columnType === 'datetime') return 'datetime_input'
   if (columnType === 'enum') return 'select'
   if (columnType === 'boolean') return 'checkbox'
-  if (columnType === 'list') {
-    const itemType = settings?.itemType
-    if (itemType === 'enum') return 'multiselect'
-    return 'list_input'
-  }
+  if (columnType === 'list') return 'list_input'
+  if (columnType === 'geoPoint') return 'geo_point_input'
+  if (columnType === 'geoPolygon') return 'geo_polygon_input'
   return 'text_input'
 }
 
@@ -2074,31 +2149,55 @@ const onDataLimitChange = async () => {
 
 const getReportTypeLabel = (type: ReportType) => {
   if (type === 'table_export') return 'Табличная выгрузка'
+  if (type === 'docx_template') return 'DOCX шаблон'
   return 'Публичный дашборд'
 }
 
-const getReportCardTypeLabel = (report: ReportConfiguration) => {
-  if (report.report_type !== 'table_export') {
-    return 'Публичный дашборд'
-  }
-
-  return 'Табличная выгрузка'
+const getReportCardClass = (report: ReportConfiguration) => {
+  if (report.report_type === 'table_export') return 'report-card--table'
+  if (report.report_type === 'docx_template') return 'report-card--docx'
+  return 'report-card--dashboard'
 }
 
-const syncReportCreateSelectedTablesWithSchema = () => {
+const getReportCardTypeLabel = (report: ReportConfiguration) => getReportTypeLabel(report.report_type)
+
+const getReportRoleLabel = (report: ReportConfiguration) => (isTemplateReport(report) ? 'Шаблон' : 'Отчет')
+
+const getReportTags = (report: ReportConfiguration) => parseReportTags(reportSettings(report))
+
+const syncTemplateCreateSelectedTablesWithSchema = () => {
   const allowed = new Set(tableStructures.value.map((table) => table.id))
-  reportCreateSelectedTableIds.value = reportCreateSelectedTableIds.value.filter((id) => allowed.has(id))
+  templateCreateSelectedTableIds.value = templateCreateSelectedTableIds.value.filter((id) => allowed.has(id))
+}
+
+const syncReportTemplateSelection = () => {
+  const allowed = new Set(templateReports.value.map((report) => report.id))
+  if (reportCreateTemplateId.value !== null && !allowed.has(reportCreateTemplateId.value)) {
+    reportCreateTemplateId.value = null
+  }
+
+  if (reportCreateTemplateId.value === null && templateReports.value.length > 0) {
+    reportCreateTemplateId.value = templateReports.value[0].id
+  }
 }
 
 const openCreateReportModal = () => {
   if (!selectedWorkspace.value) return
+  if (templateReports.value.length === 0) {
+    alert('Сначала создайте хотя бы один шаблон в соседней вкладке.')
+    return
+  }
 
-  reportCreateKind.value = 'dashboard'
-  reportName.value = ''
-  reportDescription.value = ''
+  reportCreateName.value = ''
+  reportCreateDescription.value = ''
+  reportCreateTags.value = []
   reportIsPublished.value = false
-  syncReportCreateSelectedTablesWithSchema()
-  reportCreateSelectedTableIds.value = tableStructures.value[0]?.id ? [tableStructures.value[0].id] : []
+  reportCreateTimeFilterMode.value = 'all_time'
+  reportCreateFixedFrom.value = ''
+  reportCreateFixedTo.value = ''
+  reportCreateDynamicAmount.value = 1
+  reportCreateDynamicUnit.value = 'hours'
+  syncReportTemplateSelection()
 
   reportCreateModalOpen.value = true
 }
@@ -2107,67 +2206,151 @@ const closeCreateReportModal = () => {
   reportCreateModalOpen.value = false
 }
 
-const onReportCreateTypeChange = () => {
-  if (reportCreateSelectedTableIds.value.length === 0 && tableStructures.value.length > 0) {
-    reportCreateSelectedTableIds.value = [tableStructures.value[0].id]
-  }
+const openCreateTemplateModal = () => {
+  if (!selectedWorkspace.value) return
+
+  templateCreateType.value = 'dashboard'
+  templateCreateName.value = ''
+  templateCreateDescription.value = ''
+  templateCreateTags.value = []
+  syncTemplateCreateSelectedTablesWithSchema()
+  templateCreateSelectedTableIds.value = tableStructures.value[0]?.id ? [tableStructures.value[0].id] : []
+
+  templateCreateModalOpen.value = true
 }
 
-const createReportFromModal = async () => {
-  if (!selectedWorkspace.value || !reportName.value.trim()) return
-  if (reportCreateSelectedTables.value.length === 0) {
-    alert('Выберите хотя бы одну таблицу.')
+const closeCreateTemplateModal = () => {
+  templateCreateModalOpen.value = false
+}
+
+const createTemplateFromModal = async () => {
+  if (!selectedWorkspace.value || !templateCreateName.value.trim()) return
+  if (templateCreateSelectedTables.value.length === 0) {
+    alert('Выберите хотя бы одну таблицу для шаблона.')
     return
   }
 
-  const reportTitle = reportName.value.trim()
-  const reportDesc = reportDescription.value.trim()
+  const tags = templateCreateTags.value.slice()
+
+  const baseSettings: Record<string, unknown> = {
+    is_template: true,
+    tags,
+    template_table_ids: templateCreateSelectedTables.value.map((table) => table.id)
+  }
 
   try {
-    if (reportCreateKind.value === 'dashboard') {
-      // Redirect to new dashboard editor
-      reportCreateModalOpen.value = false
-      await router.push({
-        name: 'dashboard-create',
-        params: { workspaceId: selectedWorkspace.value.id }
-      })
+    const settings: Record<string, unknown> = { ...baseSettings }
+    if (templateCreateType.value === 'table_export') {
+      settings.datasets = templateCreateSelectedTables.value.map((dataset, index) => ({
+        id: `dataset_${index + 1}`,
+        title: dataset.name,
+        sheet_name: dataset.name.slice(0, 31) || `Sheet${index + 1}`,
+        table_id: dataset.id,
+        columns: [],
+        aggregated_columns: [],
+        group_by_columns: [],
+        sorting: [],
+        filters: []
+      }))
+    } else if (templateCreateType.value === 'docx_template') {
+      settings.table_id = templateCreateSelectedTables.value[0]?.id ?? null
+      settings.template_mode = 'visual'
+      settings.visual_blocks = [{ type: 'text', value: 'Новый DOCX шаблон' }]
+      settings.jinja_template = '{% for row in rows %}{{ row }}\\n{% endfor %}'
+      settings.data_converter = []
     } else {
-      const datasets = reportCreateSelectedTables.value
-        .map((dataset, index) => ({
-          id: `dataset_${index + 1}`,
-          title: dataset.name,
-          sheet_name: dataset.name.slice(0, 31) || `Sheet${index + 1}`,
-          table_id: dataset.id,
-          columns: [],
-          aggregated_columns: [],
-          group_by_columns: [],
-          sorting: [],
-          filters: []
-        }))
-
-      const settings: Record<string, unknown> = {
-        datasets
-      }
-
-      const created = await reportUseCase.createReport(
-        selectedWorkspace.value.id,
-        reportTitle,
-        reportDesc,
-        'table_export',
-        settings,
-        reportIsPublished.value
-      )
-
-      reportCreateModalOpen.value = false
-      await loadReports()
-      await router.push({
-        name: 'table-report-detail',
-        params: { workspaceId: selectedWorkspace.value.id, reportId: created.id }
-      })
+      settings.table_id = templateCreateSelectedTables.value[0]?.id ?? null
+      settings.widgets = []
+      settings.widgets_editor = []
+      settings.grid = { cols: 12, rows: 20, cell_size: 64 }
     }
+
+    await reportUseCase.createReport(
+      selectedWorkspace.value.id,
+      templateCreateName.value.trim(),
+      templateCreateDescription.value.trim(),
+      templateCreateType.value,
+      settings,
+      false
+    )
+
+    templateCreateModalOpen.value = false
+    reportsCatalogTab.value = 'templates'
+    await loadReports()
+    syncReportTemplateSelection()
   } catch (error) {
     console.error(error)
-    alert('Не удалось создать отчет')
+    alert('Не удалось создать шаблон')
+  }
+}
+
+const buildTimeFilterSettings = (): Record<string, unknown> => {
+  if (reportCreateTimeFilterMode.value === 'fixed_period') {
+    return {
+      mode: 'fixed_period',
+      from: reportCreateFixedFrom.value || null,
+      to: reportCreateFixedTo.value || null
+    }
+  }
+
+  if (reportCreateTimeFilterMode.value === 'dynamic_window') {
+    return {
+      mode: 'dynamic_window',
+      amount: Math.max(1, Number(reportCreateDynamicAmount.value) || 1),
+      unit: reportCreateDynamicUnit.value
+    }
+  }
+
+  return { mode: 'all_time' }
+}
+
+const createReportFromModal = async () => {
+  if (!selectedWorkspace.value || !reportCreateName.value.trim()) return
+  if (!reportCreateSelectedTemplate.value) {
+    alert('Выберите шаблон для создания отчета.')
+    return
+  }
+
+  const sourceTemplate = reportCreateSelectedTemplate.value
+  const sourceSettings = reportSettings(sourceTemplate)
+  const clonedSettings = JSON.parse(JSON.stringify(sourceSettings || {})) as Record<string, unknown>
+  const tags = reportCreateTags.value.slice()
+
+  const settings: Record<string, unknown> = {
+    ...clonedSettings,
+    is_template: false,
+    source_template_id: sourceTemplate.id,
+    source_template_name: sourceTemplate.name,
+    tags,
+    time_filter: buildTimeFilterSettings()
+  }
+
+  try {
+    const created = await reportUseCase.createReport(
+      selectedWorkspace.value.id,
+      reportCreateName.value.trim(),
+      reportCreateDescription.value.trim(),
+      sourceTemplate.report_type,
+      settings,
+      reportIsPublished.value
+    )
+
+    reportCreateModalOpen.value = false
+    reportsCatalogTab.value = 'reports'
+    await loadReports()
+
+    await router.push({
+      name:
+        sourceTemplate.report_type === 'dashboard'
+          ? 'dashboard-detail'
+          : sourceTemplate.report_type === 'docx_template'
+            ? 'docx-template-detail'
+            : 'table-report-detail',
+      params: { workspaceId: selectedWorkspace.value.id, reportId: created.id }
+    })
+  } catch (error) {
+    console.error(error)
+    alert('Не удалось создать отчет из шаблона')
   }
 }
 
@@ -2212,6 +2395,7 @@ const loadReports = async () => {
   reportsError.value = ''
   try {
     reports.value = await reportUseCase.listReports(selectedWorkspace.value.id)
+    syncReportTemplateSelection()
   } catch (error) {
     reportsError.value = 'Не удалось загрузить отчеты'
     console.error(error)
@@ -2223,15 +2407,19 @@ const loadReports = async () => {
 const goToReportsTab = async () => {
   workspaceTab.value = 'reports'
   reportEditorOpen.value = false
-  templateModalOpen.value = false
 
   promptModalOpen.value = false
 
-  syncReportCreateSelectedTablesWithSchema()
+  syncTemplateCreateSelectedTablesWithSchema()
   await loadReports()
+  syncReportTemplateSelection()
 }
 
 const createReport = () => {
+  if (reportsCatalogTab.value === 'templates') {
+    openCreateTemplateModal()
+    return
+  }
   openCreateReportModal()
 }
 
@@ -2240,6 +2428,13 @@ const editReport = (report: ReportConfiguration) => {
   if (report.report_type === 'dashboard') {
     router.push({
       name: 'dashboard-detail',
+      params: { workspaceId: selectedWorkspace.value.id, reportId: report.id }
+    })
+    return
+  }
+  if (report.report_type === 'docx_template') {
+    router.push({
+      name: 'docx-template-detail',
       params: { workspaceId: selectedWorkspace.value.id, reportId: report.id }
     })
     return
@@ -2337,51 +2532,21 @@ const downloadReport = async (reportId: number, format: 'xlsx' | 'csv' = 'xlsx')
   window.URL.revokeObjectURL(url)
 }
 
-const resetTemplateModalState = () => {
-  templateDragActive.value = false
-  templateUploading.value = false
-  templateError.value = ''
-  templateFileName.value = ''
-}
+const downloadDocumentReport = async (reportId: number, format: 'docx' | 'pdf' = 'docx') => {
+  if (!selectedWorkspace.value) return
 
-const openTemplateModal = () => {
-  promptModalOpen.value = false
-  reportServiceModalOpen.value = false
-  templateModalOpen.value = true
-  resetTemplateModalState()
-  templateTableId.value = activeTable.value?.id ?? tableStructures.value[0]?.id ?? null
-}
-
-const closeTemplateModal = () => {
-  if (templateUploading.value) return
-  templateModalOpen.value = false
-  resetTemplateModalState()
-}
-
-const resetReportServiceModalState = () => {
-  reportServiceDragActive.value = false
-  reportServiceUploading.value = false
-  reportServiceError.value = ''
-  reportServiceFileName.value = ''
-}
-
-const openReportServiceModal = () => {
-  promptModalOpen.value = false
-  templateModalOpen.value = false
-  reportServiceModalOpen.value = true
-  resetReportServiceModalState()
-  reportServiceTableIds.value = activeTable.value?.id ? [activeTable.value.id] : []
-}
-
-const closeReportServiceModal = () => {
-  if (reportServiceUploading.value) return
-  reportServiceModalOpen.value = false
-  resetReportServiceModalState()
+  const blob = await reportUseCase.downloadDocumentReport(selectedWorkspace.value.id, reportId, format)
+  const url = window.URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = format === 'docx' ? `report_${reportId}.docx` : `report_${reportId}.pdf`
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+  window.URL.revokeObjectURL(url)
 }
 
 const openPromptModal = () => {
-  templateModalOpen.value = false
-  reportServiceModalOpen.value = false
   promptModalOpen.value = true
   promptError.value = ''
   promptTableId.value = activeTable.value?.id ?? tableStructures.value[0]?.id ?? null
@@ -2421,166 +2586,6 @@ const downloadConversionPrompt = async () => {
     console.error('Failed to download conversion prompt', error)
     promptError.value = 'Не удалось скачать промпт с сервиса.'
   }
-}
-
-const isOdtFile = (file: File): boolean =>
-  file.name.toLowerCase().endsWith('.odt') || file.type === 'application/vnd.oasis.opendocument.text'
-
-const isWordFile = (file: File): boolean =>
-  file.name.toLowerCase().endsWith('.docx') ||
-  file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-
-const saveBlob = (blob: Blob, filename: string) => {
-  const url = window.URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  document.body.removeChild(anchor)
-  window.URL.revokeObjectURL(url)
-}
-
-const extractTemplateApiError = (error: any): string => {
-  const data = error?.response?.data
-  if (typeof data === 'string' && data.trim()) return data
-
-  const detail = data?.detail
-  if (typeof detail === 'string' && detail.trim()) return detail
-
-  if (Array.isArray(detail) && detail.length > 0) {
-    const first = detail[0]
-    if (typeof first === 'string') return first
-    if (first && typeof first === 'object') {
-      const location = Array.isArray(first.loc) ? first.loc.join('.') : 'request'
-      const message = typeof first.msg === 'string' ? first.msg : 'Validation error'
-      return `${location}: ${message}`
-    }
-    return 'Validation error'
-  }
-
-  if (typeof error?.message === 'string' && error.message.trim()) return error.message
-  return 'Не удалось обработать шаблон. Проверьте формат {{ aggregation_func(key) }}.'
-}
-
-const processTemplateFile = async (file: File) => {
-  if (!selectedWorkspace.value || !templateTableId.value) {
-    templateError.value = 'Выберите таблицу, по которой нужно считать агрегаты.'
-    return
-  }
-  if (!isOdtFile(file)) {
-    templateError.value = 'Нужен файл в формате .odt'
-    return
-  }
-
-  templateUploading.value = true
-  templateError.value = ''
-  templateFileName.value = file.name
-
-  let completed = false
-  try {
-    const result = await reportUseCase.calculateByTemplate(selectedWorkspace.value.id, templateTableId.value, file)
-    const normalizedName = file.name.toLowerCase().endsWith('.odt')
-      ? file.name.slice(0, -4)
-      : file.name
-    saveBlob(result, `${normalizedName}_calculated.odt`)
-    completed = true
-  } catch (error: any) {
-    console.error('Template processing request failed', {
-      status: error?.response?.status,
-      data: error?.response?.data
-    })
-    templateError.value = extractTemplateApiError(error)
-  } finally {
-    templateUploading.value = false
-  }
-
-  if (completed) {
-    closeTemplateModal()
-  }
-}
-
-const processReportServiceFile = async (file: File) => {
-  if (!selectedWorkspace.value) {
-    reportServiceError.value = 'Сначала выберите workspace.'
-    return
-  }
-  if (!isWordFile(file)) {
-    reportServiceError.value = 'Нужен файл в формате .docx'
-    return
-  }
-
-  reportServiceUploading.value = true
-  reportServiceError.value = ''
-  reportServiceFileName.value = file.name
-
-  let completed = false
-  try {
-    const result = await reportUseCase.generateHtmlByTemplate(
-      selectedWorkspace.value.id,
-      file,
-      reportServiceTableIds.value
-    )
-    const normalizedName = file.name.toLowerCase().endsWith('.docx')
-      ? file.name.slice(0, -5)
-      : file.name
-    saveBlob(result, `${normalizedName}_generated.html`)
-    completed = true
-  } catch (error: any) {
-    console.error('Report service request failed', {
-      status: error?.response?.status,
-      data: error?.response?.data
-    })
-    reportServiceError.value = extractTemplateApiError(error)
-  } finally {
-    reportServiceUploading.value = false
-  }
-
-  if (completed) {
-    closeReportServiceModal()
-  }
-}
-
-const onTemplateDragOver = (event: DragEvent) => {
-  event.preventDefault()
-  if (templateUploading.value) return
-  templateDragActive.value = true
-}
-
-const onTemplateDragLeave = (event: DragEvent) => {
-  event.preventDefault()
-  templateDragActive.value = false
-}
-
-const onTemplateDrop = async (event: DragEvent) => {
-  event.preventDefault()
-  templateDragActive.value = false
-  if (templateUploading.value) return
-
-  const file = event.dataTransfer?.files?.[0]
-  if (!file) return
-  await processTemplateFile(file)
-}
-
-const onReportServiceDragOver = (event: DragEvent) => {
-  event.preventDefault()
-  if (reportServiceUploading.value) return
-  reportServiceDragActive.value = true
-}
-
-const onReportServiceDragLeave = (event: DragEvent) => {
-  event.preventDefault()
-  reportServiceDragActive.value = false
-}
-
-const onReportServiceDrop = async (event: DragEvent) => {
-  event.preventDefault()
-  reportServiceDragActive.value = false
-  if (reportServiceUploading.value) return
-
-  const file = event.dataTransfer?.files?.[0]
-  if (!file) return
-  await processReportServiceFile(file)
 }
 
 const deleteDataRecord = async (recordId: number) => {
@@ -3176,7 +3181,7 @@ onBeforeUnmount(() => {
                   </div>
                   <p class="field-table-label">Таблица: {{ getFieldTableName(field) }}</p>
                   <input
-                    v-if="['text_input', 'number_input', 'date_input', 'datetime_input'].includes(field.widget_type)"
+                    v-if="['text_input', 'number_input', 'time_input', 'date_input', 'datetime_input'].includes(field.widget_type)"
                     :id="`field-${field.column_key}`"
                     :type="getFieldInputType(field.widget_type)"
                     :placeholder="field.placeholder"
@@ -3207,6 +3212,12 @@ onBeforeUnmount(() => {
                   <div v-else-if="field.widget_type === 'list_input'" class="list-input-preview">
                     <input :placeholder="field.placeholder || 'Добавить элемент списка'" />
                     <button type="button" class="small">Добавить</button>
+                  </div>
+                  <div v-else-if="field.widget_type === 'geo_point_input'" class="geo-widget-preview">
+                    <p>Выбор точки на карте + GeoJSON</p>
+                  </div>
+                  <div v-else-if="field.widget_type === 'geo_polygon_input'" class="geo-widget-preview">
+                    <p>Выбор полигона на карте + GeoJSON</p>
                   </div>
                   <div v-else-if="field.widget_type === 'checkbox'" class="checkbox-wrapper">
                     <template v-if="getFieldOptions(field).length > 0">
@@ -3242,11 +3253,14 @@ onBeforeUnmount(() => {
                     <option value="text_input">text_input</option>
                     <option value="textarea">textarea</option>
                     <option value="number_input">number_input</option>
+                    <option value="time_input">time_input</option>
                     <option value="date_input">date_input</option>
                     <option value="datetime_input">datetime_input</option>
                     <option value="select">select</option>
                     <option value="multiselect">multiselect</option>
                     <option value="list_input">list_input</option>
+                    <option value="geo_point_input">geo_point_input</option>
+                    <option value="geo_polygon_input">geo_polygon_input</option>
                     <option value="checkbox">checkbox</option>
                     <option value="radio">radio</option>
                   </select>
@@ -3357,56 +3371,86 @@ onBeforeUnmount(() => {
         <section v-if="workspaceTab === 'reports'" class="reports-section">
 
           <UiSectionHeader
-            title="Отчеты"
-            description="Создавайте Excel-выгрузки и публичные дашборды с настройками."
+            title="Шаблоны и отчеты"
+            description="Сначала создайте шаблон, затем выпускайте отчеты на его основе."
           >
             <template #actions>
               <DashboardTileActions>
-                <button class="small ghost" @click="openTemplateModal">Посчитать по шаблону (.odt)</button>
-                <button class="small ghost" @click="openReportServiceModal">Report service</button>
-                <button class="small" @click="createReport">Новый отчет</button>
+                <button class="small" @click="createReport">
+                  {{ reportsCatalogTab === 'templates' ? 'Новый шаблон' : 'Новый отчет' }}
+                </button>
               </DashboardTileActions>
             </template>
           </UiSectionHeader>
 
+          <div class="reports-tabs" role="tablist" aria-label="Каталог отчетов">
+            <button class="tab" :class="{ active: reportsCatalogTab === 'templates' }" @click="reportsCatalogTab = 'templates'">Шаблоны</button>
+            <button class="tab" :class="{ active: reportsCatalogTab === 'reports' }" @click="reportsCatalogTab = 'reports'">Отчеты</button>
+          </div>
+
+          <div class="reports-toolbar">
+            <input v-model="reportSearchQuery" placeholder="Поиск по названию, описанию и тегам" />
+            <select v-model="reportTagFilter">
+              <option value="">Все теги</option>
+              <option v-for="tag in reportTagOptions" :key="`report-tag-${tag}`" :value="tag">{{ tag }}</option>
+            </select>
+            <select v-model="reportSortKey">
+              <option value="name">Сортировка: название</option>
+              <option value="tags">Сортировка: теги</option>
+              <option value="published">Сортировка: публикация</option>
+            </select>
+            <select v-model="reportSortDirection">
+              <option value="asc">По возрастанию</option>
+              <option value="desc">По убыванию</option>
+            </select>
+          </div>
+
           <UiStatusText v-if="reportsLoading" as="div">Загрузка отчетов...</UiStatusText>
           <UiStatusText v-if="reportsError" as="div" variant="error">{{ reportsError }}</UiStatusText>
 
-          <div class="reports-grid" v-if="reports.length > 0">
-            <DashboardTileCard v-for="report in reports" :key="report.id">
+          <div class="reports-grid" v-if="reportCatalogItems.length > 0">
+            <DashboardTileCard v-for="report in reportCatalogItems" :key="report.id" :class="getReportCardClass(report)">
               <template #title>
                 <h4>{{ report.name }}</h4>
               </template>
               <template #badge>
-                <span class="report-type">{{ getReportCardTypeLabel(report) }}</span>
+                <div class="report-badges">
+                  <span class="report-type">{{ getReportRoleLabel(report) }}</span>
+                  <span class="report-type">{{ getReportCardTypeLabel(report) }}</span>
+                </div>
               </template>
               <p>{{ report.description || 'Без описания' }}</p>
+              <div class="report-tags" v-if="getReportTags(report).length > 0">
+                <span v-for="tag in getReportTags(report)" :key="`report-${report.id}-tag-${tag}`" class="report-tag">{{ tag }}</span>
+              </div>
               <p class="muted">Статус: {{ report.is_published ? 'опубликован' : 'черновик' }}</p>
               <template #actions>
                 <DashboardTileActions>
-                  <button
-                    v-if="report.report_type === 'table_export'"
-                    class="small"
-                    @click="openTableReportView(report.id)"
-                  >
+                  <button v-if="report.report_type === 'table_export'" class="small" @click="openTableReportView(report.id)">
                     Открыть
                   </button>
-                  <button
-                    v-if="report.report_type === 'table_export'"
-                    class="small"
-                    @click="downloadReport(report.id, 'csv')"
-                  >
+                  <button v-if="reportsCatalogTab === 'reports' && report.report_type === 'table_export'" class="small" @click="downloadReport(report.id, 'csv')">
                     CSV
                   </button>
-                  <button
-                    v-if="report.report_type === 'table_export'"
-                    class="small"
-                    @click="downloadReport(report.id, 'xlsx')"
-                  >
+                  <button v-if="reportsCatalogTab === 'reports' && report.report_type === 'table_export'" class="small" @click="downloadReport(report.id, 'xlsx')">
                     Excel
                   </button>
                   <button
-                    v-else
+                    v-if="reportsCatalogTab === 'reports' && report.report_type === 'docx_template'"
+                    class="small"
+                    @click="downloadDocumentReport(report.id, 'docx')"
+                  >
+                    DOCX
+                  </button>
+                  <button
+                    v-if="reportsCatalogTab === 'reports' && report.report_type === 'docx_template'"
+                    class="small"
+                    @click="downloadDocumentReport(report.id, 'pdf')"
+                  >
+                    PDF
+                  </button>
+                  <button
+                    v-if="reportsCatalogTab === 'reports' && report.report_type === 'dashboard'"
                     class="small"
                     :disabled="!report.is_published"
                     @click="openReportPublicLink(report.id)"
@@ -3419,7 +3463,9 @@ onBeforeUnmount(() => {
               </template>
             </DashboardTileCard>
           </div>
-          <UiStatusText v-else-if="!reportsLoading">Пока нет отчетов. Создайте первый.</UiStatusText>
+          <UiStatusText v-else-if="!reportsLoading">
+            {{ reportsCatalogTab === 'templates' ? 'Пока нет шаблонов. Создайте первый.' : 'Пока нет отчетов. Создайте отчет из шаблона.' }}
+          </UiStatusText>
 
           <div v-if="reportCreateModalOpen" class="report-create-modal-backdrop" @click.self="closeCreateReportModal">
             <article class="report-create-modal">
@@ -3431,58 +3477,74 @@ onBeforeUnmount(() => {
               <div class="report-create-grid">
                 <div>
                   <label>Название</label>
-                  <input v-model="reportName" placeholder="Например: Сводка по продажам" />
-                </div>
-                <div>
-                  <label>Тип отчета</label>
-                  <select v-model="reportCreateKind" @change="onReportCreateTypeChange">
-                    <option value="dashboard">Дашборд</option>
-                    <option value="table_export">Табличная выгрузка (Excel/CSV)</option>
-                  </select>
+                  <input v-model="reportCreateName" placeholder="Например: Сводка по продажам" />
                 </div>
                 <div class="report-create-full">
                   <label>Описание</label>
-                  <input v-model="reportDescription" placeholder="Коротко про назначение отчета" />
+                  <input v-model="reportCreateDescription" placeholder="Коротко про назначение отчета" />
+                </div>
+                <div class="report-create-full">
+                  <label>Шаблон</label>
+                  <select v-model.number="reportCreateTemplateId">
+                    <option v-for="template in templateReports" :key="`template-opt-${template.id}`" :value="template.id">
+                      {{ template.name }} - {{ getReportCardTypeLabel(template) }}
+                    </option>
+                  </select>
                 </div>
               </div>
+
+              <section class="report-create-section">
+                <h5>Временные фильтры</h5>
+                <div class="report-create-grid">
+                  <div>
+                    <label>Режим</label>
+                    <select v-model="reportCreateTimeFilterMode">
+                      <option value="all_time">Все время</option>
+                      <option value="fixed_period">Фиксированный период</option>
+                      <option value="dynamic_window">Скользящее окно</option>
+                    </select>
+                  </div>
+                  <div class="report-create-full">
+                    <label>Теги</label>
+                    <UiTagListInput
+                      v-model="reportCreateTags"
+                      :suggestions="reportTagOptions"
+                      placeholder="Добавьте тег и нажмите Enter"
+                      add-button-text="Добавить тег"
+                    />
+                  </div>
+
+                  <template v-if="reportCreateTimeFilterMode === 'fixed_period'">
+                    <div>
+                      <label>От</label>
+                      <input v-model="reportCreateFixedFrom" type="datetime-local" />
+                    </div>
+                    <div>
+                      <label>До</label>
+                      <input v-model="reportCreateFixedTo" type="datetime-local" />
+                    </div>
+                  </template>
+
+                  <template v-else-if="reportCreateTimeFilterMode === 'dynamic_window'">
+                    <div>
+                      <label>Количество</label>
+                      <input v-model.number="reportCreateDynamicAmount" type="number" min="1" step="1" />
+                    </div>
+                    <div>
+                      <label>Единица</label>
+                      <select v-model="reportCreateDynamicUnit">
+                        <option value="minutes">Минуты</option>
+                        <option value="hours">Часы</option>
+                        <option value="days">Дни</option>
+                      </select>
+                    </div>
+                  </template>
+                </div>
+              </section>
 
               <label class="checkbox-inline">
                 <input v-model="reportIsPublished" type="checkbox" /> Опубликовать сразу
               </label>
-
-              <section v-if="reportCreateKind === 'dashboard'" class="report-create-section">
-                <h5>Таблицы для дашборда</h5>
-                <p class="muted">Выберите одну или несколько таблиц. Базовая конфигурация будет создана автоматически.</p>
-
-                <div class="report-create-grid">
-                  <div class="report-create-full">
-                    <label>Таблицы</label>
-                    <UiMultiSelect
-                      v-model="reportCreateSelectedTableIds"
-                      :options="allTableOptions"
-                      placeholder="Выберите таблицы для дашборда"
-                      @change="onReportCreateTypeChange"
-                    />
-                  </div>
-                </div>
-              </section>
-
-              <section v-else class="report-create-section">
-                <h5>Таблицы для табличного отчета</h5>
-                <p class="muted">Выберите таблицы через мультиселект. Столбцы, порядок и листы настраиваются в детальном редакторе.</p>
-
-                <div class="report-create-grid">
-                  <div class="report-create-full">
-                    <label>Таблицы</label>
-                    <UiMultiSelect
-                      v-model="reportCreateSelectedTableIds"
-                      :options="allTableOptions"
-                      placeholder="Выберите таблицы для табличного отчета"
-                      @change="onReportCreateTypeChange"
-                    />
-                  </div>
-                </div>
-              </section>
 
               <DashboardTileActions>
                 <button class="small" @click="createReportFromModal">Создать отчет</button>
@@ -3491,37 +3553,56 @@ onBeforeUnmount(() => {
             </article>
           </div>
 
-          <DashboardTemplateModal
-            :open="templateModalOpen"
-            :uploading="templateUploading"
-            :drag-active="templateDragActive"
-            :error="templateError"
-            :file-name="templateFileName"
-            :table-id="templateTableId"
-            :table-options="allTableOptions"
-            @close="closeTemplateModal"
-            @update:table-id="templateTableId = $event"
-            @drag-over="onTemplateDragOver"
-            @drag-leave="onTemplateDragLeave"
-            @drop="onTemplateDrop"
-            @file-selected="processTemplateFile"
-          />
+          <div v-if="templateCreateModalOpen" class="report-create-modal-backdrop" @click.self="closeCreateTemplateModal">
+            <article class="report-create-modal">
+              <header class="report-create-head">
+                <h4>Новый шаблон</h4>
+                <button class="small ghost" @click="closeCreateTemplateModal">Закрыть</button>
+              </header>
 
-          <DashboardReportServiceModal
-            :open="reportServiceModalOpen"
-            :uploading="reportServiceUploading"
-            :drag-active="reportServiceDragActive"
-            :error="reportServiceError"
-            :file-name="reportServiceFileName"
-            :table-ids="reportServiceTableIds"
-            :table-options="allTableOptions"
-            @close="closeReportServiceModal"
-            @update:table-ids="reportServiceTableIds = $event"
-            @drag-over="onReportServiceDragOver"
-            @drag-leave="onReportServiceDragLeave"
-            @drop="onReportServiceDrop"
-            @file-selected="processReportServiceFile"
-          />
+              <div class="report-create-grid">
+                <div>
+                  <label>Название</label>
+                  <input v-model="templateCreateName" placeholder="Например: Шаблон недельной аналитики" />
+                </div>
+                <div>
+                  <label>Тип шаблона</label>
+                  <select v-model="templateCreateType">
+                    <option value="dashboard">Дашборд</option>
+                    <option value="table_export">Табличная выгрузка</option>
+                    <option value="docx_template">DOCX шаблон</option>
+                  </select>
+                </div>
+                <div class="report-create-full">
+                  <label>Описание</label>
+                  <input v-model="templateCreateDescription" placeholder="Коротко о назначении шаблона" />
+                </div>
+                <div class="report-create-full">
+                  <label>Таблицы</label>
+                  <UiMultiSelect
+                    v-model="templateCreateSelectedTableIds"
+                    :options="allTableOptions"
+                    placeholder="Выберите таблицы для шаблона"
+                  />
+                </div>
+                <div class="report-create-full">
+                  <label>Теги</label>
+                  <UiTagListInput
+                    v-model="templateCreateTags"
+                    :suggestions="reportTagOptions"
+                    placeholder="Добавьте тег и нажмите Enter"
+                    add-button-text="Добавить тег"
+                  />
+                </div>
+              </div>
+
+              <DashboardTileActions>
+                <button class="small" @click="createTemplateFromModal">Создать шаблон</button>
+                <button class="small ghost" @click="closeCreateTemplateModal">Отмена</button>
+              </DashboardTileActions>
+            </article>
+          </div>
+
         </section>
 
         <section class="info-grid" v-if="workspaceTab === 'details'">

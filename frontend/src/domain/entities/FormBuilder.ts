@@ -2,11 +2,14 @@ export type WidgetType =
   | "text_input"
   | "textarea"
   | "number_input"
+  | "time_input"
   | "date_input"
   | "datetime_input"
   | "select"
   | "multiselect"
   | "list_input"
+  | "geo_point_input"
+  | "geo_polygon_input"
   | "checkbox"
   | "radio";
 

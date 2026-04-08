@@ -7,6 +7,10 @@ from pathlib import Path
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
 import zipfile
+from jinja2 import Template
+from docx import Document
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
 from fastapi.responses import StreamingResponse
@@ -416,6 +420,274 @@ def _build_widget_map_points(widget: dict[str, Any], rows: list[TableDataRecordM
             }
         )
     return points
+
+
+def _apply_transform(value: Any, transform: str) -> Any:
+    if transform == "upper":
+        return str(value or "").upper()
+    if transform == "lower":
+        return str(value or "").lower()
+    if transform == "number":
+        number = _to_number(value)
+        return number if number is not None else value
+    if transform == "date":
+        if isinstance(value, str):
+            return value[:10]
+        return value
+    return value
+
+
+def _normalize_docx_template_settings(settings: dict[str, Any]) -> dict[str, Any]:
+    table_id = settings.get("table_id")
+    template_mode = settings.get("template_mode")
+    jinja_template = settings.get("jinja_template")
+    visual_blocks = settings.get("visual_blocks")
+    data_converter = settings.get("data_converter")
+
+    if not isinstance(table_id, int):
+        table_id = None
+
+    if template_mode not in ("visual", "jinja2"):
+        template_mode = "visual"
+
+    if not isinstance(jinja_template, str):
+        jinja_template = "{% for row in rows %}{{ row }}\\n{% endfor %}"
+
+    normalized_blocks: list[dict[str, str]] = []
+    if isinstance(visual_blocks, list):
+        for block in visual_blocks:
+            if not isinstance(block, dict):
+                continue
+            raw_type = str(block.get("type") or "")
+            block_type = (
+                raw_type
+                if raw_type in {"text", "field", "section_title", "line_break", "if_row", "table", "nested_table"}
+                else "text"
+            )
+
+            normalized_block: dict[str, Any] = {
+                "type": block_type,
+                "value": str(block.get("value") or "")
+            }
+
+            config = block.get("config")
+            if isinstance(config, dict):
+                normalized_block["config"] = config
+
+            normalized_blocks.append(normalized_block)
+
+    normalized_converter: list[dict[str, str]] = []
+    if isinstance(data_converter, list):
+        for item in data_converter:
+            if not isinstance(item, dict):
+                continue
+            normalized_converter.append(
+                {
+                    "output_key": str(item.get("output_key") or ""),
+                    "source_field": str(item.get("source_field") or ""),
+                    "transform": str(item.get("transform") or "none"),
+                }
+            )
+
+    return {
+        "table_id": table_id,
+        "template_mode": template_mode,
+        "jinja_template": jinja_template,
+        "visual_blocks": normalized_blocks,
+        "data_converter": normalized_converter,
+    }
+
+
+def _build_jinja_from_visual_blocks(visual_blocks: list[dict[str, str]]) -> str:
+    chunks: list[str] = []
+    for block in visual_blocks:
+        block_type = block.get("type")
+        value = str(block.get("value") or "").strip()
+        config = block.get("config") if isinstance(block.get("config"), dict) else {}
+
+        if block_type == "line_break":
+            chunks.append("")
+            continue
+
+        if block_type == "section_title":
+            if value:
+                chunks.append(f"## {value}")
+            continue
+
+        if block_type == "field":
+            if not value:
+                continue
+            chunks.append(f"{{{{ first.{value} }}}}")
+            continue
+
+        if block_type == "if_row":
+            field = str(config.get("field") or "").strip()
+            operator = str(config.get("operator") or "not_empty").strip()
+            compare_to = str(config.get("compare_to") or "")
+            if not field:
+                continue
+
+            condition = f"first.{field}"
+            if operator == "eq":
+                condition = f'first.{field} == "{compare_to}"'
+            elif operator == "contains":
+                condition = f'"{compare_to}" in (first.{field} | string)'
+
+            chunks.append(f"{{% if {condition} %}}")
+            chunks.append(value or f"Поле {field} удовлетворяет условию")
+            chunks.append("{% endif %}")
+            continue
+
+        if block_type == "table":
+            columns_raw = config.get("columns") if isinstance(config, dict) else []
+            if not isinstance(columns_raw, list):
+                continue
+
+            columns = [str(item).strip() for item in columns_raw if str(item).strip()]
+            if not columns:
+                continue
+
+            chunks.append("{% for row in rows %}")
+            chunks.append(" | ".join([f"{{{{ row.{column} }}}}" for column in columns]))
+            chunks.append("{% endfor %}")
+            continue
+
+        if block_type == "nested_table":
+            iter_expr = str(config.get("iter_expr") or "row.items").strip()
+            row_alias = str(config.get("row_alias") or "item").strip() or "item"
+            columns_raw = config.get("columns") if isinstance(config, dict) else []
+            if not isinstance(columns_raw, list):
+                continue
+            columns = [str(item).strip() for item in columns_raw if str(item).strip()]
+            if not columns:
+                continue
+
+            chunks.append(f"{{% for {row_alias} in {iter_expr} %}}")
+            chunks.append(" | ".join([f"{{{{ {row_alias}.{column} }}}}" for column in columns]))
+            chunks.append("{% endfor %}")
+            continue
+
+        if value:
+            chunks.append(value)
+
+    if not chunks:
+        return "{% for row in rows %}{{ row }}\\n{% endfor %}"
+    return "\\n".join(chunks)
+
+
+def _render_docx_template_text(
+    session: Session,
+    workspace_id: int,
+    settings: dict[str, Any],
+) -> str:
+    normalized = _normalize_docx_template_settings(settings)
+    table_id = normalized["table_id"]
+    if not isinstance(table_id, int):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Docx template table is not configured")
+
+    table = session.execute(
+        select(TableStructureModel).where(
+            TableStructureModel.workspace_id == workspace_id,
+            TableStructureModel.id == table_id,
+        )
+    ).scalar()
+    if not table:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Table not found")
+
+    rows = (
+        session.execute(
+            select(TableDataRecordModel)
+            .where(
+                TableDataRecordModel.workspace_id == workspace_id,
+                TableDataRecordModel.table_id == table_id,
+            )
+            .order_by(TableDataRecordModel.created_at.desc())
+            .limit(1000)
+        )
+        .scalars()
+        .all()
+    )
+
+    source_rows = [(row.data_json or {}) for row in rows]
+    converter_rules = normalized["data_converter"]
+    converted_rows: list[dict[str, Any]] = []
+
+    for row in source_rows:
+        merged = dict(row)
+        for rule in converter_rules:
+            output_key = str(rule.get("output_key") or "").strip()
+            source_field = str(rule.get("source_field") or "").strip()
+            transform = str(rule.get("transform") or "none")
+            if not output_key or not source_field:
+                continue
+            merged[output_key] = _apply_transform(row.get(source_field), transform)
+        converted_rows.append(merged)
+
+    template_text = (
+        _build_jinja_from_visual_blocks(normalized["visual_blocks"])
+        if normalized["template_mode"] == "visual"
+        else str(normalized["jinja_template"])
+    )
+
+    context = {
+        "rows": converted_rows,
+        "first": converted_rows[0] if converted_rows else {},
+        "meta": {
+            "table": table.name,
+            "rows_count": len(converted_rows),
+            "generated_at": datetime.utcnow().isoformat(),
+        },
+    }
+
+    try:
+        return Template(template_text).render(**context)
+    except Exception as error:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Template render failed: {str(error)}",
+        )
+
+
+def _build_docx_from_text(rendered_text: str) -> BytesIO:
+    output = BytesIO()
+    document = Document()
+    lines = rendered_text.splitlines() or [""]
+    for line in lines:
+        document.add_paragraph(line)
+    document.save(output)
+    output.seek(0)
+    return output
+
+
+def _build_pdf_from_text(rendered_text: str) -> BytesIO:
+    output = BytesIO()
+    page = canvas.Canvas(output, pagesize=A4)
+    width, height = A4
+    x = 40
+    y = height - 40
+    line_height = 14
+
+    for raw_line in (rendered_text.splitlines() or [""]):
+        line = str(raw_line)
+        if y < 40:
+            page.showPage()
+            y = height - 40
+
+        # Basic split to avoid overly long lines.
+        while len(line) > 120:
+            page.drawString(x, y, line[:120])
+            line = line[120:]
+            y -= line_height
+            if y < 40:
+                page.showPage()
+                y = height - 40
+
+        page.drawString(x, y, line)
+        y -= line_height
+
+    page.save()
+    output.seek(0)
+    return output
 
 
 def _format_export_value(value: Any) -> Any:
@@ -1150,7 +1422,7 @@ def delete_report(
 def download_excel_report(
     workspace_id: int,
     report_id: int,
-    format: str = Query("xlsx", pattern="^(xlsx|csv)$"),
+    format: str = Query("xlsx", pattern="^(xlsx|csv|docx|pdf)$"),
     current_user=Depends(get_current_user),
     repo: ReportConfigurationRepository = Depends(get_report_repo),
     session: Session = Depends(get_db),
@@ -1162,8 +1434,36 @@ def download_excel_report(
     except ReportConfigurationNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
 
+    if report.report_type == "docx_template":
+        if format not in {"docx", "pdf"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Docx template supports only docx and pdf export",
+            )
+
+        rendered_text = _render_docx_template_text(session, workspace_id, report.settings or {})
+        filename_stem = f"report_{report.id}"
+
+        if format == "docx":
+            payload = _build_docx_from_text(rendered_text)
+            return StreamingResponse(
+                payload,
+                media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                headers={"Content-Disposition": f'attachment; filename="{filename_stem}.docx"'},
+            )
+
+        payload = _build_pdf_from_text(rendered_text)
+        return StreamingResponse(
+            payload,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename_stem}.pdf"'},
+        )
+
     if report.report_type != "table_export":
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Report type is not table_export")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Report type does not support tabular export")
+
+    if format not in {"xlsx", "csv"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Table export supports only xlsx and csv")
 
     datasets = _normalize_table_report_settings(report.settings or {})
     if not datasets:

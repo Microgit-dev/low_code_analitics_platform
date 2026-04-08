@@ -13,22 +13,36 @@ const emit = defineEmits<{
 
 const { isDark, toggleTheme } = useTheme()
 
-const HOT_BAR = 'https://www.figma.com/api/mcp/asset/442052de-1a91-402a-9573-3b42e20597f7'
+type NavTab = 'tables' | 'forms' | 'data' | 'reports'
 
-const navItems: Array<{ id: 'tables' | 'forms' | 'data' | 'reports'; label: string; y: number }> = [
-  { id: 'tables', label: 'Таблицы', y: 134 },
-  { id: 'forms', label: 'Формы', y: 206 },
-  { id: 'data', label: 'Данные', y: 278 },
-  { id: 'reports', label: 'Отчеты', y: 350 }
+interface NavItem {
+  id: NavTab
+  label: string
+  iconPaths: string[]
+}
+
+const navItems: NavItem[] = [
+  {
+    id: 'tables',
+    label: 'Таблицы',
+    iconPaths: ['M3 6h18M3 12h18M3 18h18']
+  },
+  {
+    id: 'forms',
+    label: 'Формы',
+    iconPaths: ['M8 4h8l4 4v12H4V4h4z', 'M8 4v4h4', 'M8 12h8M8 16h6']
+  },
+  {
+    id: 'data',
+    label: 'Данные',
+    iconPaths: ['M4 6h16v12H4z', 'M4 10h16', 'M10 6v12', 'M15 6v12']
+  },
+  {
+    id: 'reports',
+    label: 'Отчеты',
+    iconPaths: ['M5 19V9M12 19V5M19 19v-7']
+  }
 ]
-
-const spriteStyle = (y: number): Record<string, string> => ({
-  backgroundImage: `url(${HOT_BAR})`,
-  backgroundSize: '68px 1080px',
-  backgroundPosition: `-8px -${y}px`,
-  backgroundRepeat: 'no-repeat',
-  mixBlendMode: 'multiply'
-})
 </script>
 
 <template>
@@ -41,7 +55,19 @@ const spriteStyle = (y: number): Record<string, string> => ({
         :class="{ active: activeTab === item.id }"
         @click="emit('nav-click', item.id)"
       >
-        <span class="nav-icon" :style="spriteStyle(item.y)" aria-hidden="true" />
+        <span class="nav-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path
+              v-for="(path, index) in item.iconPaths"
+              :key="`${item.id}-icon-${index}`"
+              :d="path"
+              stroke="currentColor"
+              stroke-width="1.8"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </span>
         <span class="nav-label">{{ item.label }}</span>
       </button>
     </nav>

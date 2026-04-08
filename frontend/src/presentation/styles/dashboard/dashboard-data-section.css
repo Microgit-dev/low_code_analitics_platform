@@ -93,6 +93,19 @@ button.danger {
   text-overflow: ellipsis;
 }
 
+.geojson-preview {
+  margin: 0;
+  max-width: 340px;
+  max-height: 130px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-soft);
+  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text-main);
+}
+
 .pagination {
   display: flex;
   gap: 12px;
@@ -210,4 +223,40 @@ button.danger {
 .edit-field textarea {
   resize: vertical;
   min-height: 96px;
+}
+
+.list-edit-box {
+  display: grid;
+  gap: 8px;
+}
+
+.list-editor-add-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.list-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.list-items li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  border-radius: 10px;
+  padding: 7px 9px;
+}
+
+.checkbox-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }

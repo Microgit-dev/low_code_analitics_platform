@@ -4,7 +4,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-ReportType = Literal["table_export", "dashboard"]
+ReportType = Literal["table_export", "dashboard", "docx_template"]
 
 
 class ReportConfigurationCreateRequest(BaseModel):
